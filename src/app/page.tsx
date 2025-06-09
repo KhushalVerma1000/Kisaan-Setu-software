@@ -1,103 +1,173 @@
-import Image from "next/image";
+import { ImageCarousel } from '@/components/ImageCarousel'
+import TopNavbar from '@/components/topNavbar'
+import React, { JSX } from 'react'
+import Link from 'next/link'
+import Image from 'next/image'
 
-export default function Home() {
-  return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm/6 text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-[family-name:var(--font-geist-mono)] font-semibold">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
-
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
-        </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
-    </div>
-  );
+// Type definitions
+interface FeatureItem {
+  title: string;
+  description: string;
 }
+
+interface FooterLink {
+  label: string;
+  href: string;
+}
+
+interface SocialLink {
+  name: string;
+  href: string;
+  icon: JSX.Element;
+}
+
+const Home: React.FC = ():JSX.Element => {
+  // Feature items data
+  const features: FeatureItem[] = [
+    {
+      title: "Enhance Transparency & Accountability:",
+      description: "Foster trust among members and stakeholders with clear, accessible data."
+    },
+    {
+      title: "Drive Profitability:",
+      description: "Optimize operations from input procurement to final sale, maximizing returns for members"
+    },
+    {
+      title: "Financial Management:",
+      description: "Simplify your FPO's financial management with easy-to-use tools for tracking payments, receivables, expenses, and member share capital."
+    },
+    {
+      title: "Transaction Management:",
+      description: "Manage transactions transparently, generate accurate financial statements (like Balance Sheets, P&L), and gain a clear understanding of your organization's financial health."
+    },
+    {
+      title: "Market Connections:",
+      description: "Facilitate better connections between your FPO's output and potential buyers, unlocking improved market opportunities and prices."
+    }
+  ];
+
+  // Footer links data
+  const companyLinks: FooterLink[] = [
+    {
+      label: "About Us",
+      href: "https://sukrshinfotech.com/Farmermobalization/"
+    },
+    {
+      label: "Contact Us",
+      href: "https://sukrshinfotech.com/Contact/"
+    }
+  ];
+
+  return (
+    <section>
+      <TopNavbar />
+      <ImageCarousel />
+
+      <div className='mx-4 p-6 bg-white border border-gray-200 rounded-lg shadow-sm hover:bg-gray-100 dark:bg-gray-800 dark:border-gray-700 dark:hover:bg-gray-700'>
+        <h1 className='mb-4 text-4xl text-center font-extrabold leading-none tracking-tight text-gray-900 md:text-5xl lg:text-6xl dark:text-white'>
+          Kisaan Setu
+        </h1>
+        
+        <h2 className='text-2xl md:text-4xl font-extrabold dark:text-white'>
+          Your Comprehensive Digital Bridge for FPO Empowerment, Efficiency, and Growth
+        </h2>
+
+        <p className='my-4 text-lg text-gray-500'>
+          Farmer Producer Organizations (FPOs) stand as vital pillars in strengthening the agricultural community, but managing their diverse and complex operations presents unique challenges. From coordinating hundreds of members and tracking countless transactions to optimizing resource allocation and connecting with markets, the need for a robust, integrated system is paramount.
+        </p>
+        
+        <p className="my-4 text-lg text-gray-500">
+          Introducing Kisaan Setu meaning &apos;Farmer&apos;s Bridge&apos; more than just software, it&apos;s a dedicated, comprehensive platform meticulously designed to bridge these operational gaps.
+        </p>
+
+        <h2 className="text-xl font-bold mb-4">
+          Unlock the Full Potential of Your FPO with Kisaan Setu&apos;s Integrated Modules:
+        </h2>
+        
+        <ul className='list-disc list-inside space-y-2'>
+          {features.map((feature, index) => (
+            <li key={index}>
+              <span className='mb-2 text-lg font-semibold text-gray-900 dark:text-white'>
+                {feature.title}
+              </span>
+              {" "}
+              {feature.description}
+            </li>
+          ))}
+        </ul>
+      </div>
+  
+      <footer>
+        <div className="bg-purple-950 py-4 text-gray-400">
+          <div className="container px-4 mx-auto">
+            <div className="-mx-4 flex flex-wrap justify-between">
+              <div className="px-4 my-4 w-full xl:w-1/5">
+                <Link href="/" className="flex items-center gap-2 mb-10">
+                  <Image 
+                    src="/Logo.jpeg" 
+                    alt="Kisaan Setu Logo" 
+                    width={64}
+                    height={64}
+                    className="rounded-2xl"
+                  />
+                  <span className="text-3xl font-bold">Kisaan Setu</span>
+                </Link>
+                <p className="text-justify">
+                  Build a transparent, efficient, and prosperous future for your farmer members. Let Kisaan Setu be the essential digital bridge connecting your FPOs efforts to tangible success.
+                </p>
+              </div>
+
+              <div className="px-4 my-4 w-full sm:w-auto">
+                <div>
+                  <h2 className="inline-block text-2xl pb-4 mb-4 border-b-4 border-blue-600">
+                    Company
+                  </h2>
+                </div>
+                <ul className="leading-8">
+                  {companyLinks.map((link, index) => (
+                    <li key={index}>
+                      <a 
+                        href={link.href} 
+                        className="hover:text-blue-400 transition-colors duration-200"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        {link.label}
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              <div className="px-4 my-4 w-full sm:w-auto">
+                <div>
+                  <h2 className="inline-block text-2xl pb-4 mb-4 border-b-4 border-blue-600">
+                    Sukrsh
+                  </h2>
+                </div>
+                <p className='w-96'>
+                  Sukrsh Infotech Private Limited is a consultancy firm specializing in agriculture, water, and sanitation projects, partnering with government and non-government organizations to drive sustainable rural development.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <div className="bg-indigo-700 py-4 text-gray-100">
+          <div className="container mx-auto px-4">
+            <div className="-mx-4 flex flex-wrap justify-between">
+              <div className="px-4 w-full text-center sm:w-auto sm:text-left">
+                Copyright © 2025 Sukrsh. All Rights Reserved.
+              </div>
+              <div className="px-4 w-full text-center sm:w-auto sm:text-left">
+                Sukrsh Infotech Pvt. Ltd.
+              </div>
+            </div>
+          </div>
+        </div>
+      </footer>
+    </section>
+  )
+}
+
+export default Home
