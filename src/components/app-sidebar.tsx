@@ -148,7 +148,7 @@ const items: MenuItem[] = [
   },
   {
     title: "Reports",
-    url: "/reports",
+    url: "/Reports",
     icon: ChartBar,
   },
   {
@@ -158,7 +158,7 @@ const items: MenuItem[] = [
   },
   {
     title: "Logout",
-    url: "/logout",
+    url: "/Logout",
     icon: LogOut,
   }
 ]
