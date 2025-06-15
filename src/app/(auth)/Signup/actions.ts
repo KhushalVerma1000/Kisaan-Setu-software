@@ -11,7 +11,7 @@ interface SignupResult {
 }
 
 export async function signup(formData: FormData): Promise<SignupResult> {
-  const cookieStore = cookies()
+  const cookieStore = await cookies()
   const supabase = createClient(cookieStore)
   
   // Get form values

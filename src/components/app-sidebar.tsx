@@ -32,7 +32,8 @@ import {
   BanknoteArrowUpIcon,
   Ticket,
   TicketsIcon,
-  ShoppingBasket
+  ShoppingBasket,
+  Settings
 } from "lucide-react"
 
 import {
@@ -155,6 +156,11 @@ const items: MenuItem[] = [
     title: "Registers",
     url: "/registers",
     icon: BookOpen,
+  },
+   {
+    title: "Settings",
+    url: "/ProfileSettings",
+    icon: Settings,
   },
   {
     title: "Logout",

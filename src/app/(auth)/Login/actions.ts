@@ -10,7 +10,7 @@ interface LoginResult {
 }
 
 export async function login(formData: FormData): Promise<LoginResult | never> {
- const cookieStore = cookies()
+ const cookieStore = await cookies()
   const supabase = createClient(cookieStore)
   
   const email = formData.get('email') as string
