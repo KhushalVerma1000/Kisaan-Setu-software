@@ -13,7 +13,8 @@ import { useState, useCallback, useMemo, useEffect } from "react";
 import { useHeaderButtons } from "@/hooks/useHeaderButtons";
 import { useRouter } from "next/navigation";
 import { Search, FileDown, Plus, Eye, Edit, Trash2, MoreHorizontal, Download, Send, CreditCard, AlertTriangle } from "lucide-react";
-import * as XLSX from 'xlsx';
+import ExcelJS from "exceljs";
+import { saveAs } from "file-saver";
 
 // Invoice data structure
 interface Invoice {
@@ -108,42 +109,48 @@ export default function InvoicePage() {
     router.push('/dashboard/invoices/new');
   }, [router]);
 
-  const handleExportExcel = useCallback(() => {
-    console.log("Export Excel clicked");
+  const handleExportExcel = useCallback(async () => {
     setIsLoading(true);
-    
     try {
       const dataToExport = invoices.length > 0 ? invoices : sampleInvoices;
-      
-      const wb = XLSX.utils.book_new();
-      const ws = XLSX.utils.json_to_sheet(dataToExport.map(invoice => ({
-        'Invoice Number': invoice.invoiceNumber,
-        'Customer Name': invoice.customerName,
-        'Amount (₹)': invoice.amount,
-        'Issue Date': invoice.issueDate,
-        'Due Date': invoice.dueDate,
-        'Status': invoice.status,
-        'Payment Method': invoice.paymentMethod || 'N/A',
-        'Paid Amount (₹)': invoice.paidAmount || 0
-      })));
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet("Invoices");
 
-      ws['!cols'] = [
-        { width: 18 }, { width: 25 }, { width: 15 }, 
-        { width: 12 }, { width: 12 }, { width: 12 },
-        { width: 15 }, { width: 15 }
+      worksheet.columns = [
+        { header: "Invoice Number", key: "invoiceNumber", width: 18 },
+        { header: "Customer Name", key: "customerName", width: 25 },
+        { header: "Amount (₹)", key: "amount", width: 15 },
+        { header: "Issue Date", key: "issueDate", width: 12 },
+        { header: "Due Date", key: "dueDate", width: 12 },
+        { header: "Status", key: "status", width: 12 },
+        { header: "Payment Method", key: "paymentMethod", width: 15 },
+        { header: "Paid Amount (₹)", key: "paidAmount", width: 15 },
       ];
 
-      XLSX.utils.book_append_sheet(wb, ws, "Invoices");
-      const fileName = `invoices_${new Date().toISOString().split('T')[0]}.xlsx`;
-      XLSX.writeFile(wb, fileName);
-      
-      console.log(`Excel file exported: ${fileName}`);
+      dataToExport.forEach((invoice) => {
+        worksheet.addRow({
+          invoiceNumber: invoice.invoiceNumber,
+          customerName: invoice.customerName,
+          amount: invoice.amount,
+          issueDate: invoice.issueDate,
+          dueDate: invoice.dueDate,
+          status: invoice.status,
+          paymentMethod: invoice.paymentMethod || "N/A",
+          paidAmount: invoice.paidAmount || 0,
+        });
+      });
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      saveAs(
+        new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
+        `invoices_${new Date().toISOString().split("T")[0]}.xlsx`
+      );
     } catch (error) {
       console.error("Error exporting to Excel:", error);
     } finally {
       setIsLoading(false);
     }
-  }, [invoices]);
+  }, [invoices, sampleInvoices]);
 
   // Search functionality
   const handleSearch = useCallback((value: string) => {
@@ -323,12 +330,12 @@ export default function InvoicePage() {
   }, [loadInvoices]);
 
   return (
-    <div className="space-y-4 md:space-y-6 p-4 md:p-6">
+    <div className="space-y-4 md:space-y-6 p-4 md:p-6 ">
       {/* Breadcrumb */}
       <Breadcrumb>
         <BreadcrumbList>
           <BreadcrumbItem>
-            <BreadcrumbLink href="/dashboard">Dashboard</BreadcrumbLink>
+            <BreadcrumbLink href="/Dashboard">Dashboard</BreadcrumbLink>
           </BreadcrumbItem>
           <BreadcrumbSeparator />
           <BreadcrumbItem>
@@ -342,7 +349,7 @@ export default function InvoicePage() {
       </Breadcrumb>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 ">
         <Card>
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
@@ -407,7 +414,7 @@ export default function InvoicePage() {
       </div>
 
       {/* Header Actions - Mobile First */}
-      <div className="flex flex-col sm:flex-row gap-4 sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-4 sm:items-center sm:justify-between">
         <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
           <Select value={itemsPerPage} onValueChange={setItemsPerPage}>
             <SelectTrigger className="w-full sm:w-32">
@@ -498,8 +505,8 @@ export default function InvoicePage() {
           ) : currentInvoices.length > 0 ? (
             <>
               {/* Desktop Table */}
-              <div className="hidden md:block max-w-80">
-                <Table>
+              <div className="hidden md:block overflow-x-scroll">
+                <Table className="w-full">
                   <TableHeader>
                     <TableRow>
                       <TableHead>Invoice Number</TableHead>
@@ -515,23 +522,17 @@ export default function InvoicePage() {
                   <TableBody>
                     {currentInvoices.map((invoice) => (
                       <TableRow key={invoice.id}>
-                        <TableCell className="font-medium text-primary">
-                          {invoice.invoiceNumber}
-                        </TableCell>
+                        <TableCell>{invoice.invoiceNumber}</TableCell>
                         <TableCell>{invoice.customerName}</TableCell>
-                        <TableCell>₹{invoice.amount.toLocaleString('en-IN')}</TableCell>
-                        <TableCell>{new Date(invoice.issueDate).toLocaleDateString('en-IN')}</TableCell>
-                        <TableCell>
-                          <span className={isOverdue(invoice.dueDate, invoice.status) ? "text-red-600 font-medium" : ""}>
-                            {new Date(invoice.dueDate).toLocaleDateString('en-IN')}
-                          </span>
-                        </TableCell>
+                        <TableCell>₹{invoice.amount.toLocaleString("en-IN")}</TableCell>
+                        <TableCell>{invoice.issueDate}</TableCell>
+                        <TableCell>{invoice.dueDate}</TableCell>
                         <TableCell>
                           <Badge className={getStatusColor(invoice.status)}>
                             {invoice.status}
                           </Badge>
                         </TableCell>
-                        <TableCell>{invoice.paymentMethod || '-'}</TableCell>
+                        <TableCell>{invoice.paymentMethod || "-"}</TableCell>
                         <TableCell className="text-right">
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>

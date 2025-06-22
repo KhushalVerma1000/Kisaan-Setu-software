@@ -13,7 +13,8 @@ import { useState, useCallback, useMemo, useEffect } from "react";
 import { useHeaderButtons } from "@/hooks/useHeaderButtons";
 import { useRouter } from "next/navigation";
 import { Search, FileDown, Plus, Eye, Edit, Trash2, MoreHorizontal, Download } from "lucide-react";
-import * as XLSX from 'xlsx';
+import ExcelJS from "exceljs";
+import { saveAs } from "file-saver";
 
 // Sample quotation data structure
 interface Quotation {
@@ -89,39 +90,44 @@ export default function QuotationPage() {
     router.push('/dashboard/quotations/new');
   }, [router]);
 
-  const handleExportExcel = useCallback(() => {
-    console.log("Export Excel clicked");
+  const handleExportExcel = useCallback(async () => {
     setIsLoading(true);
-    
     try {
       const dataToExport = quotations.length > 0 ? quotations : sampleQuotations;
-      
-      const wb = XLSX.utils.book_new();
-      const ws = XLSX.utils.json_to_sheet(dataToExport.map(quotation => ({
-        'Quotation Number': quotation.quotationNumber,
-        'Customer Name': quotation.customerName,
-        'Amount (₹)': quotation.amount,
-        'Date': quotation.date,
-        'Valid Until': quotation.validUntil,
-        'Status': quotation.status
-      })));
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet("Quotations");
 
-      ws['!cols'] = [
-        { width: 20 }, { width: 25 }, { width: 15 }, 
-        { width: 12 }, { width: 12 }, { width: 12 }
+      worksheet.columns = [
+        { header: "Quotation Number", key: "quotationNumber", width: 20 },
+        { header: "Customer Name", key: "customerName", width: 25 },
+        { header: "Amount (₹)", key: "amount", width: 15 },
+        { header: "Date", key: "date", width: 12 },
+        { header: "Valid Until", key: "validUntil", width: 12 },
+        { header: "Status", key: "status", width: 12 },
       ];
 
-      XLSX.utils.book_append_sheet(wb, ws, "Quotations");
-      const fileName = `quotations_${new Date().toISOString().split('T')[0]}.xlsx`;
-      XLSX.writeFile(wb, fileName);
-      
-      console.log(`Excel file exported: ${fileName}`);
+      dataToExport.forEach((quotation) => {
+        worksheet.addRow({
+          quotationNumber: quotation.quotationNumber,
+          customerName: quotation.customerName,
+          amount: quotation.amount,
+          date: quotation.date,
+          validUntil: quotation.validUntil,
+          status: quotation.status,
+        });
+      });
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      saveAs(
+        new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
+        `quotations_${new Date().toISOString().split("T")[0]}.xlsx`
+      );
     } catch (error) {
       console.error("Error exporting to Excel:", error);
     } finally {
       setIsLoading(false);
     }
-  }, [quotations]);
+  }, [quotations, sampleQuotations]);
 
   // Search functionality
   const handleSearch = useCallback((value: string) => {

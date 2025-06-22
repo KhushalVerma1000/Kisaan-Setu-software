@@ -37,7 +37,7 @@ export default async function DashboardLayout({
   const { data: { session } } = await supabase.auth.getSession()
 
   if (!session) {
-    redirect('/login')
+    redirect('/Login')
   }
 
   return (

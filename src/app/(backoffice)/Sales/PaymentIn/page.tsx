@@ -16,8 +16,8 @@ import { useHeaderButtons } from "@/hooks/useHeaderButtons";
 import { useRouter } from "next/navigation";
 import { Search, Plus, Eye, Edit, Trash2, MoreHorizontal, CalendarIcon, ChevronDown, FileDown } from "lucide-react";
 import { format } from "date-fns";
-import * as XLSX from 'xlsx';
-
+import ExcelJS from "exceljs";
+import { saveAs } from "file-saver";
 // Payment data structure
 interface Payment {
   id: string;
@@ -119,40 +119,48 @@ export default function PaymentsPage() {
     router.push('/dashboard/sales/payments/new');
   }, [router]);
 
-  const handleExportExcel = useCallback(() => {
-    console.log("Export Excel clicked");
-    setIsLoading(true);
-    
-    try {
-      const dataToExport = payments.length > 0 ? payments : samplePayments;
-      
-      const wb = XLSX.utils.book_new();
-      const ws = XLSX.utils.json_to_sheet(dataToExport.map(payment => ({
-        'Payment Number': payment.paymentNumber,
-        'Customer Name': payment.customerName,
-        'Amount (₹)': payment.amount,
-        'Date': payment.date,
-        'Payment Method': payment.paymentMethod,
-        'Invoice Number': payment.invoiceNumber || '-',
-        'Status': payment.status
-      })));
 
-      ws['!cols'] = [
-        { width: 20 }, { width: 25 }, { width: 15 }, 
-        { width: 12 }, { width: 15 }, { width: 15 }, { width: 12 }
-      ];
+const handleExportExcel = useCallback(async () => {
+  setIsLoading(true);
+  try {
+    const dataToExport = payments.length > 0 ? payments : samplePayments;
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet("Payments");
 
-      XLSX.utils.book_append_sheet(wb, ws, "Payments");
-      const fileName = `payments_${new Date().toISOString().split('T')[0]}.xlsx`;
-      XLSX.writeFile(wb, fileName);
-      
-      console.log(`Excel file exported: ${fileName}`);
-    } catch (error) {
-      console.error("Error exporting to Excel:", error);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [payments]);
+    worksheet.columns = [
+      { header: "Payment Number", key: "paymentNumber", width: 20 },
+      { header: "Customer Name", key: "customerName", width: 25 },
+      { header: "Amount (₹)", key: "amount", width: 15 },
+      { header: "Date", key: "date", width: 12 },
+      { header: "Payment Method", key: "paymentMethod", width: 15 },
+      { header: "Invoice Number", key: "invoiceNumber", width: 15 },
+      { header: "Status", key: "status", width: 12 },
+    ];
+
+    dataToExport.forEach((payment) => {
+      worksheet.addRow({
+        paymentNumber: payment.paymentNumber,
+        customerName: payment.customerName,
+        amount: payment.amount,
+        date: payment.date,
+        paymentMethod: payment.paymentMethod,
+        invoiceNumber: payment.invoiceNumber || "-",
+        status: payment.status,
+      });
+    });
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    saveAs(
+      new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
+      `payments_${new Date().toISOString().split("T")[0]}.xlsx`
+    );
+    console.log("Excel file exported");
+  } catch (error) {
+    console.error("Error exporting to Excel:", error);
+  } finally {
+    setIsLoading(false);
+  }
+}, [payments, samplePayments]);
 
   // Header buttons configuration
   const headerButtons = useMemo(() => [
