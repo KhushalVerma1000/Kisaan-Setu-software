@@ -1,83 +1,122 @@
-"use client"
-import { useState } from "react";
-import { Input } from "@/components/ui/input";
-import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { Calendar } from "@/components/ui/calendar";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { CalendarIcon } from "lucide-react";
-import { format } from "date-fns";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+'use client'
+import { useState } from "react"
+import { Input } from "@/components/ui/input"
+import { Card, CardContent } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
+import { DatePicker } from "@/components/ui/datepicker"
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue
+} from "@/components/ui/select"
+import { createClient } from "@/utils/supabase/client" // browser client
 
 export default function GeneralTab() {
-  const [date, setDate] = useState<Date | undefined>(new Date());
+  const [companyName, setCompanyName] = useState("")
+  const [ownerName, setOwnerName] = useState("")
+  const [address, setAddress] = useState("")
+  const [city, setCity] = useState("")
+  const [state, setState] = useState("Uttar Pradesh")
+  const [phone, setPhone] = useState("")
+  const [email, setEmail] = useState("")
+  const [gst, setGst] = useState("")
+  const [date, setDate] = useState<Date | undefined>(new Date())
+  const [message, setMessage] = useState("")
+
+  const handleSubmit = async () => {
+    setMessage("Submitting...")
+
+    const supabase = createClient()
+    const { data: { session } } = await supabase.auth.getSession()
+    const token = session?.access_token
+
+    if (!token) {
+      setMessage("Not logged in")
+      return
+    }
+
+    const res = await fetch("/api/fpo/profile", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`
+      },
+      body: JSON.stringify({
+        company_name: companyName,
+        owner_name: ownerName,
+        address,
+        city,
+        state,
+        phone_number: phone,
+        invoice_email: email,
+        gst_number: gst,
+        incorporation_date: date?.toISOString()
+      })
+    })
+
+    const result = await res.json()
+    if (res.ok) {
+      setMessage("✅ FPO Profile Saved Successfully!")
+    } else {
+      setMessage(`❌ Error: ${result.error}`)
+    }
+  }
 
   return (
     <Card>
       <CardContent className="p-6 space-y-6">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
+          <div className="space-y-1">
             <Label>Company Name *</Label>
-            <Input defaultValue="BHOO-KRANTI HASANGANJ KRISHAK FARMER PRODUCER COMP" />
+            <Input value={companyName} onChange={(e) => setCompanyName(e.target.value)} />
           </div>
-          <div>
+          <div className="space-y-1">
             <Label>Owner Name *</Label>
-            <Input defaultValue="BHOO-KRANTI HASANGANJ KRISHAK FARMER PRODUCER COMP" />
+            <Input value={ownerName} onChange={(e) => setOwnerName(e.target.value)} />
           </div>
           <div>
-            <Label>Company Incorporation Date *</Label>
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button variant="outline" className="w-full justify-start text-left font-normal">
-                  <CalendarIcon className="mr-2 h-4 w-4" />
-                  {date ? format(date, "dd/MM/yyyy") : <span>Pick a date</span>}
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-auto p-0" align="start">
-                <Calendar mode="single" selected={date} onSelect={setDate} initialFocus />
-              </PopoverContent>
-            </Popover>
+            <DatePicker date={date} setDate={setDate} label="Company Incorporation Date *" />
           </div>
-          <div>
+          <div className="space-y-1">
             <Label>Address</Label>
-            <Textarea defaultValue="C/O CHANDRA KANT PATHAK PILKHANA RASIDPUR HASANGANJ, Unnao, UNNAO, Uttar Pradesh, India, 209881" />
+            <Textarea value={address} onChange={(e) => setAddress(e.target.value)} />
           </div>
-          <div>
+          <div className="space-y-1">
             <Label>City</Label>
-            <Input defaultValue="Hasanganj" />
+            <Input value={city} onChange={(e) => setCity(e.target.value)} />
           </div>
-          <div>
+          <div className="space-y-1">
             <Label>State *</Label>
-            <Select defaultValue="Uttar Pradesh">
+            <Select value={state} onValueChange={setState}>
               <SelectTrigger>
                 <SelectValue placeholder="Select state" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="Uttar Pradesh">Uttar Pradesh</SelectItem>
+                <SelectItem value="Bihar">Bihar</SelectItem>
+                <SelectItem value="Madhya Pradesh">Madhya Pradesh</SelectItem>
               </SelectContent>
             </Select>
           </div>
-          <div>
+          <div className="space-y-1">
             <Label>Phone No</Label>
-            <Input defaultValue="9936397773" />
+            <Input value={phone} onChange={(e) => setPhone(e.target.value)} />
           </div>
-          <div>
+          <div className="space-y-1">
             <Label>Invoice Email</Label>
-            <Input placeholder="Enter invoice email" />
+            <Input value={email} onChange={(e) => setEmail(e.target.value)} />
           </div>
-          <div>
+          <div className="space-y-1">
             <Label>GST Number</Label>
-            <Input defaultValue="09AALCB3588J1Z2" />
+            <Input value={gst} onChange={(e) => setGst(e.target.value)} />
           </div>
-          <div>
-            <Label>Logo</Label>
-            <Input type="file" />
-            <a href="#" className="text-sm text-green-600 hover:underline mt-1 inline-block">Download Image</a>
-          </div>
+        </div>
+
+        <div className="pt-6">
+          <Button onClick={handleSubmit}>Save Profile</Button>
+          {message && <p className="text-sm mt-2 text-muted-foreground">{message}</p>}
         </div>
       </CardContent>
     </Card>
-  );
+  )
 }

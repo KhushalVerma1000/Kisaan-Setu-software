@@ -21,7 +21,7 @@ export async function GET(req: Request) {
   }
 }
 export async function POST(req: Request) {
-  const supabase = createClient(cookies())
+  const supabase = await createClient()
   const {
     data: { user },
   } = await supabase.auth.getUser()

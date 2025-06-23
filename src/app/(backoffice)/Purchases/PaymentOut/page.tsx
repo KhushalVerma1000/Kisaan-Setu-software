@@ -16,7 +16,8 @@ import { useHeaderButtons } from "@/hooks/useHeaderButtons";
 import { useRouter } from "next/navigation";
 import { Search, Plus, Eye, Edit, Trash2, MoreHorizontal, CalendarIcon, ChevronDown, FileDown } from "lucide-react";
 import { format } from "date-fns";
-import * as XLSX from 'xlsx';
+import ExcelJS from "exceljs";
+import { saveAs } from "file-saver";
 
 // Payment Out data structure
 interface PaymentOut {
@@ -119,40 +120,48 @@ export default function PaymentOutPage() {
     router.push('/dashboard/purchase/payment-out/new');
   }, [router]);
 
-  const handleExportExcel = useCallback(() => {
-    console.log("Export Excel clicked");
+  const handleExportExcel = useCallback(async () => {
     setIsLoading(true);
-    
     try {
       const dataToExport = paymentOuts.length > 0 ? paymentOuts : samplePaymentOuts;
-      
-      const wb = XLSX.utils.book_new();
-      const ws = XLSX.utils.json_to_sheet(dataToExport.map(paymentOut => ({
-        'Payment Number': paymentOut.paymentNumber,
-        'Supplier Name': paymentOut.supplierName,
-        'Amount (₹)': paymentOut.amount,
-        'Date': paymentOut.date,
-        'Payment Method': paymentOut.paymentMethod,
-        'Bill Number': paymentOut.billNumber || '-',
-        'Status': paymentOut.status
-      })));
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet("Payment Out");
 
-      ws['!cols'] = [
-        { width: 20 }, { width: 25 }, { width: 15 }, 
-        { width: 12 }, { width: 15 }, { width: 15 }, { width: 12 }
+      worksheet.columns = [
+        { header: "Payment Number", key: "paymentNumber", width: 20 },
+        { header: "Supplier Name", key: "supplierName", width: 25 },
+        { header: "Amount (₹)", key: "amount", width: 15 },
+        { header: "Date", key: "date", width: 12 },
+        { header: "Payment Method", key: "paymentMethod", width: 15 },
+        { header: "Bill Number", key: "billNumber", width: 15 },
+        { header: "Status", key: "status", width: 12 },
       ];
 
-      XLSX.utils.book_append_sheet(wb, ws, "Payment Out");
+      dataToExport.forEach(paymentOut => {
+        worksheet.addRow({
+          paymentNumber: paymentOut.paymentNumber,
+          supplierName: paymentOut.supplierName,
+          amount: paymentOut.amount,
+          date: paymentOut.date,
+          paymentMethod: paymentOut.paymentMethod,
+          billNumber: paymentOut.billNumber || "-",
+          status: paymentOut.status,
+        });
+      });
+
+      const buffer = await workbook.xlsx.writeBuffer();
       const fileName = `payment_out_${new Date().toISOString().split('T')[0]}.xlsx`;
-      XLSX.writeFile(wb, fileName);
-      
+      saveAs(
+        new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
+        fileName
+      );
       console.log(`Excel file exported: ${fileName}`);
     } catch (error) {
       console.error("Error exporting to Excel:", error);
     } finally {
       setIsLoading(false);
     }
-  }, [paymentOuts]);
+  }, [paymentOuts, samplePaymentOuts]);
 
   // Header buttons configuration
   const headerButtons = useMemo(() => [
