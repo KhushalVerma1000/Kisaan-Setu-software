@@ -95,7 +95,7 @@ export function SignUpForm({ className, signUpAction, googleSignUpAction }: Sign
         </p>
       </div>
       <div className="grid gap-6">
-        <Button
+        {/* <Button
           type="button"
           variant="outline"
           onClick={handleGoogleSignUp}
@@ -118,13 +118,13 @@ export function SignUpForm({ className, signUpAction, googleSignUpAction }: Sign
             </>
           )}
         </Button>
-        
-        <div className="flex items-center">
+         */}
+        {/* <div className="flex items-center">
           <Separator className="flex-1" />
           <span className="mx-4 text-xs text-muted-foreground">OR</span>
           <Separator className="flex-1" />
         </div>
-        
+         */}
         <div className="grid gap-3 ">
           <div className="grid gap-2">
             <Label htmlFor="firstName">FPO Name</Label>

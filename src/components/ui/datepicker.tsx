@@ -28,7 +28,7 @@ function isValidDate(date: Date | undefined) {
 }
 
 interface DatePickerProps {
-  date: Date | null;
+  date: Date | undefined;
   setDate: (date: Date | null) => void;
   placeholder?: string;
   label?: string;

@@ -16,5 +16,5 @@ export function useHeaderButtons(buttons: HeaderButton[]) {
     return () => {
       setHeaderButtons([]);
     };
-  }, [setHeaderButtons]); // Remove buttons from dependency array to prevent infinite loop
+  }, [setHeaderButtons , buttons]); // Remove buttons from dependency array to prevent infinite loop
 }

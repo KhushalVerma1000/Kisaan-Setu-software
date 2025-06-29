@@ -44,7 +44,10 @@ export function LoginForm({ className, loginAction, googleSignInAction }: LoginF
         router.refresh() // Refresh to update auth state
       }
     } catch (error) {
-      setError('An error occurred during login')
+      if(error.message ==='user_not_found') {
+
+        setError('An error occurred during login')
+      }
     } finally {
       setIsLoading(false)
     }
@@ -84,7 +87,7 @@ export function LoginForm({ className, loginAction, googleSignInAction }: LoginF
         </p>
       </div>
       <div className="grid gap-6">
-        <Button
+        {/* <Button
           type="button"
           variant="outline"
           onClick={handleGoogleSignIn}
@@ -107,13 +110,13 @@ export function LoginForm({ className, loginAction, googleSignInAction }: LoginF
             </>
           )}
         </Button>
-        
-        <div className="flex items-center">
+         */}
+        {/* <div className="flex items-center">
           <Separator className="flex-1" />
           <span className="mx-4 text-xs text-muted-foreground">OR</span>
           <Separator className="flex-1" />
         </div>
-        
+         */}
         <div className="grid gap-3">
           <Label htmlFor="email">Email</Label>
           <Input

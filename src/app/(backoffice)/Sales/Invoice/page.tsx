@@ -40,7 +40,7 @@ export default function InvoicePage() {
   const [dateFilter, setDateFilter] = useState("all");
 
   // Sample data - replace with your API calls
-  const sampleInvoices: Invoice[] = [
+  const sampleInvoices: Invoice[] = useMemo(() => [
     {
       id: "1",
       customerName: "ABC Farm Supplies",
@@ -101,12 +101,12 @@ export default function InvoicePage() {
       paymentMethod: "Bank Transfer",
       paidAmount: 42500
     }
-  ];
+  ], []);
 
   // Header button functionalities
   const handleAddNewInvoice = useCallback(() => {
     console.log("Add New Invoice clicked");
-    router.push('/dashboard/invoices/new');
+    router.push('/Sales/Invoice/new');
   }, [router]);
 
   const handleExportExcel = useCallback(async () => {
@@ -151,27 +151,6 @@ export default function InvoicePage() {
       setIsLoading(false);
     }
   }, [invoices, sampleInvoices]);
-
-  // Search functionality
-  const handleSearch = useCallback((value: string) => {
-    setSearchTerm(value);
-    setCurrentPage(1);
-    applyFilters(value, statusFilter, dateFilter);
-  }, [statusFilter, dateFilter]);
-
-  // Status filter functionality
-  const handleStatusFilter = useCallback((value: string) => {
-    setStatusFilter(value);
-    setCurrentPage(1);
-    applyFilters(searchTerm, value, dateFilter);
-  }, [searchTerm, dateFilter]);
-
-  // Date filter functionality
-  const handleDateFilter = useCallback((value: string) => {
-    setDateFilter(value);
-    setCurrentPage(1);
-    applyFilters(searchTerm, statusFilter, value);
-  }, [searchTerm, statusFilter]);
 
   // Apply all filters
   const applyFilters = useCallback((search: string, status: string, date: string) => {
@@ -232,7 +211,28 @@ export default function InvoicePage() {
     }
 
     setInvoices(filtered);
-  }, []);
+  }, [sampleInvoices]);
+
+  // Search functionality
+  const handleSearch = useCallback((value: string) => {
+    setSearchTerm(value);
+    setCurrentPage(1);
+    applyFilters(value, statusFilter, dateFilter);
+  }, [statusFilter, dateFilter, applyFilters]);
+
+  // Status filter functionality
+  const handleStatusFilter = useCallback((value: string) => {
+    setStatusFilter(value);
+    setCurrentPage(1);
+    applyFilters(searchTerm, value, dateFilter);
+  }, [searchTerm, dateFilter, applyFilters]);
+
+  // Date filter functionality
+  const handleDateFilter = useCallback((value: string) => {
+    setDateFilter(value);
+    setCurrentPage(1);
+    applyFilters(searchTerm, statusFilter, value);
+  }, [searchTerm, statusFilter, applyFilters]);
 
   // Load sample data on component mount
   const loadInvoices = useCallback(async () => {
@@ -245,7 +245,7 @@ export default function InvoicePage() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [sampleInvoices]);
 
   // Header buttons configuration
   const headerButtons = useMemo(() => [

@@ -11,23 +11,15 @@ import InvoiceTab from "@/components/settings/InvoiceTab";
 import ItemsTab from "@/components/settings/ItemsTab";
 import TaxTab from "@/components/settings/TaxTab";
 import EInvoiceTab from "@/components/settings/EInvoiceTab";
+import { FpoProfile, FpoProfileProps } from "@/server/features/fpo/core/entities/FpoProfile";
+
+import { getCurrentUserDetails } from "@/contexts/GetUserDetails";
 
 export default function SettingsPage() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [activeTab, setActiveTab] = useState("general");
+  const [profile, setProfile] = useState<FpoProfile | null>(null);
 
-  const saveProfileSettings = useCallback(() => {
-    console.log("Save settings clicked");
-  }, []);
-
-  const headerButtons = useMemo(() => [
-    { 
-      label: "Save", 
-      onClick: saveProfileSettings
-    },
-  ], [saveProfileSettings]);
-
-  useHeaderButtons(headerButtons);
 
   const tabs = [
     { value: "general", label: "General", shortLabel: "General" },
@@ -41,6 +33,154 @@ export default function SettingsPage() {
   const handleTabChange = (value : string) => {
     setActiveTab(value);
     setIsMobileMenuOpen(false);
+  };
+
+  const getfpoprofiles = async () => {
+  try {
+    const res = await fetch('/api/fpo/profile');
+    if (!res.ok) return null;
+    const data = await res.json();
+    console.log("fetched data is ", data);
+    // No need to transform invoiceSettings, backend guarantees it's an object
+    return data;
+  } catch (error) {
+    console.error("Error fetching FPO profiles:", error);
+    return null;
+  }
+};
+const saveProfileSettings = useCallback(() => {
+  if (!profile) {
+    console.log("no profiles");
+    return;
+  }
+  const data: FpoProfileProps = {
+    ...profile,
+    bankDetails: profile.bankDetails && profile.bankDetails.length > 0 ? [profile.bankDetails[0]] : [],
+    invoiceSettings: {
+      ...profile.invoiceSettings,
+    },
+  };
+
+  fetch('/api/fpo/profile', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(data),
+  })
+    .then(response => response.json())
+    .then(data => {
+      console.log("Profile updated successfully:", data);
+    })
+    .catch(error => {
+      console.error("Error updating profile:", error);
+    });
+}, [profile]);
+
+const headerButtons = useMemo(() => [
+  {
+    label: "Save",
+    onClick: saveProfileSettings,
+    disabled: !profile,
+  },
+], [saveProfileSettings, profile]);
+
+useHeaderButtons(headerButtons);
+
+
+const currentUserDetails = getCurrentUserDetails();
+useEffect(() => {
+  const fetchProfile = async () => {
+    const data = await getfpoprofiles();
+    if (data && Object.keys(data).length > 0) {
+      setProfile(data);
+    } else {
+      // Always await currentUserDetails
+      const userDetails = await currentUserDetails;
+      if (!userDetails?.id) {
+        setProfile(null); // or handle not logged in
+        return;
+      }
+      setProfile({
+        id: userDetails.id,
+        companyName: userDetails.fponame || "",
+       invoiceEmail: userDetails.email || "",
+        // ...other fields with sensible defaults
+        bankDetail: [
+          {
+            accountHolderName: "",
+            bankName: "",
+            accountNumber: "",
+            ifscCode: "",
+            upiId: "",
+            printBankDetails: false,
+            printUpiQr: false,
+          },
+        ],
+        invoiceSettings: {
+
+          invoicePrefix: "",
+          startNumber: 1,
+          defaultTerms: "",
+          signatureUrl: "",
+          showPrefix: false,
+          signatureFile: null, // or an empty string if you prefer
+        },
+      });
+    }
+  };
+  fetchProfile();
+} ,[]);
+
+  const handleProfileChange = (field: string, value: any) => {
+  // console.log("changing values ", field,value)
+  
+    setProfile((prev) => {
+      if (!prev) return prev;
+
+      // Update invoiceSettings nested fields
+      if (
+        ["invoicePrefix", "startNumber", "defaultTerms", "signatureUrl", "showPrefix", "signatureFile"].includes(field)
+      ) {
+        return {
+          ...prev,
+          invoiceSettings: {
+            ...prev.invoiceSettings,
+            [field]: value,
+          },
+        };
+      }
+
+      // Update bankDetails[0] nested fields
+      if (
+        [
+          "accountHolderName",
+          "bankName",
+          "accountNumber",
+          "ifscCode",
+          "upiId",
+          "printBankDetails",
+          "printUpiQr",
+        ].includes(field)
+      ) {
+        return {
+          ...prev,
+          bankDetails: prev.bankDetails && prev.bankDetails.length > 0
+            ? [
+                {
+                  ...prev.bankDetails[0],
+                  [field]: value,
+                },
+                ...prev.bankDetails.slice(1),
+              ]
+            : [{ [field]: value }],
+        };
+      }
+
+      // Update top-level fields
+      return { ...prev, [field]: value };
+   
+    });
   };
 
   return (
@@ -122,15 +262,15 @@ export default function SettingsPage() {
             {/* Tab Content */}
             <div className="bg-white rounded-lg shadow-sm border min-h-[400px]">
               <TabsContent value="general" className="m-0 p-4 sm:p-6">
-                <GeneralTab />
+                <GeneralTab profile={profile} onProfileChange={handleProfileChange} />
               </TabsContent>
 
               <TabsContent value="bank" className="m-0 p-4 sm:p-6">
-                <BankDetailsTab />
+                <BankDetailsTab profile={profile} onProfileChange={handleProfileChange} />
               </TabsContent>
 
               <TabsContent value="invoice" className="m-0 p-4 sm:p-6">
-                <InvoiceTab />
+                <InvoiceTab profile={profile} onProfileChange={handleProfileChange} />
               </TabsContent>
 
               <TabsContent value="items" className="m-0 p-4 sm:p-6">
@@ -148,6 +288,7 @@ export default function SettingsPage() {
           </Tabs>
         </div>
       </div>
+    
     </div>
   );
 }

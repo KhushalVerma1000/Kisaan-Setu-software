@@ -1,0 +1,259 @@
+export interface ShareholderProps {
+  id?: string;
+  fpoId?: string;
+  name: string;
+  fatherName: string;
+  mobile: string;
+  aadhaar: string;
+  gender: "male" | "female" | "other";
+  socialCategory: "General" | "SC" | "ST" | "OBC";
+  landDetails: string;
+  khasraNo: string;
+  shareAlloted: number;
+  faceValue: number;
+  totalPaid: number;
+  isDirector: boolean;
+  createdAt?: Date;
+  updatedAt?: Date;
+}
+
+export class Shareholder {
+  id?: string;
+  fpoId?: string;
+  name: string;
+  fatherName: string;
+  mobile: string;
+  aadhaar: string;
+  gender: "male" | "female" | "other";
+  socialCategory: "General" | "SC" | "ST" | "OBC";
+  landDetails: string;
+  khasraNo: string;
+  shareAlloted: number;
+  faceValue: number;
+  totalPaid: number;
+  isDirector: boolean;
+  createdAt?: Date;
+  updatedAt?: Date;
+// Add this to your Shareholder entity constructor
+constructor(props: ShareholderProps) {
+  // Helper function to safely convert to string
+  const toString = (value: any): string => {
+    if (value === null || value === undefined) return '';
+    return String(value).trim();
+  };
+
+  this.id = props.id;
+  this.fpoId = props.fpoId;
+  this.name = toString(props.name);
+  this.fatherName = toString(props.fatherName);
+  this.mobile = toString(props.mobile);
+  this.aadhaar = toString(props.aadhaar);
+  this.gender = props.gender || 'male';
+  this.socialCategory = props.socialCategory || 'General';
+  this.landDetails = toString(props.landDetails);
+  this.khasraNo = toString(props.khasraNo);
+  this.shareAlloted = props.shareAlloted || 0;
+  this.faceValue = props.faceValue || 100;
+  this.totalPaid = props.totalPaid || 0;
+  this.isDirector = props.isDirector || false;
+  this.createdAt = props.createdAt;
+  this.updatedAt = props.updatedAt;
+}
+  // Validation methods
+  isValidMobile(): boolean {
+    const mobileRegex = /^[6-9]\d{9}$/;
+    return mobileRegex.test(this.mobile);
+  }
+
+  isValidAadhaar(): boolean {
+    const aadhaarRegex = /^\d{12}$/;
+    return aadhaarRegex.test(this.aadhaar);
+  }
+
+  isValidName(): boolean {
+    return this.name.length >= 2 && this.name.length <= 100;
+  }
+
+  isValidFatherName(): boolean {
+    return this.fatherName.length >= 2 && this.fatherName.length <= 100;
+  }
+
+  // Business logic methods
+  getTotalInvestment(): number {
+    return this.shareAlloted * this.faceValue;
+  }
+
+  getRemainingAmount(): number {
+    return Math.max(0, this.getTotalInvestment() - this.totalPaid);
+  }
+
+  isFullyPaid(): boolean {
+    return this.totalPaid >= this.getTotalInvestment();
+  }
+
+  getPaymentPercentage(): number {
+    const totalInvestment = this.getTotalInvestment();
+    return totalInvestment > 0 ? Math.round((this.totalPaid / totalInvestment) * 100) : 0;
+  }
+
+  getPaymentStatus(): 'Fully Paid' | 'Partially Paid' | 'Unpaid' {
+    const percentage = this.getPaymentPercentage();
+    if (percentage >= 100) return 'Fully Paid';
+    if (percentage > 0) return 'Partially Paid';
+    return 'Unpaid';
+  }
+
+  // Utility methods
+  toJSON(): Record<string, any> {
+    const obj: Record<string, any> = {
+      fpo_id: this.fpoId,
+      name: this.name,
+      father_name: this.fatherName,
+      mobile: this.mobile,
+      aadhaar: this.aadhaar,
+      gender: this.gender,
+      social_category: this.socialCategory,
+      land_details: this.landDetails,
+      khasra_no: this.khasraNo,
+      share_alloted: this.shareAlloted,
+      face_value: this.faceValue,
+      total_paid: this.totalPaid,
+      is_director: this.isDirector,
+    };
+    
+    // Only include id if it is set (for updates)
+    if (this.id) obj.id = this.id;
+    return obj;
+  }
+
+  // Convert to display format
+  toDisplayObject(): Record<string, any> {
+    return {
+      id: this.id,
+      fpoId: this.fpoId,
+      name: this.name,
+      fatherName: this.fatherName,
+      mobile: this.mobile,
+      aadhaar: this.aadhaar,
+      gender: this.gender,
+      socialCategory: this.socialCategory,
+      landDetails: this.landDetails,
+      khasraNo: this.khasraNo,
+      shareAlloted: this.shareAlloted,
+      faceValue: this.faceValue,
+      totalPaid: this.totalPaid,
+      totalInvestment: this.getTotalInvestment(),
+      remainingAmount: this.getRemainingAmount(),
+      paymentPercentage: this.getPaymentPercentage(),
+      paymentStatus: this.getPaymentStatus(),
+      isDirector: this.isDirector,
+      createdAt: this.createdAt,
+      updatedAt: this.updatedAt,
+    };
+  }
+
+  // Comprehensive validation for all fields
+  validate(): { isValid: boolean; errors: string[] } {
+    const errors: string[] = [];
+
+    // Name validation
+    if (!this.name.trim()) {
+      errors.push('Name is required');
+    } else if (!this.isValidName()) {
+      errors.push('Name must be between 2 and 100 characters');
+    }
+
+    // Father name validation
+    if (!this.fatherName.trim()) {
+      errors.push('Father name is required');
+    } else if (!this.isValidFatherName()) {
+      errors.push('Father name must be between 2 and 100 characters');
+    }
+
+    // Mobile validation
+    if (!this.mobile.trim()) {
+      errors.push('Mobile number is required');
+    } else if (!this.isValidMobile()) {
+      errors.push('Mobile number must be a valid 10-digit Indian number starting with 6-9');
+    }
+
+    // Aadhaar validation
+    if (!this.aadhaar.trim()) {
+      errors.push('Aadhaar number is required');
+    } else if (!this.isValidAadhaar()) {
+      errors.push('Aadhaar number must be exactly 12 digits');
+    }
+
+    // Land details validation
+    if (!this.landDetails.trim()) {
+      errors.push('Land details are required');
+    } else if (this.landDetails.length > 500) {
+      errors.push('Land details must not exceed 500 characters');
+    }
+
+    // Khasra number validation
+    if (!this.khasraNo.trim()) {
+      errors.push('Khasra number is required');
+    } else if (this.khasraNo.length > 50) {
+      errors.push('Khasra number must not exceed 50 characters');
+    }
+
+    // Share alloted validation
+    if (this.shareAlloted <= 0) {
+      errors.push('Share alloted must be greater than 0');
+    } else if (!Number.isInteger(this.shareAlloted)) {
+      errors.push('Share alloted must be a whole number');
+    }
+
+    // Face value validation
+    if (this.faceValue <= 0) {
+      errors.push('Face value must be greater than 0');
+    } else if (!Number.isInteger(this.faceValue)) {
+      errors.push('Face value must be a whole number');
+    }
+
+    // Total paid validation
+    if (this.totalPaid < 0) {
+      errors.push('Total paid cannot be negative');
+    } else if (this.totalPaid > this.getTotalInvestment()) {
+      errors.push('Total paid cannot exceed total investment amount');
+    }
+
+    // Gender validation
+    if (!['male', 'female', 'other'].includes(this.gender)) {
+      errors.push('Gender must be male, female, or other');
+    }
+
+    // Social category validation
+    if (!['General', 'SC', 'ST', 'OBC'].includes(this.socialCategory)) {
+      errors.push('Social category must be General, SC, ST, or OBC');
+    }
+
+    return {
+      isValid: errors.length === 0,
+      errors
+    };
+  }
+
+  // Static method to create from database row
+  static fromDatabaseRow(row: any): Shareholder {
+    return new Shareholder({
+      id: row.id,
+      fpoId: row.fpo_id,
+      name: row.name,
+      fatherName: row.father_name,
+      mobile: row.mobile,
+      aadhaar: row.aadhaar,
+      gender: row.gender,
+      socialCategory: row.social_category,
+      landDetails: row.land_details,
+      khasraNo: row.khasra_no,
+      shareAlloted: row.share_alloted,
+      faceValue: row.face_value,
+      totalPaid: row.total_paid,
+      isDirector: row.is_director,
+      createdAt: row.created_at ? new Date(row.created_at) : undefined,
+      updatedAt: row.updated_at ? new Date(row.updated_at) : undefined,
+    });
+  }
+}

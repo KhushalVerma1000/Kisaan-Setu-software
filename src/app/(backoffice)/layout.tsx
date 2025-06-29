@@ -8,6 +8,7 @@ import type { Metadata } from 'next'
 import { ReactNode, JSX } from 'react'
 import { Officeheader } from "@/components/officeheader";
 import { HeaderProvider } from "@/contexts/HeaderContext";
+import { UserDetailsProvider } from "@/contexts/UserDetailsContext"
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -33,15 +34,17 @@ export default async function DashboardLayout({
 }: DashboardLayoutProps): Promise<JSX.Element> {
   // No need to pass cookies to createClient in Next.js 15, just call it directly
   const supabase = await createClient();
-  const { data: { session } } = await supabase.auth.getSession();
+  const { data: { user } } = await supabase.auth.getUser();
 
-  if (!session) {
+  if (!user) {
     redirect('/Login');
   }
-  const fpoName = session.user.user_metadata?.FPOname || "User";
+ 
+  const fpoName = user.user_metadata?.FPOname || "User";
 
   return (
     <div>
+    <UserDetailsProvider>
       <HeaderProvider>
         <SidebarProvider>
           <AppSidebar />
@@ -59,6 +62,7 @@ export default async function DashboardLayout({
           </main>
         </SidebarProvider>
       </HeaderProvider>
+    </UserDetailsProvider>
     </div>
   )
 }

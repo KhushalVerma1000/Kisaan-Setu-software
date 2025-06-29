@@ -1,6 +1,7 @@
 import React from 'react';
 import { login } from './actions';
 import { LoginForm } from "@/components/login-form";
+import Image from 'next/image';
 
 interface LoginProps {
   className?: string;
@@ -18,10 +19,12 @@ const Login: React.FC<LogInProps> = ({ className = "" }) => {
             className="flex items-center gap-2 font-medium hover:opacity-80 transition-opacity duration-200"
           >
             <div className="flex h-6 w-6 items-center justify-center rounded-md bg-primary text-primary-foreground overflow-hidden">
-              <img 
+              <Image
                 src="/Logo.jpeg"  
                 alt="Kisaan Khata Logo"
                 className="h-full w-full object-contain"
+                width={24}
+                height={24}
               />
             </div>
             <span className="text-lg font-semibold">Kisaan Setu</span>
@@ -40,10 +43,12 @@ const Login: React.FC<LogInProps> = ({ className = "" }) => {
 
       {/* Right side - Background Image */}
       <div className="relative hidden bg-muted lg:block">
-        <img
+        <Image
           src="/LoginPageImage.jpg"
           alt="Agricultural landscape showing farming and cultivation"
           className="absolute inset-0 h-full w-full object-cover dark:brightness-[0.2] dark:grayscale transition-all duration-300"
+          width={500}
+          height={500}
         />
         
         {/* Optional overlay for better contrast */}
