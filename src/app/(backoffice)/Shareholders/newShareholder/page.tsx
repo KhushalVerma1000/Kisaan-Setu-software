@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { ChevronLeft, Upload } from "lucide-react";
 import ExcelJS from "exceljs";
 import { useUserDetails } from "@/contexts/UserDetailsContext";
+import { toast } from 'react-toastify';
 
 interface Shareholder {
   id?: string;
@@ -134,10 +135,10 @@ const handleExcelUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     });
 
     setBulkData(rows);
-    alert(`✅ Excel file loaded successfully! Found ${rows.length} shareholders.`);
+    toast.success(`Excel file loaded successfully! Found ${rows.length} shareholders.`);
   } catch (error) {
     console.error('Error processing Excel file:', error);
-    alert('❌ Error processing Excel file. Please check the format.');
+    toast.error('Error processing Excel file. Please check the format.');
   }
 };
 
@@ -167,39 +168,39 @@ const handleExcelUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
 
   const validateForm = (): boolean => {
     if (!form.name.trim()) {
-      alert("Name is required");
+      toast.error("Name is required");
       return false;
     }
     if (!form.fatherName.trim()) {
-      alert("Father's name is required");
+      toast.error("Father's name is required");
       return false;
     }
     if (!form.mobile.match(/^[6-9]\d{9}$/)) {
-      alert("Valid mobile number is required");
+      toast.error("Valid mobile number is required");
       return false;
     }
     if (!form.aadhaar.match(/^\d{12}$/)) {
-      alert("Valid 12-digit Aadhaar number is required");
+      toast.error("Valid 12-digit Aadhaar number is required");
       return false;
     }
     if (!form.landDetails.trim()) {
-      alert("Land details are required");
+      toast.error("Land details are required");
       return false;
     }
     if (!form.khasraNo.trim()) {
-      alert("Khasra number is required");
+      toast.error("Khasra number is required");
       return false;
     }
     if (form.shareAlloted <= 0) {
-      alert("Share alloted must be greater than 0");
+      toast.error("Share alloted must be greater than 0");
       return false;
     }
     if (form.faceValue <= 0) {
-      alert("Face value must be greater than 0");
+      toast.error("Face value must be greater than 0");
       return false;
     }
     if (form.totalPaid < 0) {
-      alert("Total paid cannot be negative");
+      toast.error("Total paid cannot be negative");
       return false;
     }
     return true;
@@ -220,7 +221,7 @@ const handleExcelUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
 
       const result = await res.json();
       if (res.ok) {
-        alert("✅ Shareholder saved successfully");
+        toast.success("Shareholder saved successfully");
         // Reset form
         setForm({
           name: "",
@@ -237,11 +238,11 @@ const handleExcelUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
           isDirector: false
         });
       } else {
-        alert(`❌ Error: ${result.error}`);
+        toast.error(`Error: ${result.error}`);
       }
     } catch (error) {
       console.error('Error submitting form:', error);
-      alert('❌ Error submitting form. Please try again.');
+      toast.error('Error submitting form. Please try again.');
     } finally {
       setIsSubmitting(false);
     }
@@ -249,7 +250,7 @@ const handleExcelUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
 
   const handleBulkSubmit = async () => {
     if (bulkData.length === 0) {
-      alert("No data to submit");
+      toast.warning("No data to submit");
       return;
     }
 
@@ -265,9 +266,9 @@ const handleExcelUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
 
       const result = await res.json();
       if (res.ok) {
-        alert(`✅ Bulk upload successful! Processed ${result.success?.length || 0} records successfully.`);
+        toast.success(`Bulk upload successful! Processed ${result.success?.length || 0} records successfully.`);
         if (result.failed?.length > 0) {
-          alert(`⚠️ ${result.failed.length} records failed. Check console for details.`);
+          toast.warning(`${result.failed.length} records failed. Check console for details.`);
           console.error('Failed records:', result.failed);
         }
         setBulkData([]);
@@ -275,11 +276,11 @@ const handleExcelUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
         if (fileInput) fileInput.value = '';
       } else {
-        alert(`❌ Error: ${result.error}`);
+        toast.error(`Error: ${result.error}`);
       }
     } catch (error) {
       console.error('Error with bulk upload:', error);
-      alert('❌ Error with bulk upload. Please try again.');
+      toast.error('Error with bulk upload. Please try again.');
     } finally {
       setIsSubmitting(false);
     }

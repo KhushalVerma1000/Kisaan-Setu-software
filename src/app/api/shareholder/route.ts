@@ -3,16 +3,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createShareholder, updateShareholder, deleteShareholder, getShareholdersByFpoId, upsertShareholder } from '@/server/features/ShareHolder/infrastructure/persistence/ShareHolderSupabase';
 import { Shareholder } from '@/server/features/ShareHolder/core/entities/ShareHolder';
 
-export async function GET(req: NextRequest) {
-  const { searchParams } = new URL(req.url);
-  const fpoId = searchParams.get('fpoId');
+export async function GET() {
 
-  if (!fpoId) {
-    return NextResponse.json({ error: 'Missing fpoId in query' }, { status: 400 });
-  }
 
-  const data = await getShareholdersByFpoId(fpoId);
-  return NextResponse.json(data);
+
+  const result = await getShareholdersByFpoId();
+
+  return NextResponse.json(result);
 }
 
 export async function POST(req: Request) {
@@ -43,15 +40,21 @@ export async function PUT(req: NextRequest) {
   const result = await updateShareholder( body.id,body);
   return NextResponse.json(result);
 }
-
 export async function DELETE(req: NextRequest) {
-  const { searchParams } = new URL(req.url);
-  const id = searchParams.get('id');
+  try {
+    const body = await req.json();
+    const { id } = body;
 
-  if (!id) {
-    return NextResponse.json({ error: 'Missing shareholder id' }, { status: 400 });
+    if (!id) {
+      return NextResponse.json({ error: 'Missing shareholder id' }, { status: 400 });
+    }
+
+    const result = await deleteShareholder(id);
+   
+    return NextResponse.json(result);
+  } catch (error) {
+    // Handle JSON parsing errors
+    return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
   }
-
-  const result = await deleteShareholder(id);
-  return NextResponse.json(result);
 }
+

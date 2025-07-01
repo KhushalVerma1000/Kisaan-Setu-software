@@ -168,9 +168,10 @@ export async function getShareholderById(id: string): Promise<Shareholder | null
   }
 }
 
-export async function getShareholdersByFpoId(fpoId: string): Promise<Shareholder[] | null> {
+export async function getShareholdersByFpoId(): Promise<Shareholder[] | null> {
   const supabase = await createClient()
-  
+  const {data} = await supabase.auth.getUser()
+  const fpoId = data.user?.id
   try {
     const { data, error } = await supabase
       .from('shareholders')

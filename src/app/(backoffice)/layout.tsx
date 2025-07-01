@@ -9,6 +9,7 @@ import { ReactNode, JSX } from 'react'
 import { Officeheader } from "@/components/officeheader";
 import { HeaderProvider } from "@/contexts/HeaderContext";
 import { UserDetailsProvider } from "@/contexts/UserDetailsContext"
+import { ToastContainer } from "react-toastify"
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -57,6 +58,17 @@ export default async function DashboardLayout({
             </div>
             <div className="p-6">
               <Officeheader />
+              <ToastContainer
+  position="top-right"
+  autoClose={3000}
+  hideProgressBar={false}
+  newestOnTop={false}
+  closeOnClick
+  rtl={false}
+  pauseOnFocusLoss
+  draggable
+  pauseOnHover
+/>
               {children}
             </div>
           </main>

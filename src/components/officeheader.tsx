@@ -10,6 +10,20 @@ export function Officeheader() {
   const pathname = usePathname();
   const { headerButtons } = useHeaderContext();
   
+  // Check if a string is a UUID
+  const isUUID = (str: string) => {
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    return uuidRegex.test(str);
+  };
+
+  // Convert camelCase to separate words
+  const camelCaseToWords = (str: string) => {
+    return str
+      .replace(/([a-z])([A-Z])/g, '$1 $2') // Insert space before capital letters
+      .replace(/([A-Z])([A-Z][a-z])/g, '$1 $2') // Handle consecutive capitals
+      .trim();
+  };
+  
   // Generate breadcrumb items from pathname
   const generateBreadcrumbs = () => {
     const pathSegments = pathname.split("/").filter(Boolean);
@@ -29,6 +43,9 @@ export function Officeheader() {
       
       // Skip the first 'dashboard' segment as it's already added
       if (segment === "Dashboard") return;
+      
+      // Skip UUID segments
+      if (isUUID(segment)) return;
       
       const isLast = index === pathSegments.length - 1;
       const label = formatSegmentLabel(segment);
@@ -62,10 +79,20 @@ export function Officeheader() {
       'list': 'List'
     };
     
-    // Return custom label if exists, otherwise format the segment
-    return routeLabels[segment] || segment
+    // Return custom label if exists
+    if (routeLabels[segment]) {
+      return routeLabels[segment];
+    }
+    
+    // Handle camelCase conversion first
+    let formatted = camelCaseToWords(segment);
+    
+    // Then handle kebab-case (hyphens) and capitalize
+    formatted = formatted
       .replace(/-/g, " ")
       .replace(/\b\w/g, (c) => c.toUpperCase());
+    
+    return formatted;
   };
   
   // Get page title from the last breadcrumb
