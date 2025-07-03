@@ -35,7 +35,9 @@ import {
   ShoppingBasket,
   Settings,
   UsersIcon,
-  Users
+  Users,
+  BlocksIcon,
+  Tags
 } from "lucide-react"
 
 import {
@@ -121,8 +123,10 @@ const items: MenuItem[] = [
     url: "#",
     icon: Package,
     subItems: [
-      { title: "Add Item", url: "/items/add", icon: Plus },
-      { title: "Item List", url: "/items/list", icon: Eye },
+      { title: "Add Item", url: "/Items/AddItem", icon: Plus },
+      { title: "Item List", url: "/Items/ItemList", icon: Eye },
+      { title: "Category", url: "/Items/Category", icon: Tags },
+      { title: "Closing stock", url: "/Items/ItemList", icon: BlocksIcon },
     ]
   },
   {

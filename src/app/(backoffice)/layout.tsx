@@ -10,6 +10,7 @@ import { Officeheader } from "@/components/officeheader";
 import { HeaderProvider } from "@/contexts/HeaderContext";
 import { UserDetailsProvider } from "@/contexts/UserDetailsContext"
 import { ToastContainer } from "react-toastify"
+import { AppProviders } from "@/contexts/provider"
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -45,6 +46,7 @@ export default async function DashboardLayout({
 
   return (
     <div>
+    <AppProviders>
     <UserDetailsProvider>
       <HeaderProvider>
         <SidebarProvider>
@@ -57,6 +59,7 @@ export default async function DashboardLayout({
               </h1>
             </div>
             <div className="p-6">
+
               <Officeheader />
               <ToastContainer
   position="top-right"
@@ -75,6 +78,7 @@ export default async function DashboardLayout({
         </SidebarProvider>
       </HeaderProvider>
     </UserDetailsProvider>
+    </AppProviders>
     </div>
   )
 }

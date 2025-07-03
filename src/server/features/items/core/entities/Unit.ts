@@ -1,0 +1,46 @@
+export class Unit {
+  constructor(public code: string, public label: string) {}
+
+  static defaultUnits(): Unit[] {
+    return [
+      new Unit("BAG", "Bags"),
+      new Unit("BAL", "Bale"),
+      new Unit("BDL", "Bundles"),
+      new Unit("BOX", "Box"),
+      new Unit("BTL", "Bottles"),
+      new Unit("BUN", "Bunches"),
+      new Unit("CAN", "Cans"),
+      new Unit("CBM", "Cubic Meter"),
+      new Unit("CCM", "Cubic Centimeter"),
+      new Unit("CMS", "Centimeter"),
+      new Unit("CTN", "Cartons"),
+      new Unit("DOZ", "Dozen"),
+      new Unit("DRMK", "Drums"),
+      new Unit("GMS", "Grams"),
+      new Unit("KGS", "Kilograms"),
+      new Unit("XLRK", "Kiloliter"),
+      new Unit("LTR", "LTR"),
+      new Unit("MLT", "Milli Litre"),
+      new Unit("MTR", "Meters"),
+      new Unit("MTS", "Metric ton"),
+      new Unit("NOS", "Numbers"),
+      new Unit("PAC", "Packs"),
+      new Unit("PCS", "Pieces"),
+      new Unit("PRS", "Pairs"),
+      new Unit("QTL", "Quintal"),
+      new Unit("ROL", "Rolls"),
+      new Unit("SET", "Sets"),
+      new Unit("SQF", "Square Feet"),
+      new Unit("SQM", "Square Meters"),
+      new Unit("SQY", "Square Yards"),
+      new Unit("TBS", "Tablets"),
+      new Unit("TGM", "Ten Gross"),
+      new Unit("TIN", "Tin"),
+      new Unit("TON", "Tonnes"),
+      new Unit("TUB", "Tubes"),
+      new Unit("UGS", "US Gallons"),
+      new Unit("UNIT", "Units"),
+      new Unit("YDS", "Yards"),
+    ];
+  }
+}
