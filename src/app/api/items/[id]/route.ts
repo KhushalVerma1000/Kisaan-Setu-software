@@ -19,11 +19,11 @@ export async function GET(
 }
 
 export async function DELETE(
-  request: NextRequest,
-  { params }: { params: { id: string } }
+  req: NextRequest,
+  context: { params: { id: string } }
 ) {
   try {
-    const { id } = params
+    const { id } = context.params;
 
     if (!id) {
       return NextResponse.json(
@@ -129,11 +129,13 @@ export async function DELETE(
 // }
 
 
-export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
+export async function PUT(
+  req: NextRequest,
+  context: { params: { id: string } }
+) {
   try {
-    
     const data = await req.json();
-    const result = await updateItem(params.id, data);
+    const result = await updateItem(context.params.id, data);
     return NextResponse.json({ data: result });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 400 });
