@@ -3,6 +3,7 @@
 import React from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
+import Image from "next/image";
 
 interface TopNavbarProps {
   className?: string;
@@ -18,10 +19,12 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({ className = "" }) => {
         {/* Company Logo */}
         <div className="h-8 w-8 rounded-md bg-[hsl(var(--sidebar-primary))] flex items-center justify-center transition-transform duration-200 hover:scale-105">
           <div className="h-8 w-8 overflow-hidden rounded-md">
-            <img
+            <Image
               src="/Logo.jpeg"
               alt="Company Logo"
               className="h-full w-full object-contain"
+              width={32}
+              height={32}
             />
           </div>
         </div>

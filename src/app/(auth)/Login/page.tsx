@@ -1,19 +1,16 @@
 import React from 'react';
 import { login } from './actions';
 import { LoginForm } from "@/components/login-form";
+import { googleSignInAction } from "./googleSignInAction";
 import Image from 'next/image';
 import Link from 'next/link';
 
 
 
 
-interface LoginProps {
-  className?: string;
-}
-
-const Login: React.FC<LoginProps> = ({ className = "" }) => {
+const Login = () => {
   return (
-    <div className={`grid min-h-svh lg:grid-cols-2 ${className}`}>
+    <div className="grid min-h-svh lg:grid-cols-2">
       {/* Left side - Login Form */}
       <div className="flex flex-col gap-4 p-6 md:p-10">
         {/* Logo and Brand */}
@@ -40,6 +37,7 @@ const Login: React.FC<LoginProps> = ({ className = "" }) => {
           <div className="w-full max-w-xs">
             <LoginForm 
               loginAction={login}
+              // googleSignInAction={googleSignInAction()}
             />
           </div>
         </div>
