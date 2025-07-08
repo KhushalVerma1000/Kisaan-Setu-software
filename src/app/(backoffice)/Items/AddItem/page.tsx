@@ -1,7 +1,6 @@
-"use client"
+"use client";
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { useUserDetails } from "@/contexts/UserDetailsContext";
 
 import { ArrowLeft, Save, X, Plus, Package, Wrench } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -29,6 +28,9 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 import { toast } from 'react-toastify';
+import { Unit } from "@/server/features/items/core/entities/Unit";
+import { useAppDispatch, useAppSelector } from "@/store/hooks";
+import { Gst } from "@/server/features/items/core/entities/Gst";
 
 // Types from your models
 interface Category {
@@ -36,11 +38,6 @@ interface Category {
   name: string;
   description?: string;
   parentCategory?: Category;
-}
-
-interface Unit {
-  code: string;
-  label: string;
 }
 
 interface ItemFormData {
@@ -68,21 +65,26 @@ interface ItemFormData {
 }
 
 // GST rates commonly used in India
-const GST_RATES = [0, 3, 5, 12, 18, 28];
+const GST_RATES = Gst.defaultGsts().map(gst => gst.rate);
 
 export default function ItemAddPage() {
+  // using fpoid from redux store 
+  const user = useAppSelector((state) => state.user);
+  const dispatch = useAppDispatch();
+
+  const fpoId = user.fpoId;
+
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [categories, setCategories] = useState<Category[]>([]);
   const [units, setUnits] = useState<Unit[]>([]);
-  const { profile } = useUserDetails();
 
   // Dialog states
   const [showCategoryDialog, setShowCategoryDialog] = useState(false);
   const [showUnitDialog, setShowUnitDialog] = useState(false);
-  
+
   // New category/unit form states
-  const [newCategory, setNewCategory] = useState({ name: "", description: "" });
+  const [newCategory, setNewCategory] = useState({ name: "", description: "", parentCategoryId: "" });
   const [newUnit, setNewUnit] = useState({ code: "", label: "" });
 
   const [formData, setFormData] = useState<ItemFormData>({
@@ -110,17 +112,20 @@ export default function ItemAddPage() {
 
   // Load initial data
   useEffect(() => {
-    loadCategories();
-    loadUnits();
-  }, []);
+    if (fpoId) {
+      loadCategories();
+      loadUnits();
+    }
+  }, [fpoId]);
 
   const loadCategories = async () => {
     try {
-      // Replace with your API call
-      const response = await fetch('/api/categories');
+      const response = await fetch(`/api/items/categories?fpo_id=${fpoId}`);
       if (response.ok) {
         const data = await response.json();
-        setCategories(data);
+        const categorylist = data.categories || [];
+
+        setCategories(categorylist);
       }
     } catch (error) {
       console.error('Error loading categories:', error);
@@ -135,27 +140,22 @@ export default function ItemAddPage() {
 
   const loadUnits = async () => {
     try {
-      // Replace with your API call
-      const response = await fetch('/api/units');
+      const response = await fetch(`/api/items/units?fpo_id=${fpoId}`);
       if (response.ok) {
         const data = await response.json();
-        setUnits(data);
+
+        setUnits([...data.units]);
       }
     } catch (error) {
       console.error('Error loading units:', error);
       // Fallback to default units
-      setUnits([
-        { code: "PCS", label: "Pieces" },
-        { code: "KGS", label: "Kilograms" },
-        { code: "LTR", label: "Liters" },
-        { code: "BAG", label: "Bags" },
-        { code: "BOX", label: "Box" },
-        { code: "QTL", label: "Quintal" },
-      ]);
+      const unitlist = Unit.defaultUnits();
+      setUnits(unitlist);
     }
   };
 
   const handleInputChange = (field: string, value: any) => {
+
     setFormData(prev => ({
       ...prev,
       [field]: value
@@ -174,17 +174,18 @@ export default function ItemAddPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
+    // Validation
     if (!formData.name.trim()) {
       toast.error("Item name is required");
       return;
     }
-    
+
     if (!formData.category) {
       toast.error("Please select a category");
       return;
     }
-    
+
     if (!formData.hsn_sac.trim()) {
       toast.error("HSN/SAC code is required");
       return;
@@ -195,26 +196,80 @@ export default function ItemAddPage() {
       return;
     }
 
+    if (!fpoId) {
+      toast.error("FPO ID is missing");
+      return;
+    }
+
     setLoading(true);
-    
+
     try {
+      // Prepare data according to API expectations
+      const requestData = {
+        name: formData.name.trim(),
+        type: formData.type,
+        category: formData.category,
+        hsn_sac: formData.hsn_sac.trim(),
+        salePrice: Number(formData.salePrice),
+        salePriceInclusive: formData.salePriceInclusive,
+        gstTaxPercent: Number(formData.gstTaxPercent),
+        fpo_id: fpoId,
+
+      };
+
+      // Add product-specific fields
+      if (formData.type === "product") {
+        Object.assign(requestData, {
+          unit: formData.unit,
+          purchasePrice: Number(formData.purchasePrice) || 0,
+          purchasePriceInclusive: formData.purchasePriceInclusive || false,
+          openingQuantity: Number(formData.openingQuantity) || 0,
+          openingStockDate: formData.openingStockDate || null,
+          mfgDate: formData.mfgDate || null,
+          expDate: formData.expDate || null,
+          barcode: formData.barcode?.trim() || null,
+          lowStockAlert: Number(formData.lowStockAlert) || 0
+        });
+
+        // Add discount if provided
+        if (formData.discount && formData.discount.value > 0) {
+          requestData.discount = {
+            value: Number(formData.discount.value),
+            type: formData.discount.type
+          };
+        }
+      }
+
+      console.log('Sending request data:', requestData);
+
       const response = await fetch('/api/items', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ ...formData, fpo_id: profile?.id }),
+        body: JSON.stringify(requestData),
       });
 
+      const result = await response.json();
+
       if (!response.ok) {
-        throw new Error('Failed to create item');
+        throw new Error(result.error || `HTTP error! status: ${response.status}`);
       }
 
-      toast.success("Item created successfully!");
-      router.push('/items'); // Adjust route as needed
+      if (result.error) {
+        throw new Error(result.error);
+      }
+
+      console.log('Item created successfully:', result);
+      toast.success(result.message || "Item created successfully!");
+
+      // Navigate back to items list
+      // router.push('/items');
+
     } catch (error) {
       console.error('Error creating item:', error);
-      toast.error("Failed to create item");
+      const errorMessage = error instanceof Error ? error.message : 'Failed to create item';
+      toast.error(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -227,21 +282,29 @@ export default function ItemAddPage() {
     }
 
     try {
-      const response = await fetch('/api/categories', {
+      const response = await fetch('/api/items/categories', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(newCategory),
+        body: JSON.stringify({
+          ...newCategory,
+          fpo_id: fpoId
+        }),
       });
 
       if (response.ok) {
-        const category = await response.json();
-        setCategories(prev => [...prev, category]);
+        const result = await response.json();
+        const category = result.data || result;
+        // console.log(category)
+        // setCategories(prev => [...prev, category]);
+        loadCategories()
         setFormData(prev => ({ ...prev, category: category.id }));
-        setNewCategory({ name: "", description: "" });
+        setNewCategory({ name: "", description: "", parentCategoryId: "" });
         setShowCategoryDialog(false);
         toast.success("Category added successfully!");
+      } else {
+        throw new Error('Failed to add category');
       }
     } catch (error) {
       console.error('Error adding category:', error);
@@ -256,35 +319,53 @@ export default function ItemAddPage() {
     }
 
     try {
-      const response = await fetch('/api/units', {
+      const response = await fetch('/api/items/units', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(newUnit),
+        body: JSON.stringify({
+          ...newUnit,
+          fpo_id: fpoId
+        }),
       });
 
       if (response.ok) {
-        const unit = await response.json();
-        setUnits(prev => [...prev, unit]);
+        const result = await response.json();
+        const unit = result.data || result;
+        loadUnits()
         setFormData(prev => ({ ...prev, unit: unit.code }));
         setNewUnit({ code: "", label: "" });
         setShowUnitDialog(false);
         toast.success("Unit added successfully!");
+      } else {
+        throw new Error('unit already exists');
       }
     } catch (error) {
-      console.error('Error adding unit:', error);
-      toast.error("Failed to add unit");
+      // console.error('Error adding unit:', error);
+      toast.error(error.message);
     }
   };
+
+  // Show loading or error state if fpoId is not available
+  if (!fpoId) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <div className="text-center">
+          <h2 className="text-xl font-semibold mb-2">FPO ID Required</h2>
+          <p className="text-muted-foreground">Please ensure you are logged in with a valid FPO account.</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 p-4 max-w-5xl mx-auto">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <Button 
-            variant="ghost" 
+          <Button
+            variant="ghost"
             size="icon"
             onClick={() => router.back()}
           >
@@ -356,7 +437,7 @@ export default function ItemAddPage() {
                   required
                 />
               </div>
-              
+
               <div className="space-y-2">
                 <Label htmlFor="category">
                   Category <span className="text-red-500">*</span>
@@ -377,50 +458,79 @@ export default function ItemAddPage() {
                       ))}
                     </SelectContent>
                   </Select>
-                  
                   <Dialog open={showCategoryDialog} onOpenChange={setShowCategoryDialog}>
                     <DialogTrigger asChild>
                       <Button type="button" variant="outline" size="icon">
                         <Plus className="w-4 h-4" />
                       </Button>
                     </DialogTrigger>
-                    <DialogContent>
+
+                    <DialogContent className="sm:max-w-[425px]">
                       <DialogHeader>
                         <DialogTitle>Add New Category</DialogTitle>
                         <DialogDescription>
-                          Create a new category for your items
+                          Create a new category to organize your items.
                         </DialogDescription>
                       </DialogHeader>
+
                       <div className="space-y-4">
                         <div>
-                          <Label htmlFor="categoryName">Category Name</Label>
+                          <Label htmlFor="categoryName">Category Name *</Label>
                           <Input
                             id="categoryName"
                             value={newCategory.name}
                             onChange={(e) => setNewCategory(prev => ({ ...prev, name: e.target.value }))}
                             placeholder="Enter category name"
+                            required
                           />
                         </div>
+
                         <div>
-                          <Label htmlFor="categoryDesc">Description (Optional)</Label>
+                          <Label htmlFor="categoryDesc">Description</Label>
                           <Textarea
                             id="categoryDesc"
                             value={newCategory.description}
                             onChange={(e) => setNewCategory(prev => ({ ...prev, description: e.target.value }))}
-                            placeholder="Enter category description"
+                            placeholder="Enter category description (optional)"
+                            rows={3}
                           />
                         </div>
+
+                        <div>
+                          <Label htmlFor="parentCategory">Parent Category</Label>
+                          <Select
+                            value={newCategory.parentCategoryId || "__root__"}
+                            onValueChange={(value) =>
+                              setNewCategory(prev => ({
+                                ...prev,
+                                parentCategoryId: value === "__root__" ? "" : value
+                              }))
+                            }
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select parent category (optional)" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="__root__">None (Root Category)</SelectItem>
+                              {categories.map((cat) => (
+                                <SelectItem key={cat.id} value={cat.id}>
+                                  {cat.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
                       </div>
-                      <DialogFooter>
+
+                      <DialogFooter className="pt-4">
                         <Button type="button" variant="outline" onClick={() => setShowCategoryDialog(false)}>
                           Cancel
                         </Button>
-                        <Button type="button" onClick={handleAddCategory}>
-                          Add Category
-                        </Button>
+                        <Button onClick={handleAddCategory}>Add Category</Button>
                       </DialogFooter>
                     </DialogContent>
                   </Dialog>
+
                 </div>
               </div>
             </div>
@@ -566,7 +676,7 @@ export default function ItemAddPage() {
                         ))}
                       </SelectContent>
                     </Select>
-                    
+
                     <Dialog open={showUnitDialog} onOpenChange={setShowUnitDialog}>
                       <DialogTrigger asChild>
                         <Button type="button" variant="outline" size="icon">
@@ -673,7 +783,7 @@ export default function ItemAddPage() {
 
                 <div className="space-y-2">
                   <Label htmlFor="lowStockAlert">
-                    Set Low Stock Alert 
+                    Set Low Stock Alert
                     <Badge variant="secondary" className="ml-2">Optional</Badge>
                   </Label>
                   <Input

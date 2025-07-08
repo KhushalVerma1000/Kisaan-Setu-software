@@ -18,6 +18,18 @@ function dbRowToUnitProps(data: any): Unit {
   return new Unit(data.code, data.label);
 }
 
+// Helper function to check if unit is a default unit
+function isDefaultUnit(unitCode: string): boolean {
+  const defaultUnits = Unit.defaultUnits();
+  return defaultUnits.some(unit => unit.code === unitCode);
+}
+
+// Helper function to get default unit by code
+function getDefaultUnitByCode(unitCode: string): Unit | null {
+  const defaultUnits = Unit.defaultUnits();
+  return defaultUnits.find(unit => unit.code === unitCode) || null;
+}
+
 // Helper function to convert database row to Item props
 function dbRowToItemProps(data: any, category: Category, unit?: Unit): Product | Service {
   const baseProps = {
@@ -190,6 +202,11 @@ export async function deleteCategory(id: string): Promise<boolean> {
 export async function createUnit(unit: Unit, fpo_id: string): Promise<Unit | null> {
   const supabase = await createClient()
 
+  // Check if it's a default unit - don't allow creating default units in DB
+  if (isDefaultUnit(unit.code)) {
+    throw new Error('Cannot create default unit in database. Default units are handled automatically.')
+  }
+
   try {
     const { data, error } = await supabase
       .from('units')
@@ -215,6 +232,11 @@ export async function createUnit(unit: Unit, fpo_id: string): Promise<Unit | nul
 export async function updateUnit(code: string, updates: Partial<Unit>): Promise<Unit | null> {
   const supabase = await createClient()
   
+  // Check if it's a default unit - don't allow updating default units
+  if (isDefaultUnit(code)) {
+    throw new Error('Cannot update default unit. Default units are read-only.')
+  }
+
   const updateData: any = {}
   if (updates.label !== undefined) updateData.label = updates.label
 
@@ -241,6 +263,7 @@ export async function getAllUnits(fpo_id: string): Promise<Unit[] | null> {
   try {
     const supabase = await createClient()
 
+    // Get custom units from database
     const { data, error } = await supabase
       .from('units')
       .select('*')
@@ -251,7 +274,16 @@ export async function getAllUnits(fpo_id: string): Promise<Unit[] | null> {
       throw new Error(error.message)
     }
 
-    return data ? data.map(row => dbRowToUnitProps(row)) : []
+    const customUnits = data ? data.map(row => dbRowToUnitProps(row)) : []
+    
+    // Combine default units with custom units
+    const defaultUnits = Unit.defaultUnits()
+    const allUnits = [...defaultUnits, ...customUnits]
+    
+    // Sort by label
+    allUnits.sort((a, b) => a.label.localeCompare(b.label))
+    
+    return allUnits
   } catch (error) {
     console.error('Error fetching units:', error)
     return null
@@ -259,6 +291,12 @@ export async function getAllUnits(fpo_id: string): Promise<Unit[] | null> {
 }
 
 export async function getUnitByCode(code: string): Promise<Unit | null> {
+  // Check if it's a default unit first
+  if (isDefaultUnit(code)) {
+    return getDefaultUnitByCode(code)
+  }
+
+  // Otherwise, check the database
   const supabase = await createClient()
   
   try {
@@ -282,6 +320,11 @@ export async function getUnitByCode(code: string): Promise<Unit | null> {
 export async function deleteUnit(code: string): Promise<boolean> {
   const supabase = await createClient()
   
+  // Check if it's a default unit - don't allow deleting default units
+  if (isDefaultUnit(code)) {
+    throw new Error('Cannot delete default unit. Default units are read-only.')
+  }
+
   try {
     const { error } = await supabase
       .from('units')
@@ -299,19 +342,11 @@ export async function deleteUnit(code: string): Promise<boolean> {
   }
 }
 
-// Initialize default units for a new FPO
+// Initialize default units for a new FPO - this function is no longer needed
+// as default units are not stored in the database
 export async function initializeDefaultUnits(fpo_id: string): Promise<Unit[] | null> {
-  const defaultUnits = Unit.defaultUnits()
-  const createdUnits: Unit[] = []
-
-  for (const unit of defaultUnits) {
-    const created = await createUnit(unit, fpo_id)
-    if (created) {
-      createdUnits.push(created)
-    }
-  }
-
-  return createdUnits.length > 0 ? createdUnits : null
+  // Return default units without storing them in database
+  return Unit.defaultUnits()
 }
 
 // ============ ITEM FUNCTIONS ============
@@ -321,7 +356,6 @@ export async function createItem(item: Product | Service, fpo_id: string): Promi
 
   try {
     const baseData = {
-      id: item.id,
       fpo_id: fpo_id,
       name: item.name,
       type: item.type,
@@ -330,11 +364,17 @@ export async function createItem(item: Product | Service, fpo_id: string): Promi
       sale_price: item.salePrice,
       sale_price_inclusive: item.salePriceInclusive,
       gst_tax_percent: item.gstTaxPercent
-    }
+    };
 
     let insertData: any = baseData
 
     if (item instanceof Product) {
+      // Validate unit exists (either default or custom)
+      const unitExists = await getUnitByCode(item.unit.code)
+      if (!unitExists) {
+        throw new Error(`Unit with code ${item.unit.code} does not exist`)
+      }
+
       insertData = {
         ...baseData,
         purchase_price: item.purchasePrice,
@@ -350,13 +390,13 @@ export async function createItem(item: Product | Service, fpo_id: string): Promi
       }
     }
 
+    // Modified query to handle both default and custom units
     const { data, error } = await supabase
       .from('items')
       .insert([insertData])
       .select(`
         *,
-        categories!inner(id, name, description, parent_category_id),
-        units(code, label)
+        categories!inner(id, name, description, parent_category_id)
       `)
       .single()
 
@@ -365,8 +405,17 @@ export async function createItem(item: Product | Service, fpo_id: string): Promi
     }
 
     const category = dbRowToCategoryProps(data.categories)
-    const unit = data.units ? dbRowToUnitProps(data.units) : undefined
     
+    // Get unit information (from default units or database)
+    let unit: Unit | undefined
+    if (data.unit_code) {
+      unit = await getUnitByCode(data.unit_code) || undefined
+      if (!unit) {
+        throw new Error(`Unit with code ${data.unit_code} not found`)
+      }
+    }
+
+    console.log(dbRowToItemProps(data, category, unit))
     return dbRowToItemProps(data, category, unit)
   } catch (error) {
     console.error('Error creating item:', error)
@@ -389,7 +438,14 @@ export async function updateItem(id: string, updates: Partial<Product | Service>
   const productUpdates = updates as Partial<Product>
   if (productUpdates.purchasePrice !== undefined) updateData.purchase_price = productUpdates.purchasePrice
   if (productUpdates.purchasePriceInclusive !== undefined) updateData.purchase_price_inclusive = productUpdates.purchasePriceInclusive
-  if (productUpdates.unit !== undefined) updateData.unit_code = productUpdates.unit.code
+  if (productUpdates.unit !== undefined) {
+    // Validate unit exists (either default or custom)
+    const unitExists = await getUnitByCode(productUpdates.unit.code)
+    if (!unitExists) {
+      throw new Error(`Unit with code ${productUpdates.unit.code} does not exist`)
+    }
+    updateData.unit_code = productUpdates.unit.code
+  }
   if (productUpdates.openingQuantity !== undefined) updateData.opening_quantity = productUpdates.openingQuantity
   if (productUpdates.openingStockDate !== undefined) updateData.opening_stock_date = productUpdates.openingStockDate?.toISOString()
   if (productUpdates.mfgDate !== undefined) updateData.mfg_date = productUpdates.mfgDate?.toISOString()
@@ -405,8 +461,7 @@ export async function updateItem(id: string, updates: Partial<Product | Service>
       .eq('id', id)
       .select(`
         *,
-        categories!inner(id, name, description, parent_category_id),
-        units(code, label)
+        categories!inner(id, name, description, parent_category_id)
       `)
       .single()
 
@@ -415,7 +470,15 @@ export async function updateItem(id: string, updates: Partial<Product | Service>
     }
 
     const category = dbRowToCategoryProps(data.categories)
-    const unit = data.units ? dbRowToUnitProps(data.units) : undefined
+    
+    // Get unit information (from default units or database)
+    let unit: Unit | undefined
+    if (data.unit_code) {
+      unit = await getUnitByCode(data.unit_code) || undefined
+      if (!unit) {
+        throw new Error(`Unit with code ${data.unit_code} not found`)
+      }
+    }
     
     return dbRowToItemProps(data, category, unit)
   } catch (error) {
@@ -432,8 +495,7 @@ export async function getAllItems(fpo_id: string): Promise<(Product | Service)[]
       .from('items')
       .select(`
         *,
-        categories!inner(id, name, description, parent_category_id),
-        units(code, label)
+        categories!inner(id, name, description, parent_category_id)
       `)
       .eq('fpo_id', fpo_id)
       .order('name', { ascending: true })
@@ -442,11 +504,26 @@ export async function getAllItems(fpo_id: string): Promise<(Product | Service)[]
       throw new Error(error.message)
     }
 
-    return data ? data.map(row => {
+    if (!data) return []
+
+    const items = []
+    for (const row of data) {
       const category = dbRowToCategoryProps(row.categories)
-      const unit = row.units ? dbRowToUnitProps(row.units) : undefined
-      return dbRowToItemProps(row, category, unit)
-    }) : []
+      
+      // Get unit information (from default units or database)
+      let unit: Unit | undefined
+      if (row.unit_code) {
+        unit = await getUnitByCode(row.unit_code) || undefined
+        if (!unit) {
+          console.warn(`Unit with code ${row.unit_code} not found for item ${row.id}`)
+          continue // Skip this item if unit is not found
+        }
+      }
+      
+      items.push(dbRowToItemProps(row, category, unit))
+    }
+
+    return items
   } catch (error) {
     console.error('Error fetching items:', error)
     return null
@@ -461,8 +538,7 @@ export async function getItemById(id: string): Promise<Product | Service | null>
       .from('items')
       .select(`
         *,
-        categories!inner(id, name, description, parent_category_id),
-        units(code, label)
+        categories!inner(id, name, description, parent_category_id)
       `)
       .eq('id', id)
       .single()
@@ -474,7 +550,15 @@ export async function getItemById(id: string): Promise<Product | Service | null>
     if (!data) return null
 
     const category = dbRowToCategoryProps(data.categories)
-    const unit = data.units ? dbRowToUnitProps(data.units) : undefined
+    
+    // Get unit information (from default units or database)
+    let unit: Unit | undefined
+    if (data.unit_code) {
+      unit = await getUnitByCode(data.unit_code) || undefined
+      if (!unit) {
+        throw new Error(`Unit with code ${data.unit_code} not found`)
+      }
+    }
     
     return dbRowToItemProps(data, category, unit)
   } catch (error) {
@@ -491,8 +575,7 @@ export async function getItemsByCategory(categoryId: string, fpo_id: string): Pr
       .from('items')
       .select(`
         *,
-        categories!inner(id, name, description, parent_category_id),
-        units(code, label)
+        categories!inner(id, name, description, parent_category_id)
       `)
       .eq('fpo_id', fpo_id)
       .eq('category_id', categoryId)
@@ -502,11 +585,26 @@ export async function getItemsByCategory(categoryId: string, fpo_id: string): Pr
       throw new Error(error.message)
     }
 
-    return data ? data.map(row => {
+    if (!data) return []
+
+    const items = []
+    for (const row of data) {
       const category = dbRowToCategoryProps(row.categories)
-      const unit = row.units ? dbRowToUnitProps(row.units) : undefined
-      return dbRowToItemProps(row, category, unit)
-    }) : []
+      
+      // Get unit information (from default units or database)
+      let unit: Unit | undefined
+      if (row.unit_code) {
+        unit = await getUnitByCode(row.unit_code) || undefined
+        if (!unit) {
+          console.warn(`Unit with code ${row.unit_code} not found for item ${row.id}`)
+          continue // Skip this item if unit is not found
+        }
+      }
+      
+      items.push(dbRowToItemProps(row, category, unit))
+    }
+
+    return items
   } catch (error) {
     console.error('Error fetching items by category:', error)
     return null
