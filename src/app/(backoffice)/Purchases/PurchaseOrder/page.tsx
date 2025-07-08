@@ -13,7 +13,8 @@ import { useState, useCallback, useMemo, useEffect } from "react";
 import { useHeaderButtons } from "@/hooks/useHeaderButtons";
 import { useRouter } from "next/navigation";
 import { Search, FileDown, Plus, Eye, Edit, Trash2, MoreHorizontal, Download } from "lucide-react";
-import * as XLSX from 'xlsx';
+import ExcelJS from "exceljs";
+import { saveAs } from "file-saver";
 
 // Purchase Order data structure
 interface PurchaseOrder {
@@ -105,41 +106,44 @@ export default function PurchaseOrderPage() {
     console.log("Add Purchase Order clicked");
     router.push('/dashboard/purchase/purchase-orders/new');
   }, [router]);
-
-  const handleExportExcel = useCallback(() => {
-    console.log("Export Excel clicked");
+ 
+  const handleExportExcel = useCallback(async () => {
     setIsLoading(true);
-    
     try {
       const dataToExport = purchaseOrders.length > 0 ? purchaseOrders : samplePurchaseOrders;
-      
-      const wb = XLSX.utils.book_new();
-      const ws = XLSX.utils.json_to_sheet(dataToExport.map(po => ({
-        'Purchase Order Number': po.purchaseOrderNumber,
-        'Supplier Name': po.supplierName,
-        'Amount (₹)': po.amount,
-        'Date': formatDate(po.date),
-        'Expected Delivery': formatDate(po.expectedDelivery),
-        'Status': po.status
-      })));
 
-      ws['!cols'] = [
-        { width: 25 }, { width: 30 }, { width: 15 }, 
-        { width: 12 }, { width: 18 }, { width: 12 }
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet("Purchase Orders");
+
+      worksheet.columns = [
+        { header: 'Purchase Order Number', key: 'purchaseOrderNumber', width: 25 },
+        { header: 'Supplier Name', key: 'supplierName', width: 30 },
+        { header: 'Amount (₹)', key: 'amount', width: 15 },
+        { header: 'Date', key: 'date', width: 12 },
+        { header: 'Expected Delivery', key: 'expectedDelivery', width: 18 },
+        { header: 'Status', key: 'status', width: 12 },
       ];
 
-      XLSX.utils.book_append_sheet(wb, ws, "Purchase Orders");
+      dataToExport.forEach(po => {
+        worksheet.addRow({
+          purchaseOrderNumber: po.purchaseOrderNumber,
+          supplierName: po.supplierName,
+          amount: po.amount,
+          date: formatDate(po.date),
+          expectedDelivery: formatDate(po.expectedDelivery),
+          status: po.status,
+        });
+      });
+
+      const buffer = await workbook.xlsx.writeBuffer();
       const fileName = `purchase_orders_${new Date().toISOString().split('T')[0]}.xlsx`;
-      XLSX.writeFile(wb, fileName);
-      
-      console.log(`Excel file exported: ${fileName}`);
+      saveAs(new Blob([buffer]), fileName);
     } catch (error) {
-      console.error("Error exporting to Excel:", error);
+      console.error("Error exporting Excel:", error);
     } finally {
       setIsLoading(false);
     }
   }, [purchaseOrders]);
-
   // Search functionality
   const handleSearch = useCallback((value: string) => {
     setSearchTerm(value);
