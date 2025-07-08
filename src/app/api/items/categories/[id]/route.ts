@@ -1,4 +1,3 @@
-
 // app/api/categories/[id]/route.ts
 import { Category } from '@/server/features/items/core/entities/Category'
 import { NextRequest, NextResponse } from 'next/server'
@@ -10,9 +9,10 @@ import {
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  segmentData: { params: Promise<{ id: string }> }
 ) {
   try {
+    const params = await segmentData.params
     const category = await getCategoryById(params.id)
     
     if (!category) {
@@ -28,9 +28,10 @@ export async function GET(
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  segmentData: { params: Promise<{ id: string }> }
 ) {
   try {
+    const params = await segmentData.params
     const body = await request.json()
     const { name, description, parentCategoryId } = body
 
@@ -56,9 +57,10 @@ export async function PUT(
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  segmentData: { params: Promise<{ id: string }> }
 ) {
   try {
+    const params = await segmentData.params
     const success = await deleteCategory(params.id)
     
     if (!success) {
