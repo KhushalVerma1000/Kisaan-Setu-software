@@ -3,7 +3,10 @@ import { getItemById , deleteItem, updateItem } from '@/server/features/items/in
 import { Category } from '@/server/features/items/core/entities/Category'
 import { Unit } from '@/server/features/items/core/entities/Unit'
 
-export async function GET(_: Request, { params }: { params: { id: string } }) {
+export async function GET(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
   try {
     const item = await getItemById(params.id)
     if (!item) return NextResponse.json({ error: 'Item not found' }, { status: 404 })
