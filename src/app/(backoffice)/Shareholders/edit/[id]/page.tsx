@@ -11,7 +11,7 @@ import { Label } from "@/components/ui/label";
 import { ChevronLeft, Loader2 } from "lucide-react";
 import { useUserDetails } from "@/contexts/UserDetailsContext";
 import { toast } from 'react-toastify';
-import { convertKeysToCamel } from "@/utils/CaseConvertor";
+import { convertKeysToCamel } from "@/utils/caseConvertor";
 
 interface Shareholder {
   id?: string;
