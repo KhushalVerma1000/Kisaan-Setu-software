@@ -205,7 +205,7 @@ export default function ItemAddPage() {
 
     try {
       // Prepare data according to API expectations
-      const requestData = {
+      const requestData: any = {
         name: formData.name.trim(),
         type: formData.type,
         category: formData.category,
@@ -214,7 +214,6 @@ export default function ItemAddPage() {
         salePriceInclusive: formData.salePriceInclusive,
         gstTaxPercent: Number(formData.gstTaxPercent),
         fpo_id: fpoId,
-
       };
 
       // Add product-specific fields
@@ -342,8 +341,9 @@ export default function ItemAddPage() {
         throw new Error('unit already exists');
       }
     } catch (error) {
-      // console.error('Error adding unit:', error);
-      toast.error(error.message);
+      console.error('Error adding unit:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to add unit';
+      toast.error(errorMessage);
     }
   };
 
