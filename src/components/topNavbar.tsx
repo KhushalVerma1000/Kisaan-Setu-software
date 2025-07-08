@@ -10,7 +10,7 @@ interface TopNavbarProps {
 
 export const TopNavbar: React.FC<TopNavbarProps> = ({ className = "" }) => {
   return (
-    <header 
+    <header
       className={`w-full h-16 border-b border-[hsl(var(--sidebar-border))] bg-background flex items-center justify-between px-4 md:px-6 ${className}`}
     >
       {/* Left side: Company logo and name */}
@@ -27,8 +27,8 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({ className = "" }) => {
         </div>
 
         {/* Company Name */}
-        <Link 
-          href="/" 
+        <Link
+          href="/"
           className="font-bold text-lg hover:text-[hsl(var(--sidebar-primary))] transition-colors duration-200"
         >
           Kissan Setu
@@ -38,11 +38,11 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({ className = "" }) => {
       {/* Right side: Authentication buttons */}
       <div className="flex items-center gap-2 md:gap-4">
         {/* Login Button */}
-        <Button 
-         
+        <Button
           size="sm"
           className="
             relative overflow-hidden
+            bg-[#388E3C]
             hover:bg-[hsl(var(--sidebar-primary))] 
             hover:text-[hsl(var(--sidebar-primary-foreground))]
             transition-all duration-300 ease-in-out
@@ -59,11 +59,12 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({ className = "" }) => {
         </Button>
 
         {/* Sign Up Button */}
-        <Button 
-          variant="secondary" 
+        <Button
+          variant="secondary"
           size="sm"
           className="
             relative overflow-hidden
+
             text-[hsl(var(--sidebar-primary))] 
             border-[hsl(var(--sidebar-primary))] 
             border-1
@@ -86,10 +87,10 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({ className = "" }) => {
 
         {/* Contact Us Button */}
         <Button
-       
           size="sm"
           className="
-             relative overflow-hidden
+            relative overflow-hidden
+            bg-[#388E3C]
             hover:bg-[hsl(var(--sidebar-primary))] 
             hover:text-[hsl(var(--sidebar-primary-foreground))]
             transition-all duration-300 ease-in-out
@@ -100,7 +101,10 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({ className = "" }) => {
    "
           asChild
         >
-          <Link href="https://sukrshinfotech.com/Contact/" className="relative z-10">
+          <Link
+            href="https://sukrshinfotech.com/Contact/"
+            className="relative z-10"
+          >
             Contact Us
           </Link>
         </Button>

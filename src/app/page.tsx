@@ -1,8 +1,9 @@
-import { ImageCarousel } from '@/components/ImageCarousel'
-import TopNavbar from '@/components/topNavbar'
-import React, { JSX } from 'react'
-import Link from 'next/link'
-import Image from 'next/image'
+import { ImageCarousel } from "@/components/ImageCarousel";
+import TopNavbar from "@/components/topNavbar";
+import React, { JSX } from "react";
+import Link from "next/link";
+import Image from "next/image";
+import { Shield, TrendingUp, Wallet, Receipt, Link2, PieChart, BarChart2, } from "lucide-react";
 
 // Type definitions
 interface FeatureItem {
@@ -15,159 +16,228 @@ interface FooterLink {
   href: string;
 }
 
-interface SocialLink {
-  name: string;
-  href: string;
-  icon: JSX.Element;
-}
-
-const Home: React.FC = ():JSX.Element => {
+const Home: React.FC = (): JSX.Element => {
   // Feature items data
   const features: FeatureItem[] = [
     {
       title: "Enhance Transparency & Accountability:",
-      description: "Foster trust among members and stakeholders with clear, accessible data."
+      description:
+        "Foster trust among members and stakeholders with clear, accessible data.",
     },
     {
       title: "Drive Profitability:",
-      description: "Optimize operations from input procurement to final sale, maximizing returns for members"
+      description:
+        "Optimize operations from input procurement to final sale, maximizing returns for members",
     },
     {
       title: "Financial Management:",
-      description: "Simplify your FPO's financial management with easy-to-use tools for tracking payments, receivables, expenses, and member share capital."
+      description:
+        "Simplify your FPO's financial management with easy-to-use tools for tracking payments, receivables, expenses, and member share capital.",
     },
     {
       title: "Transaction Management:",
-      description: "Manage transactions transparently, generate accurate financial statements (like Balance Sheets, P&L), and gain a clear understanding of your organization's financial health."
+      description:
+        "Manage transactions transparently, generate accurate financial statements (like Balance Sheets, P&L), and gain a clear understanding of your organization's financial health.",
     },
     {
       title: "Market Connections:",
-      description: "Facilitate better connections between your FPO's output and potential buyers, unlocking improved market opportunities and prices."
-    }
+      description:
+        "Facilitate better connections between your FPO's output and potential buyers, unlocking improved market opportunities and prices.",
+    },
+    {
+      title: "Data-Driven Decision Making:",
+      description:
+        "Leverage real-time analytics to make informed strategic decisions for your FPO's growth and sustainability.",
+    },
   ];
 
-  // Footer links data
   const companyLinks: FooterLink[] = [
     {
       label: "About Us",
-      href: "https://sukrshinfotech.com/Farmermobalization/"
+      href: "https://sukrshinfotech.com/Farmermobalization/",
     },
     {
       label: "Contact Us",
-      href: "https://sukrshinfotech.com/Contact/"
-    }
+      href: "https://sukrshinfotech.com/Contact/",
+    },
   ];
 
   return (
-    <section>
+    <section className="overflow-hidden">
       <TopNavbar />
-      <ImageCarousel />
 
-      <div className='mx-4 p-6 bg-white border border-gray-200 rounded-lg shadow-sm hover:bg-gray-100 dark:bg-gray-800 dark:border-gray-700 dark:hover:bg-gray-700'>
-        <h1 className='mb-4 text-4xl text-center font-extrabold leading-none tracking-tight text-gray-900 md:text-5xl lg:text-6xl dark:text-white'>
+      {/* Hero Section */}
+      <div className="relative w-full bg-green-600 h-[450px] sm:h-[300px] md:h-[750px] overflow-hidden rounded-b-2xl">
+        <Image
+          src="/image.png"
+          alt="Right Side Image"
+          width={770}
+          height={770}
+          className="absolute right-0 bottom-0 pt-10 object-contain w-[70%] sm:w-[65%] md:w-[60%] lg:hidden"
+        />
+
+        {/* Show on large screens and above */}
+        <Image
+          src="/image 3.png"
+          alt="Right Side Image"
+          width={770}
+          height={770}
+          className="hidden lg:block absolute right-15 scale-[1.05] bottom-0 pt-10 object-contain w-[100%] sm:w-[100%] md:w-[100%] lg:w-[100%] xl:w-[100%] 2xl:w-[90%]"
+        />
+      </div>
+
+      {/* Hero Text */}
+      <div className="absolute px-4 left-0 sm:left-6 md:left-10 lg:left-20 top-[20%] sm:top-[35%] md:top-[30%] lg:top-[50%] -translate-y-1/2 text-white w-full sm:w-[90%] md:max-w-[60%]">
+        <h1 className="text-5xl sm:text-5xl md:text-8xl lg:text-8xl xl:text-8xl font-extrabold mb-4 leading-tight">
           Kisaan Setu
         </h1>
-        
-        <h2 className='text-2xl md:text-4xl font-extrabold dark:text-white'>
-          Your Comprehensive Digital Bridge for FPO Empowerment, Efficiency, and Growth
-        </h2>
-
-        <p className='my-4 text-lg text-gray-500'>
-          Farmer Producer Organizations (FPOs) stand as vital pillars in strengthening the agricultural community, but managing their diverse and complex operations presents unique challenges. From coordinating hundreds of members and tracking countless transactions to optimizing resource allocation and connecting with markets, the need for a robust, integrated system is paramount.
+        <p className="text-md sm:text-lg md:text-2xl lg:text-3xl pt-3 sm:pt-6 md:pt-8  leading-relaxed">
+          Your Comprehensive Digital Bridge for FPO Empowerment,
+          <br />
+          Efficiency, and Growth.
         </p>
-        
-        <p className="my-4 text-lg text-gray-500">
-          Introducing Kisaan Setu meaning &apos;Farmer&apos;s Bridge&apos; more than just software, it&apos;s a dedicated, comprehensive platform meticulously designed to bridge these operational gaps.
-        </p>
-
-        <h2 className="text-xl font-bold mb-4">
-          Unlock the Full Potential of Your FPO with Kisaan Setu&apos;s Integrated Modules:
-        </h2>
-        
-        <ul className='list-disc list-inside space-y-2'>
-          {features.map((feature, index) => (
-            <li key={index}>
-              <span className='mb-2 text-lg font-semibold text-gray-900 dark:text-white'>
-                {feature.title}
-              </span>
-              {" "}
-              {feature.description}
-            </li>
-          ))}
-        </ul>
       </div>
-  
-      <footer>
-        <div className="bg-purple-950 py-4 text-gray-400">
-          <div className="container px-4 mx-auto">
-            <div className="-mx-4 flex flex-wrap justify-between">
-              <div className="px-4 my-4 w-full xl:w-1/5">
-                <Link href="/" className="flex items-center gap-2 mb-10">
-                  <Image 
-                    src="/Logo.jpeg" 
-                    alt="Kisaan Setu Logo" 
-                    width={64}
-                    height={64}
-                    className="rounded-2xl"
-                  />
-                  <span className="text-3xl font-bold">Kisaan Setu</span>
-                </Link>
-                <p className="text-justify">
-                  Build a transparent, efficient, and prosperous future for your farmer members. Let Kisaan Setu be the essential digital bridge connecting your FPOs efforts to tangible success.
-                </p>
-              </div>
 
-              <div className="px-4 my-4 w-full sm:w-auto">
-                <div>
-                  <h2 className="inline-block text-2xl pb-4 mb-4 border-b-4 border-blue-600">
-                    Company
-                  </h2>
-                </div>
-                <ul className="leading-8">
-                  {companyLinks.map((link, index) => (
-                    <li key={index}>
-                      <a 
-                        href={link.href} 
-                        className="hover:text-blue-400 transition-colors duration-200"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        {link.label}
-                      </a>
-                    </li>
-                  ))}
-                </ul>
-              </div>
+      {/* About Section */}
+      <section className="py-12 sm:py-16 md:py-24 px-4">
+        <div className="max-w-4xl mx-auto">
+          <h2 className="text-2xl sm:text-5xl font-bold text-gray-800 mb-6">
+            About Kisaan Setu
+          </h2>
+          <p className="text-gray-600 mb-6 text-base sm:text-xl">
+            Farmer Producer Organizations (FPOs) stand as vital pillars in
+            strengthening the agricultural community, but managing their diverse
+            and complex operations presents unique challenges...
+          </p>
+          <p className="text-gray-600 mb-6 text-base sm:text-xl">
+            Introducing Kisaan Setu meaning 'Farmer's Bridge' more than just
+            software, it's a dedicated, comprehensive platform meticulously
+            designed to bridge these operational gaps.
+          </p>
+        </div>
+      </section>
 
-              <div className="px-4 my-4 w-full sm:w-auto">
-                <div>
-                  <h2 className="inline-block text-2xl pb-4 mb-4 border-b-4 border-blue-600">
-                    Sukrsh
-                  </h2>
+      {/* Services Section */}
+      <section className="bg-gray-50 py-12 sm:py-16 md:py-24 px-4">
+        <div className="max-w-5xl mx-auto">
+          <h2 className="text-2xl sm:text-3xl font-bold text-gray-800 mb-8 text-center">
+            Unlock the Full Potential of Your FPO with Kisaan Setu's Integrated
+            Modules:
+          </h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 md:gap-8">
+            {features.map((feature, index) => {
+              const Icon = [Shield, TrendingUp, Wallet, Receipt, Link2, BarChart2,][index];
+              return (
+                <div
+                  key={index}
+                  className="bg-white p-6 rounded-lg shadow-sm hover:shadow-md hover:translate-y-[-5px] transition-all duration-300"
+                >
+                  <div className="flex items-center mb-4">
+                    {Icon && <Icon className="h-6 w-6 text-green-600 mr-3" />}
+                    <h3 className="text-lg sm:text-2xl font-semibold text-gray-800">
+                      {feature.title}
+                    </h3>
+                  </div>
+                  <p className="text-gray-600 text-sm sm:text-lg">
+                    {feature.description}
+                  </p>
                 </div>
-                <p className='w-96'>
-                  Sukrsh Infotech Private Limited is a consultancy firm specializing in agriculture, water, and sanitation projects, partnering with government and non-government organizations to drive sustainable rural development.
-                </p>
+              );
+            })}
+          </div>
+        </div>
+      </section>
+
+      {/* Testimonial Section for later stages (bhai ne bola krne ka toh krne ka) */}
+      {/* <section className="py-12 sm:py-16 md:py-24 px-4">
+        <div className="max-w-3xl mx-auto">
+          <h2 className="text-2xl sm:text-3xl font-bold text-gray-800 mb-8 text-center">
+            What Our Clients Say
+          </h2>
+          <div className="bg-white border border-gray-200 rounded-lg p-6 md:p-8">
+            <p className="text-gray-600 italic mb-6 text-base sm:text-lg">
+              "Working with GrowWise has transformed our family farm. Their
+              sustainable farming practices have not only increased our yields
+              but also improved our soil health dramatically..."
+            </p>
+            <div className="flex items-center">
+              <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center text-green-600 font-bold text-lg mr-4">
+                JD
+              </div>
+              <div>
+                <p className="font-medium text-gray-800">John Deere</p>
+                <p className="text-sm text-gray-500">Heartland Farms, Iowa</p>
               </div>
             </div>
           </div>
         </div>
-        
-        <div className="bg-indigo-700 py-4 text-gray-100">
-          <div className="container mx-auto px-4">
-            <div className="-mx-4 flex flex-wrap justify-between">
-              <div className="px-4 w-full text-center sm:w-auto sm:text-left">
-                Copyright © 2025 Sukrsh. All Rights Reserved.
-              </div>
-              <div className="px-4 w-full text-center sm:w-auto sm:text-left">
-                Sukrsh Infotech Pvt. Ltd.
-              </div>
+      </section> */}
+
+      {/* Info Block */}
+
+      {/* Footer */}
+      <footer>
+        <div className="bg-green-600 py-10 px-4 text-white">
+          <div className="max-w-7xl mx-auto grid gap-8 sm:grid-cols-2 lg:grid-cols-3">
+            <div>
+              <Link href="/" className="flex items-center gap-2 mb-6">
+                <Image
+                  src="/Logo.jpeg"
+                  alt="Logo"
+                  width={64}
+                  height={64}
+                  className="rounded-2xl"
+                />
+                <span className="text-2xl font-bold">Kisaan Setu</span>
+              </Link>
+              <p className="text-md">
+                Build a transparent, efficient, and prosperous future for your
+                farmer members. Let Kisaan Setu be the essential digital bridge
+                connecting your FPOs efforts to tangible success.
+              </p>
+            </div>
+
+            <div>
+              <h2 className="text-2xl inline-block border-b-4 border-[#388E3C] pb-2 mb-4">
+                Company
+              </h2>
+              <ul className="space-y-2 text-sm">
+                {companyLinks.map((link, index) => (
+                  <li key={index}>
+                    <a
+                      href={link.href}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="hover:text-gray-300"
+                    >
+                      {link.label}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            <div>
+              <h2 className="text-2xl inline-block border-b-4 border-[#388E3C] pb-2 mb-4">
+                Sukrsh
+              </h2>
+              <p className="text-md">
+                Sukrsh Infotech Private Limited is a consultancy firm
+                specializing in agriculture, water, and sanitation projects,
+                partnering with government and non-government organizations to
+                drive sustainable rural development.
+              </p>
             </div>
           </div>
+        </div>
+
+        <div className="bg-[#388E3C] py-4 text-white  text-sm px-4 flex justify-between items-center">
+          <p className="aboultue">© 2025 Sukrsh. All Rights Reserved.</p>
+          <p className="aboultue">Sukrsh Infotech Pvt. Ltd.</p>
         </div>
       </footer>
     </section>
-  )
-}
+  );
+};
 
-export default Home
+export default Home;
