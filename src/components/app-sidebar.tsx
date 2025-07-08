@@ -1,268 +1,210 @@
-"use client"
+"use client";
 
-import Image from "next/image"
-import { useState } from "react"
-import { usePathname } from "next/navigation"
+import Image from "next/image";
+import { useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { createClient } from "@/utils/supabase/client"; // Adjust this path if needed
 import {
-  ReceiptIndianRupee,
-  ShoppingCart,
-  Layers,
-  ChartBar,
-  CircleUserRound,
-  WalletCards,
-  BookOpen,
-  LogOut,
-  LayoutDashboard,
-  ChevronDown,
-  ChevronRight,
-  FileText,
-  Plus,
-  Eye,
-  Edit,
-  TrendingUp,
-  Package,
-  LucideIcon,
-  Wallet2,
-  Wallet,
-  NotebookPen,
-  Truck,
-  BanknoteArrowDown,
-  Notebook,
-  Recycle,
-  BanknoteArrowUpIcon,
-  Ticket,
-  TicketsIcon,
-  ShoppingBasket,
-  Settings,
-  UsersIcon,
-  Users
-} from "lucide-react"
-
+  ReceiptIndianRupee, ShoppingCart, Layers, ChartBar, CircleUserRound, WalletCards, BookOpen, LogOut,
+  LayoutDashboard, ChevronDown, ChevronRight, FileText, Plus, Eye, Edit, TrendingUp, Package, LucideIcon,
+  Wallet2, Wallet, NotebookPen, Truck, BanknoteArrowDown, Notebook, Recycle, BanknoteArrowUpIcon,
+  Ticket, TicketsIcon, ShoppingBasket, Settings, Users, BlocksIcon, Tags, FileBox
+} from "lucide-react";
 import {
-  Sidebar,
-  SidebarContent,
-  SidebarGroup,
-  SidebarGroupContent,
-  SidebarHeader,
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
-  SidebarMenuSub,
-  SidebarMenuSubButton,
-  SidebarMenuSubItem,
-} from "@/components/ui/sidebar"
-
+  Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarHeader, SidebarMenu,
+  SidebarMenuButton, SidebarMenuItem, SidebarMenuSub, SidebarMenuSubButton, SidebarMenuSubItem
+} from "@/components/ui/sidebar";
 import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible"
+  Collapsible, CollapsibleContent, CollapsibleTrigger
+} from "@/components/ui/collapsible";
+import {
+  AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction
+} from "@/components/ui/alert-dialog";
 
-// Utility function for conditional classes
 function cn(...classes: (string | boolean | undefined)[]) {
-  return classes.filter(Boolean).join(" ")
+  return classes.filter(Boolean).join(" ");
 }
 
-// Type definitions
 interface SubItem {
-  title: string
-  url: string
-  icon: LucideIcon
+  title: string;
+  url: string;
+  icon: LucideIcon;
 }
 
 interface MenuItem {
-  title: string
-  url: string
-  icon: LucideIcon
-  subItems?: SubItem[]
+  title: string;
+  url: string;
+  icon: LucideIcon;
+  subItems?: SubItem[];
 }
 
 const items: MenuItem[] = [
+  { title: "Dashboard", url: "/Dashboard", icon: LayoutDashboard },
+  { title: "Fpo Lifecycle", url: "/FpoLifecycle", icon: Recycle },
   {
-    title: "Dashboard",
-    url: "/Dashboard",
-    icon: LayoutDashboard,
-  },
-    {
-    title: "Fpo Lifecycle",
-    url: "/FpoLifecycle",
-    icon: Recycle,
-  },
-  {
-    title: "Sales",
-    url: "#",
-    icon: ReceiptIndianRupee,
-    subItems: [
+    title: "Sales", url: "#", icon: ReceiptIndianRupee, subItems: [
       { title: "Invoice", url: "/Sales/Invoice", icon: Plus },
       { title: "Quotation", url: "/Sales/Quotation", icon: Eye },
       { title: "Credit Note / Return", url: "/Sales/CreditNoteReturn", icon: Notebook },
       { title: "Delivery", url: "/Sales/Delivery", icon: Truck },
-       { title: "Payment in", url: "/Sales/PaymentIn", icon: BanknoteArrowDown },
-   ]
+      { title: "Payment in", url: "/Sales/PaymentIn", icon: BanknoteArrowDown },
+    ]
   },
   {
-    title: "Purchases",
-    url: "#",
-    icon: ShoppingCart,
-    subItems: [
+    title: "Purchases", url: "#", icon: ShoppingCart, subItems: [
       { title: "Purchase Order", url: "/Purchases/PurchaseOrder", icon: ShoppingBasket },
       { title: "Purchase Vouchers", url: "/Purchases/PurchaseVoucher", icon: TicketsIcon },
       { title: "Debit Nnote/ Return", url: "/Purchases/DebitNoteReturn", icon: FileText },
       { title: "Payment Out", url: "/Purchases/PaymentOut", icon: BanknoteArrowUpIcon },
     ]
   },
-    {
-    title: "Share holders",
-    url: "/Shareholders",
-    icon: Users,
-  },
+  { title: "Share holders", url: "/Shareholders", icon: Users },
   {
-    title: "Items",
-    url: "#",
-    icon: Package,
-    subItems: [
-      { title: "Add Item", url: "/items/add", icon: Plus },
-      { title: "Item List", url: "/items/list", icon: Eye },
+    title: "Items", url: "#", icon: Package, subItems: [
+      { title: "Add Item", url: "/Items/AddItem", icon: Plus },
+      { title: "Item List", url: "/Items/ItemList", icon: FileBox },
+      { title: "Category", url: "/Items/Category", icon: Tags },
+      { title: "Closing stock", url: "/Items/ClosingStock", icon: BlocksIcon },
     ]
   },
+  { title: "Ledger", url: "/Ledger", icon: CircleUserRound },
+  { title: "Pay/Rec/Cont", url: "/PaymentReceiptContra", icon: Wallet },
+  { title: "Journal", url: "/Journal", icon: NotebookPen },
   {
-    title: "Ledger",
-    url: "/Ledger",
-    icon: CircleUserRound,
-  },
-    {
-    title: "Pay/Rec/Cont",
-    url: "/PaymentReceiptContra",
-    icon: Wallet,
-  },
-     {
-    title: "Journal",
-    url: "/Journal",
-    icon: NotebookPen,
-  },
-  {
-    title: "Bank Book",
-    url: "#",
-    icon: WalletCards,
-    subItems: [
+    title: "Bank Book", url: "#", icon: WalletCards, subItems: [
       { title: "Bank Transactions", url: "/bankbook/transactions", icon: FileText },
       { title: "Bank Reconciliation", url: "/bankbook/reconciliation", icon: Edit },
     ]
   },
-    {
-    title: "Cashbook",
-    url: "/Cashbook",
-    icon: Wallet2,
-  },
-  {
-    title: "Reports",
-    url: "/Reports",
-    icon: ChartBar,
-  },
-  {
-    title: "Registers",
-    url: "/registers",
-    icon: BookOpen,
-  },
-   {
-    title: "Settings",
-    url: "/ProfileSettings",
-    icon: Settings,
-  },
-  {
-    title: "Logout",
-    url: "/Logout",
-    icon: LogOut,
-  }
-]
+  { title: "Cashbook", url: "/Cashbook", icon: Wallet2 },
+  { title: "Reports", url: "/Reports", icon: ChartBar },
+  { title: "Registers", url: "/registers", icon: BookOpen },
+  { title: "Settings", url: "/ProfileSettings", icon: Settings },
+  { title: "Logout", url: "#logout", icon: LogOut }
+];
 
 export function AppSidebar() {
-  const [openItems, setOpenItems] = useState<string[]>([])
-  const pathname = usePathname()
+  const [openItems, setOpenItems] = useState<string[]>([]);
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const pathname = usePathname();
+  const router = useRouter();
 
   const toggleItem = (title: string) => {
     setOpenItems(prev =>
-      prev.includes(title)
-        ? prev.filter(item => item !== title)
-        : [...prev, title]
-    )
-  }
+      prev.includes(title) ? prev.filter(item => item !== title) : [...prev, title]
+    );
+  };
+
+  const handleLogout = async () => {
+const supabase = createClient()
+    const { error } = await supabase.auth.signOut({scope:'local'});
+    if (!error) {
+      router.replace("/login");
+    }
+  };
 
   return (
-    <Sidebar collapsible="icon" className="border-r bg-emerald-50 border-emerald-200">
-      <SidebarHeader className="p-4 border-b border-emerald-200">
-        <div className="hidden group-data-[collapsible=icon]:flex items-center justify-center w-full">
-          <div className="w-8 h-8 rounded-md bg-emerald-600 flex items-center justify-center overflow-hidden flex-shrink-0">
-            <Image src="/Logo.jpeg" alt="Company Logo" width={24} height={24} className="object-cover w-6 h-6" />
+    <>
+      <Sidebar collapsible="icon" className="border-r bg-emerald-50 border-emerald-200">
+        <SidebarHeader className="p-4 border-b border-emerald-200">
+          <div className="hidden group-data-[collapsible=icon]:flex items-center justify-center w-full">
+            <div className="w-8 h-8 rounded-md bg-emerald-600 flex items-center justify-center overflow-hidden flex-shrink-0">
+              <Image src="/Logo.jpeg" alt="Company Logo" width={24} height={24} className="object-cover w-6 h-6" />
+            </div>
           </div>
-        </div>
-        <div className="flex group-data-[collapsible=icon]:hidden items-center gap-2">
-          <div className="w-8 h-8 rounded-md bg-emerald-600 flex items-center justify-center overflow-hidden flex-shrink-0">
-            <Image src="/Logo.jpeg" alt="Company Logo" width={24} height={24} className="object-cover w-6 h-6" />
+          <div className="flex group-data-[collapsible=icon]:hidden items-center gap-2">
+            <div className="w-8 h-8 rounded-md bg-emerald-600 flex items-center justify-center overflow-hidden flex-shrink-0">
+              <Image src="/Logo.jpeg" alt="Company Logo" width={24} height={24} className="object-cover w-6 h-6" />
+            </div>
+            <span className="font-bold text-lg text-emerald-900">Kisaan Setu</span>
           </div>
-          <span className="font-bold text-lg text-emerald-900">Kisaan Setu</span>
-        </div>
-      </SidebarHeader>
+        </SidebarHeader>
 
-      <SidebarContent>
-        <SidebarGroup>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {items.map((item) => {
-                const isParentActive = item.subItems?.some(sub => pathname === sub.url) || pathname === item.url
+        <SidebarContent>
+          <SidebarGroup>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {items.map((item) => {
+                  const isParentActive = item.subItems?.some(sub => pathname === sub.url) || pathname === item.url;
 
-                return (
-                  <SidebarMenuItem key={item.title}>
-                    {item.subItems ? (
-                      <Collapsible open={openItems.includes(item.title) || isParentActive} onOpenChange={() => toggleItem(item.title)}>
-                        <CollapsibleTrigger asChild>
-                          <SidebarMenuButton className={cn(
-                            "w-full flex items-center justify-between gap-3 hover:bg-emerald-100 hover:text-emerald-900",
-                            isParentActive && "bg-emerald-100 text-emerald-900 font-semibold"
-                          )}>
-                            <div className="flex items-center gap-3">
+                  return (
+                    <SidebarMenuItem key={item.title}>
+                      {item.subItems ? (
+                        <Collapsible open={openItems.includes(item.title) || isParentActive} onOpenChange={() => toggleItem(item.title)}>
+                          <CollapsibleTrigger asChild>
+                            <SidebarMenuButton className={cn(
+                              "w-full flex items-center justify-between gap-3 hover:bg-emerald-100 hover:text-emerald-900",
+                              isParentActive && "bg-emerald-100 text-emerald-900 font-semibold"
+                            )}>
+                              <div className="flex items-center gap-3">
+                                <item.icon className="h-5 w-5 text-emerald-700" />
+                                <span>{item.title}</span>
+                              </div>
+                              {openItems.includes(item.title) || isParentActive ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                            </SidebarMenuButton>
+                          </CollapsibleTrigger>
+                          <CollapsibleContent>
+                            <SidebarMenuSub>
+                              {item.subItems.map(subItem => (
+                                <SidebarMenuSubItem key={subItem.title}>
+                                  <SidebarMenuSubButton asChild className={cn(
+                                    "text-emerald-600 hover:text-emerald-900 hover:bg-emerald-50",
+                                    pathname === subItem.url && "text-emerald-900 underline font-medium"
+                                  )}>
+                                    <a href={subItem.url} className="flex items-center gap-3">
+                                      <subItem.icon className="h-4 w-4" />
+                                      <span>{subItem.title}</span>
+                                    </a>
+                                  </SidebarMenuSubButton>
+                                </SidebarMenuSubItem>
+                              ))}
+                            </SidebarMenuSub>
+                          </CollapsibleContent>
+                        </Collapsible>
+                      ) : (
+                        <SidebarMenuButton asChild className={cn(
+                          "w-full flex items-center gap-3 hover:bg-emerald-100 hover:text-emerald-900",
+                          pathname === item.url && "bg-emerald-100 text-emerald-900 font-semibold"
+                        )}>
+                          {item.title === "Logout" ? (
+                            <button onClick={() => setShowLogoutConfirm(true)} className="w-full flex items-center gap-3">
                               <item.icon className="h-5 w-5 text-emerald-700" />
                               <span>{item.title}</span>
-                            </div>
-                            {openItems.includes(item.title) || isParentActive ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                          </SidebarMenuButton>
-                        </CollapsibleTrigger>
-                        <CollapsibleContent>
-                          <SidebarMenuSub>
-                            {item.subItems.map(subItem => (
-                              <SidebarMenuSubItem key={subItem.title}>
-                                <SidebarMenuSubButton asChild className={cn(
-                                  "text-emerald-600 hover:text-emerald-900 hover:bg-emerald-50",
-                                  pathname === subItem.url && "text-emerald-900 underline font-medium"
-                                )}>
-                                  <a href={subItem.url} className="flex items-center gap-3">
-                                    <subItem.icon className="h-4 w-4" />
-                                    <span>{subItem.title}</span>
-                                  </a>
-                                </SidebarMenuSubButton>
-                              </SidebarMenuSubItem>
-                            ))}
-                          </SidebarMenuSub>
-                        </CollapsibleContent>
-                      </Collapsible>
-                    ) : (
-                      <SidebarMenuButton asChild className={cn(
-                        "w-full flex items-center gap-3 hover:bg-emerald-100 hover:text-emerald-900",
-                        pathname === item.url && "bg-emerald-100 text-emerald-900 font-semibold"
-                      )}>
-                        <a href={item.url}>
-                          <item.icon className="h-5 w-5 text-emerald-700" />
-                          <span>{item.title}</span>
-                        </a>
-                      </SidebarMenuButton>
-                    )}
-                  </SidebarMenuItem>
-                )
-              })}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
-      </SidebarContent>
-    </Sidebar>
-  )
+                            </button>
+                          ) : (
+                            <a href={item.url}>
+                              <item.icon className="h-5 w-5 text-emerald-700" />
+                              <span>{item.title}</span>
+                            </a>
+                          )}
+                        </SidebarMenuButton>
+                      )}
+                    </SidebarMenuItem>
+                  );
+                })}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        </SidebarContent>
+      </Sidebar>
+
+      <AlertDialog open={showLogoutConfirm} onOpenChange={setShowLogoutConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Logout Confirmation</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to logout from your account?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction className="bg-red-600 hover:bg-red-700" onClick={handleLogout}>
+              Logout
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
+  );
 }

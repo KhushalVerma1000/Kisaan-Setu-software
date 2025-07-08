@@ -32,7 +32,6 @@ interface Shareholder {
 
 export default function AddNewShareholderPage() {
   const router = useRouter();
-  const { profile, loading } = useUserDetails();
 
   const [form, setForm] = useState<Shareholder>({
     name: "",
@@ -51,7 +50,7 @@ export default function AddNewShareholderPage() {
 
   const [bulkData, setBulkData] = useState<Shareholder[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
-
+  
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value, type } = e.target;
     const newValue = type === "number" ? Number(value) : value;
@@ -375,7 +374,7 @@ const handleExcelUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
 
       <div className="flex flex-wrap items-center gap-4">
         <Button 
-          disabled={loading || isSubmitting} 
+          disabled={isSubmitting} 
           onClick={handleSubmit}
         >
           {isSubmitting ? 'Submitting...' : 'Submit Shareholder'}
