@@ -3,9 +3,9 @@ import { getItemById , deleteItem, updateItem } from '@/server/features/items/in
 import { Category } from '@/server/features/items/core/entities/Category'
 import { Unit } from '@/server/features/items/core/entities/Unit'
 
-// Next.js expects the first argument to be the request, and the second to be the context (with params)
+// Next.js expects the first argument to be the request (can be NextRequest or Request), and the second to be the context (with params)
 export async function GET(
-  req: NextRequest,
+  req: Request,
   context: { params: { id: string } }
 ) {
   try {
@@ -19,7 +19,7 @@ export async function GET(
 }
 
 export async function DELETE(
-  req: NextRequest,
+  req: Request,
   context: { params: { id: string } }
 ) {
   try {
