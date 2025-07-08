@@ -3,12 +3,13 @@ import { getItemById , deleteItem, updateItem } from '@/server/features/items/in
 import { Category } from '@/server/features/items/core/entities/Category'
 import { Unit } from '@/server/features/items/core/entities/Unit'
 
+// Next.js expects the first argument to be the request, and the second to be the context (with params)
 export async function GET(
-  request: NextRequest,
-  { params }: { params: { id: string } }
+  req: NextRequest,
+  context: { params: { id: string } }
 ) {
   try {
-    const item = await getItemById(params.id)
+    const item = await getItemById(context.params.id)
     if (!item) return NextResponse.json({ error: 'Item not found' }, { status: 404 })
 
     return NextResponse.json(item)
