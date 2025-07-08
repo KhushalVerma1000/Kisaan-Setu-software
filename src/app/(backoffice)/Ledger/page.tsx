@@ -432,7 +432,7 @@ export default function LedgerPage() {
                                   <AlertDialogHeader>
                                     <AlertDialogTitle>Are you sure?</AlertDialogTitle>
                                     <AlertDialogDescription>
-                                      This action cannot be undone. This will permanently delete the ledger "{ledger.name}".
+                                      This action cannot be undone. This will permanently delete the ledger &quot;{ledger.name}&quot;.
                                     </AlertDialogDescription>
                                   </AlertDialogHeader>
                                   <AlertDialogFooter>

@@ -527,7 +527,7 @@ export default function ShareholderPage() {
           <CardContent className="p-8 text-center">
             <h3 className="text-lg font-semibold mb-2">No results found</h3>
             <p className="text-muted-foreground">
-              No shareholders match your search criteria: "{search}"
+              No shareholders match your search criteria: &quot;{search}&quot;
             </p>
           </CardContent>
         </Card>

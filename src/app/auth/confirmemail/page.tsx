@@ -27,7 +27,7 @@ const ConfirmEmailPage: React.FC = () => {
           </div>
           
           <p className="text-sm text-gray-600 leading-relaxed">
-            We've sent you a confirmation email. Please click the link in your email to verify your account.
+            We&apos;ve sent you a confirmation email. Please click the link in your email to verify your account.
           </p>
           
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
@@ -51,7 +51,7 @@ const ConfirmEmailPage: React.FC = () => {
           </Link>
           
           <p className="text-xs text-gray-500 text-center">
-            Didn't receive an email? Check your spam folder or contact support.
+            Didn&apos;t receive an email? Check your spam folder or contact support.
           </p>
         </CardFooter>
       </Card>

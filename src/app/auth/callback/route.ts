@@ -8,7 +8,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   
   if (code) {
     const cookieStore = cookies()
-    const supabase = createClient(cookieStore)
+    const supabase = await createClient()
     
     try {
       await supabase.auth.exchangeCodeForSession(code)

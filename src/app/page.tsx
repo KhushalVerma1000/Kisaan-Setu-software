@@ -1,9 +1,9 @@
-import { ImageCarousel } from "@/components/ImageCarousel";
+// import { ImageCarousel } from "@/components/ImageCarousel";
 import TopNavbar from "@/components/topNavbar";
 import React, { JSX } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { Shield, TrendingUp, Wallet, Receipt, Link2, PieChart, BarChart2, } from "lucide-react";
+import { Shield, TrendingUp, Wallet, Receipt, Link2, BarChart2 } from "lucide-react";
 
 // Type definitions
 interface FeatureItem {
@@ -110,8 +110,8 @@ const Home: React.FC = (): JSX.Element => {
             and complex operations presents unique challenges...
           </p>
           <p className="text-gray-600 mb-6 text-base sm:text-xl">
-            Introducing Kisaan Setu meaning 'Farmer's Bridge' more than just
-            software, it's a dedicated, comprehensive platform meticulously
+            Introducing Kisaan Setu meaning &#39;Farmer&#39;s Bridge&#39; more than just
+            software, it&#39;s a dedicated, comprehensive platform meticulously
             designed to bridge these operational gaps.
           </p>
         </div>
@@ -121,7 +121,7 @@ const Home: React.FC = (): JSX.Element => {
       <section className="bg-gray-50 py-12 sm:py-16 md:py-24 px-4">
         <div className="max-w-5xl mx-auto">
           <h2 className="text-2xl sm:text-3xl font-bold text-gray-800 mb-8 text-center">
-            Unlock the Full Potential of Your FPO with Kisaan Setu's Integrated
+            Unlock the Full Potential of Your FPO with Kisaan Setu&#39;s Integrated
             Modules:
           </h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 md:gap-8">

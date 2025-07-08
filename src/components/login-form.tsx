@@ -148,7 +148,7 @@ export function LoginForm({ className, loginAction, googleSignInAction }: LoginF
         </Button>
         
         <div className="text-center text-sm">
-          Don't have an account?{" "}
+          Don&apos;t have an account?{" "}
           <a href="/Signup" className="text-blue-600 hover:underline">
             Sign up
           </a>
