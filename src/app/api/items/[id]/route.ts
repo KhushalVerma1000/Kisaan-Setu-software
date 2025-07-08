@@ -6,10 +6,10 @@ import { Unit } from '@/server/features/items/core/entities/Unit'
 // Next.js expects the first argument to be the request (can be NextRequest or Request), and the second to be the context (with params)
 export async function GET(
   req: Request,
-  context: { params: { id: string } }
+  { params }: { params: { id: string } }
 ) {
   try {
-    const item = await getItemById(context.params.id)
+    const item = await getItemById(params.id)
     if (!item) return NextResponse.json({ error: 'Item not found' }, { status: 404 })
 
     return NextResponse.json(item)
@@ -20,10 +20,10 @@ export async function GET(
 
 export async function DELETE(
   req: Request,
-  context: { params: { id: string } }
+  { params }: { params: { id: string } }
 ) {
   try {
-    const { id } = context.params;
+    const { id } = params;
 
     if (!id) {
       return NextResponse.json(
@@ -131,11 +131,11 @@ export async function DELETE(
 
 export async function PUT(
   req: NextRequest,
-  context: { params: { id: string } }
+  { params }: { params: { id: string } }
 ) {
   try {
     const data = await req.json();
-    const result = await updateItem(context.params.id, data);
+    const result = await updateItem(params.id, data);
     return NextResponse.json({ data: result });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 400 });
