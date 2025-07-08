@@ -18,7 +18,7 @@ interface ActionResult {
 interface SignUpFormProps {
   className?: string;
   signUpAction: (formData: FormData) => Promise<ActionResult | undefined>;
-  googleSignUpAction: () => Promise<ActionResult | undefined>;
+  googleSignUpAction?: () => Promise<ActionResult | undefined>; // Made optional
 }
 
 export function SignUpForm({ className, signUpAction, googleSignUpAction }: SignUpFormProps) {
@@ -62,6 +62,11 @@ export function SignUpForm({ className, signUpAction, googleSignUpAction }: Sign
   }
   
   async function handleGoogleSignUp(): Promise<void> {
+    if (!googleSignUpAction) {
+      setError('Google sign-up is not available')
+      return
+    }
+    
     setIsGoogleLoading(true)
     setError('')
     
