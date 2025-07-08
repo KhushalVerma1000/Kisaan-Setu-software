@@ -13,7 +13,8 @@ import { useState, useCallback, useMemo, useEffect } from "react";
 import { useHeaderButtons } from "@/hooks/useHeaderButtons";
 import { useRouter } from "next/navigation";
 import { Search, FileDown, Plus, Eye, Edit, Trash2, MoreHorizontal, Calendar, ShoppingCart } from "lucide-react";
-import * as XLSX from 'xlsx';
+import ExcelJS from "exceljs";
+import { saveAs } from "file-saver";
 
 // Purchase Voucher data structure
 interface PurchaseVoucher {
@@ -104,38 +105,44 @@ export default function PurchaseVoucherPage() {
     router.push('/dashboard/purchase/vouchers/new');
   }, [router]);
 
-  const handleExportExcel = useCallback(() => {
-    console.log("Export Excel clicked");
+  // ✅ Updated Excel Export Handler using ExcelJS
+  const handleExportExcel = useCallback(async () => {
     setIsLoading(true);
-    
     try {
       const dataToExport = purchaseVouchers.length > 0 ? purchaseVouchers : samplePurchaseVouchers;
-      
-      const wb = XLSX.utils.book_new();
-      const ws = XLSX.utils.json_to_sheet(dataToExport.map(voucher => ({
-        'Voucher Number': voucher.voucherNumber,
-        'Customer Name': voucher.customerName,
-        'Supplier Name': voucher.supplierName,
-        'Amount (₹)': voucher.amount,
-        'Date': voucher.date,
-        'Due Date': voucher.dueDate,
-        'Status': voucher.status,
-        'Description': voucher.description
-      })));
 
-      ws['!cols'] = [
-        { width: 20 }, { width: 25 }, { width: 25 }, 
-        { width: 15 }, { width: 12 }, { width: 12 }, 
-        { width: 12 }, { width: 30 }
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet("Purchase Vouchers");
+
+      worksheet.columns = [
+        { header: 'Voucher Number', key: 'voucherNumber', width: 20 },
+        { header: 'Customer Name', key: 'customerName', width: 25 },
+        { header: 'Supplier Name', key: 'supplierName', width: 25 },
+        { header: 'Amount (₹)', key: 'amount', width: 15 },
+        { header: 'Date', key: 'date', width: 15 },
+        { header: 'Due Date', key: 'dueDate', width: 15 },
+        { header: 'Status', key: 'status', width: 15 },
+        { header: 'Description', key: 'description', width: 30 },
       ];
 
-      XLSX.utils.book_append_sheet(wb, ws, "Purchase Vouchers");
+      dataToExport.forEach((voucher) => {
+        worksheet.addRow({
+          voucherNumber: voucher.voucherNumber,
+          customerName: voucher.customerName,
+          supplierName: voucher.supplierName,
+          amount: voucher.amount,
+          date: voucher.date,
+          dueDate: voucher.dueDate,
+          status: voucher.status,
+          description: voucher.description,
+        });
+      });
+
+      const buffer = await workbook.xlsx.writeBuffer();
       const fileName = `purchase_vouchers_${new Date().toISOString().split('T')[0]}.xlsx`;
-      XLSX.writeFile(wb, fileName);
-      
-      console.log(`Excel file exported: ${fileName}`);
+      saveAs(new Blob([buffer]), fileName);
     } catch (error) {
-      console.error("Error exporting to Excel:", error);
+      console.error("Error exporting Excel:", error);
     } finally {
       setIsLoading(false);
     }
