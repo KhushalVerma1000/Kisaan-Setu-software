@@ -5,9 +5,10 @@ import { Shareholder } from '@/server/features/ShareHolder/core/entities/ShareHo
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  segmentData: { params: Promise<{ id: string }> }
 ) {
   try {
+    const params = await segmentData.params;
     const { id } = params;
 
     if (!id) {
@@ -34,9 +35,10 @@ export async function GET(
 
 export async function PUT(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  segmentData: { params: Promise<{ id: string }> }
 ) {
   try {
+    const params = await segmentData.params;
     const { id } = params;
     const body: Shareholder = await req.json();
 
@@ -59,9 +61,10 @@ export async function PUT(
 
 export async function DELETE(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  segmentData: { params: Promise<{ id: string }> }
 ) {
   try {
+    const params = await segmentData.params;
     const { id } = params;
 
     if (!id) {
