@@ -30,8 +30,13 @@ export async function POST(request:NextRequest){
         const createdunit = await createUnit(newUnit,fpo_id)
         return NextResponse.json({unit:createdunit})
     } catch (error) {
-        console.error('Error creating unit:', error)
-        return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error instanceof Error) {
+    console.error("Error creating unit:", error.message);
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  } else {
+    console.error("Unknown error:", error);
+    return NextResponse.json({ error: 'An unknown error occurred' }, { status: 500 });
+  }     
     }
 
 }
