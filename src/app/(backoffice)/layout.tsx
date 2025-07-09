@@ -12,6 +12,8 @@ import { makeStore } from '@/store/store';
 import { ToastContainer } from "react-toastify"
 import { AppProviders } from "@/contexts/provider"
 import { getUserContext } from "@/contexts/getUserContext"
+import { UserState } from "@/store/slices/userSlice"
+
 const geistSans = Geist({
   variable: "--font-geist-sans",
   subsets: ["latin"],
@@ -35,19 +37,27 @@ export default async function DashboardLayout({
   children 
 }: DashboardLayoutProps): Promise<JSX.Element> {
   // No need to pass cookies to createClient in Next.js 15, just call it directly
- const user = await getUserContext()
+  const user = await getUserContext()
   if (!user) {
     redirect('/Login');
   }
 
   const fpoName = user.fpoName;
+  
+  // Transform UserContext to UserState to match the expected types
+  const transformedUser: UserState = {
+    fpoId: user.fpoId,
+    email: user.email ?? null, // Convert undefined to null
+    fpoName: user.fpoName,
+  };
+
   const preloadedState = {
-    user: user ?? { fpoId: null, email: null, fpoName: null },
+    user: transformedUser,
   };
 
   return (
     <div>
-    <AppProviders  preloadedState={preloadedState}>
+    <AppProviders preloadedState={preloadedState}>
     {/* <UserDetailsProvider> */}
       <HeaderProvider>
         <SidebarProvider>

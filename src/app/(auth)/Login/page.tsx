@@ -2,11 +2,17 @@ import React from 'react';
 import { login } from './actions';
 import { LoginForm } from "@/components/login-form";
 import { googleSignInAction } from "./googleSignInAction";
+import { Slideshow } from "@/components/slideshow";
 import Image from 'next/image';
 import Link from 'next/link';
 
-
-
+// Array of background images for login page
+const loginImages = [
+  "/login-bg-1.jpg",
+  "/login-bg-2.jpg",
+  "/login-bg-3.jpg", // Add more images as needed
+  // Add more image paths here
+];
 
 const Login = () => {
   return (
@@ -43,18 +49,13 @@ const Login = () => {
         </div>
       </div>
 
-      {/* Right side - Background Image */}
+      {/* Right side - Background Slideshow */}
       <div className="relative hidden bg-muted lg:block">
-        <Image
-          src="/LoginPageImage3.jpg"
-          alt="Agricultural landscape showing farming and cultivation"
-          className="absolute inset-0 h-full w-full object-cover dark:brightness-[0.2] dark:grayscale transition-all duration-300"
-          width={500}
-          height={500}
+        <Slideshow 
+          images={loginImages}
+          interval={4000}
+          className="h-full w-full"
         />
-        
-        {/* Optional overlay for better contrast */}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent dark:from-black/40" />
       </div>
     </div>
   );

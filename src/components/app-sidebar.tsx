@@ -100,7 +100,7 @@ export function AppSidebar() {
 const supabase = createClient()
     const { error } = await supabase.auth.signOut({scope:'local'});
     if (!error) {
-      router.replace("/login");
+      router.replace("/Login");
     }
   };
 
