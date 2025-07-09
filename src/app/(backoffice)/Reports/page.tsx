@@ -9,17 +9,37 @@ import { Calendar as CalendarComponent } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
+// Define types for better type safety
+type ReportStatus = 'ready' | 'warning' | 'processing' | 'live';
+type BadgeVariant = 'default' | 'secondary' | 'destructive' | 'outline';
+
+interface Report {
+  name: string;
+  description: string;
+  lastUpdated: string;
+  status: ReportStatus;
+}
+
+interface ReportCategory {
+  id: string;
+  title: string;
+  icon: React.ComponentType<{ className?: string }>;
+  color: string;
+  badge: BadgeVariant;
+  reports: Report[];
+}
+
 export default function ReportsPage() {
   const [selectedCategory, setSelectedCategory] = useState('all');
-  const [date, setDate] = useState(new Date());
+  const [date, setDate] = useState<Date | undefined>(new Date());
 
-  const reportCategories = [
+  const reportCategories: ReportCategory[] = [
     {
       id: 'business',
       title: 'Business Reports',
       icon: TrendingUp,
       color: 'bg-blue-500',
-      badge: 'primary',
+      badge: 'default',
       reports: [
         { name: 'Debtors Ageing', description: 'Outstanding customer payments analysis', lastUpdated: '2 hours ago', status: 'ready' },
         { name: 'Creditor Ageing', description: 'Supplier payment tracking', lastUpdated: '4 hours ago', status: 'ready' },
@@ -67,21 +87,21 @@ export default function ReportsPage() {
     }
   ];
 
-  const getStatusBadge = (status :string) => {
-    const statusConfig = {
+  const getStatusBadge = (status: ReportStatus): { variant: BadgeVariant; text: string } => {
+    const statusConfig: Record<ReportStatus, { variant: BadgeVariant; text: string }> = {
       ready: { variant: 'default', text: 'Ready' },
       warning: { variant: 'destructive', text: 'Alert' },
       processing: { variant: 'secondary', text: 'Processing' },
       live: { variant: 'outline', text: 'Live' }
     };
-    return statusConfig[status] || statusConfig.ready;
+    return statusConfig[status];
   };
 
   const filteredCategories = selectedCategory === 'all' 
     ? reportCategories 
     : reportCategories.filter(cat => cat.id === selectedCategory);
 
-  const handleDownload = (reportName:string, categoryTitle : string) => {
+  const handleDownload = (reportName: string, categoryTitle: string) => {
     console.log(`Downloading ${reportName} from ${categoryTitle}`);
   };
 
