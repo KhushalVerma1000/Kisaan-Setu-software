@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { 
   getAllCategories, 
   createCategory, 
-  initializeDefaultCategories 
+   
 } from '@/server/features/items/infrastructure/persistence/ItemSupabase'
 import { Category } from '@/server/features/items/core/entities/Category'
 
