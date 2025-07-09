@@ -2,7 +2,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
-import { FpoProfile } from "@/server/features/fpo/core/entities/FpoProfile";
+import { FrontendProfile } from "@/types/FrontendProfile";
 import { useEffect, useState } from "react";
 
 type BankDetailForm = {
@@ -19,7 +19,7 @@ export default function BankDetailsTab({
   profile,
   onProfileChange,
 }: {
-  profile: FpoProfile | null;
+  profile: FrontendProfile | null;
   onProfileChange: (field: keyof BankDetailForm, value: any) => void;
 }) {
   const [form, setForm] = useState<BankDetailForm>({
@@ -42,8 +42,8 @@ export default function BankDetailsTab({
         accountNumber: bankDetail.accountNumber || "",
         ifscCode: bankDetail.ifscCode || "",
         upiId: bankDetail.upiId || "",
-        printBankDetails: true,
-        printUpiQr: true,
+        printBankDetails: bankDetail.printBankDetails || false,
+        printUpiQr: bankDetail.printUpiQr || false,
       });
     }
   }, [profile]);

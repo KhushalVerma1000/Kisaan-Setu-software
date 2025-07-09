@@ -46,7 +46,7 @@ const Login = () => {
       {/* Right side - Background Image */}
       <div className="relative hidden bg-muted lg:block">
         <Image
-          src="/LoginPageImage.jpg"
+          src="/LoginPageImage3.jpg"
           alt="Agricultural landscape showing farming and cultivation"
           className="absolute inset-0 h-full w-full object-cover dark:brightness-[0.2] dark:grayscale transition-all duration-300"
           width={500}

@@ -132,7 +132,7 @@ export function SignUpForm({ className, signUpAction, googleSignUpAction }: Sign
          */}
         <div className="grid gap-3 ">
           <div className="grid gap-2">
-            <Label htmlFor="firstName">FPO Name</Label>
+            <Label htmlFor="firstName">FPO &#47; FFO Name</Label>
             <Input
               id="firstName"
               name="FPOname"

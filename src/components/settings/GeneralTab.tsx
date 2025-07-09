@@ -9,7 +9,7 @@ import { DatePicker } from "@/components/ui/datepicker"
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue
 } from "@/components/ui/select"
-import { FpoProfile } from "@/server/features/fpo/core/entities/FpoProfile"
+import { FrontendProfile } from "@/types/FrontendProfile"
 
 type ProfileForm = {
   companyName?: string;
@@ -30,7 +30,7 @@ export default function GeneralTab({
   profile,
   onProfileChange,
 }: {
-  profile: FpoProfile | null;
+  profile: FrontendProfile | null;
   onProfileChange: (field: keyof ProfileForm, value: any) => void;
 }) {
   const [form, setForm] = useState<ProfileForm>({

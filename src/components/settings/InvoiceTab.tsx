@@ -2,7 +2,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
-import { FpoProfile } from "@/server/features/fpo/core/entities/FpoProfile";
+import { FrontendProfile } from "@/types/FrontendProfile";
 import { useEffect, useState } from "react";
 import { Textarea } from "../ui/textarea";
 import { Button } from "../ui/button";
@@ -16,7 +16,7 @@ type InvoiceSettingsForm = {
   signatureFile?: File;
 };
 
-export default function InvoiceTab({ profile , onProfileChange }: { profile: FpoProfile | null , onProfileChange: (field: string, value: any) => void }) {
+export default function InvoiceTab({ profile , onProfileChange }: { profile: FrontendProfile | null , onProfileChange: (field: string, value: any) => void }) {
   const [form, setForm] = useState<InvoiceSettingsForm>({
     invoicePrefix: "INV",
     startNumber: 1,
@@ -31,11 +31,11 @@ export default function InvoiceTab({ profile , onProfileChange }: { profile: Fpo
       const settings = profile.invoiceSettings;
       setForm({
         invoicePrefix: settings.invoicePrefix || "INV",
-        startNumber: 1,
+        startNumber: settings.startNumber || 1,
         defaultTerms: settings.defaultTerms || "",
         signatureUrl: settings.signatureUrl || "",
         showPrefix: settings.showPrefix !== undefined ? settings.showPrefix : true,
-        signatureFile: undefined,
+        signatureFile: settings.signatureFile || undefined,
       });
     }
   }, [profile]);

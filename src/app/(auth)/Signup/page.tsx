@@ -1,6 +1,7 @@
 import React from 'react'
 import { signup } from './actions'
 import { SignUpForm } from "@/components/signUp-form"
+import Image from 'next/image'
 
 const SignUp: React.FC = () => {
   return (
@@ -21,10 +22,12 @@ const SignUp: React.FC = () => {
         </div>
       </div>
       <div className="relative hidden bg-muted lg:block">
-        <img
+        <Image
           src="/LoginPageImage.jpg"
           alt="Image"
           className="absolute inset-0 h-full w-full object-cover dark:brightness-[0.2] dark:grayscale"
+          width={1000}
+          height={2000}
         />
       </div>
     </div>

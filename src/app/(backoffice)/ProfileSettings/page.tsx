@@ -11,15 +11,19 @@ import InvoiceTab from "@/components/settings/InvoiceTab";
 import ItemsTab from "@/components/settings/ItemsTab";
 import TaxTab from "@/components/settings/TaxTab";
 import EInvoiceTab from "@/components/settings/EInvoiceTab";
-import { FpoProfile, FpoProfileProps } from "@/server/features/fpo/core/entities/FpoProfile";
 
 import { getCurrentUserDetails } from "@/contexts/GetUserDetails";
+import { 
+  FrontendProfile, 
+  convertToFrontendProfile, 
+  convertToDbProfile, 
+  createDefaultFrontendProfile 
+} from "@/types/FrontendProfile";
 
 export default function SettingsPage() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [activeTab, setActiveTab] = useState("general");
-  const [profile, setProfile] = useState<FpoProfile | null>(null);
-
+  const [profile, setProfile] = useState<FrontendProfile | null>(null);
 
   const tabs = [
     { value: "general", label: "General", shortLabel: "General" },
@@ -30,111 +34,89 @@ export default function SettingsPage() {
     { value: "einvoice", label: "e-Invoicing", shortLabel: "e-Invoice" },
   ];
 
-  const handleTabChange = (value : string) => {
+  const handleTabChange = (value: string) => {
     setActiveTab(value);
     setIsMobileMenuOpen(false);
   };
 
   const getfpoprofiles = async () => {
-  try {
-    const res = await fetch('/api/fpo/profile');
-    if (!res.ok) return null;
-    const data = await res.json();
-    console.log("fetched data is ", data);
-    // No need to transform invoiceSettings, backend guarantees it's an object
-    return data;
-  } catch (error) {
-    console.error("Error fetching FPO profiles:", error);
-    return null;
-  }
-};
-const saveProfileSettings = useCallback(() => {
-  if (!profile) {
-    console.log("no profiles");
-    return;
-  }
-  const data: FpoProfileProps = {
-    ...profile,
-    bankDetails: profile.bankDetails && profile.bankDetails.length > 0 ? [profile.bankDetails[0]] : [],
-    invoiceSettings: {
-      ...profile.invoiceSettings,
-    },
-  };
-
-  fetch('/api/fpo/profile', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(data),
-  })
-    .then(response => response.json())
-    .then(data => {
-      console.log("Profile updated successfully:", data);
-    })
-    .catch(error => {
-      console.error("Error updating profile:", error);
-    });
-}, [profile]);
-
-const headerButtons = useMemo(() => [
-  {
-    label: "Save",
-    onClick: saveProfileSettings,
-    disabled: !profile,
-  },
-], [saveProfileSettings, profile]);
-
-useHeaderButtons(headerButtons);
-
-
-const currentUserDetails = getCurrentUserDetails();
-useEffect(() => {
-  const fetchProfile = async () => {
-    const data = await getfpoprofiles();
-    if (data && Object.keys(data).length > 0) {
-      setProfile(data);
-    } else {
-      // Always await currentUserDetails
-      const userDetails = await currentUserDetails;
-      if (!userDetails?.id) {
-        setProfile(null); // or handle not logged in
-        return;
-      }
-      setProfile({
-        id: userDetails.id,
-        companyName: userDetails.fponame || "",
-       invoiceEmail: userDetails.email || "",
-        // ...other fields with sensible defaults
-        bankDetail: [
-          {
-            accountHolderName: "",
-            bankName: "",
-            accountNumber: "",
-            ifscCode: "",
-            upiId: "",
-            printBankDetails: false,
-            printUpiQr: false,
-          },
-        ],
-        invoiceSettings: {
-
-          invoicePrefix: "",
-          startNumber: 1,
-          defaultTerms: "",
-          signatureUrl: "",
-          showPrefix: false,
-          signatureFile: null, // or an empty string if you prefer
-        },
-      });
+    try {
+      const res = await fetch('/api/fpo/profile');
+      if (!res.ok) return null;
+      const data = await res.json();
+      console.log("fetched data is ", data);
+      return data;
+    } catch (error) {
+      console.error("Error fetching FPO profiles:", error);
+      return null;
     }
   };
-  fetchProfile();
-} ,[]);
+
+  const saveProfileSettings = useCallback(() => {
+    if (!profile) {
+      console.log("no profiles");
+      return;
+    }
+    
+    // Convert frontend profile to database format
+    const dbProfile = convertToDbProfile(profile);
+    
+    // Prepare payload for the API
+    const payload = {
+      ...dbProfile,
+      bankDetails: dbProfile.bankDetails && dbProfile.bankDetails.length > 0 
+        ? [dbProfile.bankDetails[0]] 
+        : [],
+    };
+
+    fetch('/api/fpo/profile', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    })
+      .then(response => response.json())
+      .then(data => {
+        console.log("Profile updated successfully:", data);
+      })
+      .catch(error => {
+        console.error("Error updating profile:", error);
+      });
+  }, [profile]);
+
+  const headerButtons = useMemo(() => [
+    {
+      label: "Save",
+      onClick: saveProfileSettings,
+      disabled: !profile,
+    },
+  ], [saveProfileSettings, profile]);
+
+  useHeaderButtons(headerButtons);
+
+  const currentUserDetails = getCurrentUserDetails();
+  
+  useEffect(() => {
+    const fetchProfile = async () => {
+      const data = await getfpoprofiles();
+      if (data && Object.keys(data).length > 0) {
+        // Convert database profile to frontend profile
+        setProfile(convertToFrontendProfile(data));
+      } else {
+        // Create default frontend profile
+        const userDetails = await currentUserDetails;
+        if (!userDetails?.id) {
+          setProfile(null);
+          return;
+        }
+        setProfile(createDefaultFrontendProfile(userDetails));
+      }
+    };
+    fetchProfile();
+  }, []);
 
   const handleProfileChange = (field: string, value: any) => {
-  // console.log("changing values ", field,value)
-  
     setProfile((prev) => {
       if (!prev) return prev;
 
@@ -173,13 +155,22 @@ useEffect(() => {
                 },
                 ...prev.bankDetails.slice(1),
               ]
-            : [{ [field]: value }],
+            : [{ 
+                accountHolderName: "",
+                bankName: "",
+                accountNumber: "",
+                ifscCode: "",
+                upiId: "",
+                isPrimary: true,
+                printBankDetails: false,
+                printUpiQr: false,
+                [field]: value 
+              }],
         };
       }
 
       // Update top-level fields
       return { ...prev, [field]: value };
-   
     });
   };
 
@@ -288,7 +279,6 @@ useEffect(() => {
           </Tabs>
         </div>
       </div>
-    
     </div>
   );
 }
