@@ -48,7 +48,7 @@ export default async function DashboardLayout({
   const transformedUser: UserState = {
     fpoId: user.fpoId,
     email: user.email ?? null, // Convert undefined to null
-    fpoName: user.fpoName,
+    fpoName: user.fpoName ?? "",
   };
 
   const preloadedState = {

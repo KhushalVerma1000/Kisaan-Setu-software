@@ -144,7 +144,7 @@ export default function QuotationPage() {
     } else {
       setQuotations(sampleQuotations);
     }
-  }, []);
+  }, [searchTerm,sampleQuotations]);
 
   // Load sample data on component mount
   const loadQuotations = useCallback(async () => {
@@ -157,7 +157,7 @@ export default function QuotationPage() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [sampleQuotations]);
 
   // Header buttons configuration
   const headerButtons = useMemo(() => [
