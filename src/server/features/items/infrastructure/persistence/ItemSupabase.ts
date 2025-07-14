@@ -135,7 +135,7 @@ export async function updateProductStock(
   const supabase = await createClient()
   
   try {
-    let updateData: any = {
+    const updateData: any = {
       last_stock_update: new Date().toISOString()
     }
 

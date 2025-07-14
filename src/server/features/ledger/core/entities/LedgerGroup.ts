@@ -79,13 +79,13 @@ export class LedgerGroup implements LedgerGroupInterface {
     // Method to get the full hierarchy path
     getHierarchyPath(allGroups: LedgerGroup[]): string[] {
         const path = [this.group];
-        let currentGroup: LedgerGroup = this;
+        let currentParentGroup = this.parentgroup;
 
-        while (currentGroup.parentgroup) {
-            const parentGroup = allGroups.find(g => g.group === currentGroup.parentgroup);
+        while (currentParentGroup) {
+            const parentGroup = allGroups.find(g => g.group === currentParentGroup);
             if (parentGroup) {
                 path.unshift(parentGroup.group);
-                currentGroup = parentGroup;
+                currentParentGroup = parentGroup.parentgroup;
             } else {
                 break;
             }
