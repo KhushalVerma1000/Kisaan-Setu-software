@@ -13,17 +13,20 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { useState, useCallback, useMemo, useEffect } from "react";
 import { useHeaderButtons } from "@/hooks/useHeaderButtons";
 import { useRouter } from "next/navigation";
-import { Search, Plus, Eye, Edit, Trash2, MoreHorizontal, FileSpreadsheet, ChevronDown } from "lucide-react";
+import { Search, Plus, Eye, Edit, Trash2, MoreHorizontal, FileSpreadsheet, ChevronDown, AlertCircle, Sprout } from "lucide-react";
+import { toast } from "react-toastify";
+import { useAppSelector } from "@/store/hooks";
 
-// Ledger data structure
-interface Ledger {
+// Ledger data structure (matching your API response)
+interface LedgerAccount {
   id: string;
   name: string;
   groupName: string;
   openingBalance: number;
   balanceType: 'Dr' | 'Cr';
-  contactInfo?: string;
+  phoneNumber?: string;
   address?: string;
+  fpoId?: string;
 }
 
 // Group data structure
@@ -32,111 +35,138 @@ interface Group {
   name: string;
 }
 
+// API Error interface
+interface APIError {
+  error: string;
+  details?: string;
+  code?: string;
+}
+
 export default function LedgerPage() {
   const router = useRouter();
-  const [ledgers, setLedgers] = useState<Ledger[]>([]);
+  const [ledgers, setLedgers] = useState<LedgerAccount[]>([]);
+  const [allLedgers, setAllLedgers] = useState<LedgerAccount[]>([]); // Store all ledgers for filtering
   const [searchTerm, setSearchTerm] = useState("");
   const [itemsPerPage, setItemsPerPage] = useState("25");
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedLedgers, setSelectedLedgers] = useState<string[]>([]);
+  const [error, setError] = useState<string | null>(null);
   
   // Filter states
   const [selectedGroup, setSelectedGroup] = useState<string>("");
 
-  // Sample data
-  const sampleGroups: Group[] = [
-    { id: "1", name: "Sundry Debtors" },
-    { id: "2", name: "Sundry Creditors" },
-    { id: "3", name: "Bank Accounts" },
-    { id: "4", name: "Cash in Hand" },
-    { id: "5", name: "Fixed Assets" }
-  ];
+  // Get unique groups from ledgers
+  const groups: Group[] = useMemo(() => {
+    const uniqueGroups = [...new Set(allLedgers.map(ledger => ledger.groupName))];
+    return uniqueGroups.map((groupName, index) => ({
+      id: (index + 1).toString(),
+      name: groupName
+    }));
+  }, [allLedgers]);
 
-  const sampleLedgers: Ledger[] = [
-    {
-      id: "1",
-      name: "Abhishek",
-      groupName: "Sundry Debtors",
-      openingBalance: 15000,
-      balanceType: "Dr",
-      contactInfo: "+91 9876543210",
-      address: "Village Rajpur, Ghaziabad"
-    },
-    {
-      id: "2",
-      name: "Ajad",
-      groupName: "Sundry Debtors",
-      openingBalance: 8500,
-      balanceType: "Dr",
-      contactInfo: "+91 9876543211",
-      address: "Village Muradnagar, Ghaziabad"
-    },
-    {
-      id: "3",
-      name: "Ajay",
-      groupName: "Sundry Debtors",
-      openingBalance: 12000,
-      balanceType: "Dr",
-      contactInfo: "+91 9876543212",
-      address: "Village Pilkhuwa, Ghaziabad"
-    },
-    {
-      id: "4",
-      name: "Ajeet",
-      groupName: "Sundry Debtors",
-      openingBalance: 0,
-      balanceType: "Dr",
-      contactInfo: "+91 9876543213",
-      address: "Village Dasna, Ghaziabad"
-    },
-    {
-      id: "5",
-      name: "Alok",
-      groupName: "Sundry Debtors",
-      openingBalance: 5500,
-      balanceType: "Dr",
-      contactInfo: "+91 9876543214",
-      address: "Village Tronica City, Ghaziabad"
-    },
-    {
-      id: "6",
-      name: "Amar Rajput",
-      groupName: "Sundry Debtors",
-      openingBalance: 25000,
-      balanceType: "Dr",
-      contactInfo: "+91 9876543215",
-      address: "Village Hapur, Ghaziabad"
-    },
-    {
-      id: "7",
-      name: "Amritlal",
-      groupName: "Sundry Debtors",
-      openingBalance: 3000,
-      balanceType: "Dr",
-      contactInfo: "+91 9876543216",
-      address: "Village Loni, Ghaziabad"
-    },
-    {
-      id: "8",
-      name: "Anand",
-      groupName: "Sundry Debtors",
-      openingBalance: 18000,
-      balanceType: "Dr",
-      contactInfo: "+91 9876543217",
-      address: "Village Sahibabad, Ghaziabad"
+  // Get FPO ID from user context or environment
+ const user = useAppSelector((state) => state.user);
+  const fpoId = user.fpoId;
+
+  // Fetch ledgers from API
+  const fetchLedgers = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+    
+    try {
+  
+      const response = await fetch(`/api/ledger/ledgerAccount?fpo_id=${fpoId}`);
+      
+      if (!response.ok) {
+        const errorData: APIError = await response.json();
+        throw new Error(errorData.details || errorData.error || 'Failed to fetch ledgers');
+      }
+      
+      const data: LedgerAccount[] = await response.json();
+      setAllLedgers(data);
+      setLedgers(data);
+      
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'An unexpected error occurred';
+      setError(errorMessage);
+      console.error('Error fetching ledgers:', err);
+      toast.error(`Failed to fetch ledgers: ${errorMessage}`);
+    } finally {
+      setIsLoading(false);
     }
-  ];
+  }, []);
+
+  // Delete ledger API call
+  const deleteLedger = async (ledgerId: string): Promise<void> => {
+
+    try {
+      const response = await fetch(`/api/ledger/ledgerAccount/${ledgerId}`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+      
+      if (!response.ok) {
+        const errorData: APIError = await response.json();
+        throw new Error(errorData.details || errorData.error || 'Failed to delete ledger');
+      }
+      
+      const result = await response.json();
+      console.log('Delete response:', result);
+      toast.success('Ledger deleted successfully');
+      
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to delete ledger';
+      console.error('Error deleting ledger:', err);
+      toast.error(`Failed to delete ledger: ${errorMessage}`);
+      throw err;
+    }
+  };
+
+  // Bulk delete ledgers API call
+    const bulkDeleteLedgers = async (ledgerIds: string[]): Promise<void> => {
+    try {
+      if (!ledgerIds || ledgerIds.length === 0) {
+        throw new Error('No ledger IDs provided for deletion');
+      }
+
+      const response = await fetch('/api/ledger/ledgerAccount/bulk-delete', {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ ids: ledgerIds }),
+      });
+      
+      if (!response.ok) {
+        const errorData: APIError = await response.json();
+        throw new Error(errorData.details || errorData.error || 'Failed to delete ledgers');
+      }
+      
+      const result = await response.json();
+      console.log('Bulk delete response:', result);
+      toast.success(`${ledgerIds.length} ledger${ledgerIds.length > 1 ? 's' : ''} deleted successfully`);
+      
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to delete ledgers';
+      console.error('Error bulk deleting ledgers:', err);
+      toast.error(`Failed to delete ledgers: ${errorMessage}`);
+      throw err;
+    }
+  };
 
   // Header button functionalities
   const handleAddNewLedger = useCallback(() => {
     console.log("Add Ledger clicked");
-    router.push('/dashboard/ledger/new');
+    router.push('/Ledger/AddNewLedger');
   }, [router]);
 
   const handleExportExcel = useCallback(() => {
     console.log("Export Excel clicked");
-    // Export functionality would go here
+    // TODO: Implement Excel export functionality
+    toast.info('Excel export functionality coming soon!');
   }, []);
 
   // Search and filter functionality
@@ -151,34 +181,29 @@ export default function LedgerPage() {
       search: searchTerm
     });
     
-    setIsLoading(true);
+    let filtered = [...allLedgers];
     
-    // Simulate API call with filters
-    setTimeout(() => {
-      let filtered = sampleLedgers;
-      
-      // Apply group filter
-      if (selectedGroup && selectedGroup !== "all") {
-        const group = sampleGroups.find(g => g.id === selectedGroup);
-        if (group) {
-          filtered = filtered.filter(ledger => ledger.groupName === group.name);
-        }
+    // Apply group filter
+    if (selectedGroup && selectedGroup !== "all") {
+      const group = groups.find(g => g.id === selectedGroup);
+      if (group) {
+        filtered = filtered.filter(ledger => ledger.groupName === group.name);
       }
-      
-      // Apply search filter
-      if (searchTerm.trim()) {
-        filtered = filtered.filter(ledger =>
-          ledger.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          ledger.groupName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          (ledger.contactInfo && ledger.contactInfo.includes(searchTerm)) ||
-          (ledger.address && ledger.address.toLowerCase().includes(searchTerm.toLowerCase()))
-        );
-      }
-      
-      setLedgers(filtered);
-      setIsLoading(false);
-    }, 500);
-  }, [selectedGroup, searchTerm]);
+    }
+    
+    // Apply search filter
+    if (searchTerm.trim()) {
+      filtered = filtered.filter(ledger =>
+        ledger.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        ledger.groupName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (ledger.phoneNumber && ledger.phoneNumber.includes(searchTerm)) ||
+        (ledger.address && ledger.address.toLowerCase().includes(searchTerm.toLowerCase()))
+      );
+    }
+    
+    setLedgers(filtered);
+    setCurrentPage(1);
+  }, [selectedGroup, searchTerm, allLedgers, groups]);
 
   // Header buttons configuration
   const headerButtons = useMemo(() => [
@@ -218,24 +243,100 @@ export default function LedgerPage() {
     }
   };
 
+  // Dummy action handlers
+  const handleViewEntries = useCallback((ledgerId: string) => {
+    console.log('View entries for ledger:', ledgerId);
+    // TODO: Navigate to ledger entries page
+    router.push(`/dashboard/ledger/${ledgerId}/entries`);
+    toast.info('Redirecting to ledger entries...');
+  }, [router]);
+
+  const handleEditLedger = useCallback((ledgerId: string) => {
+    console.log('Edit ledger:', ledgerId);
+    // TODO: Navigate to edit ledger page
+    router.push(`/Ledger/${ledgerId}/edit`);
+    toast.info('Redirecting to edit ledger...');
+  }, [router]);
+
   // Delete ledger handler
-  const handleDeleteLedger = (ledgerId: string) => {
-    console.log('Delete ledger:', ledgerId);
-    setLedgers(prev => prev.filter(l => l.id !== ledgerId));
-    setSelectedLedgers(prev => prev.filter(id => id !== ledgerId));
+  const handleDeleteLedger = async (ledgerId: string) => {
+    try {
+      console.log(ledgerId)
+      await deleteLedger(ledgerId);
+      
+      // Remove from local state
+      setLedgers(prev => prev.filter(l => l.id !== ledgerId));
+      setAllLedgers(prev => prev.filter(l => l.id !== ledgerId));
+      setSelectedLedgers(prev => prev.filter(id => id !== ledgerId));
+      
+    } catch (err) {
+      // Error already handled in deleteLedger function
+    }
   };
 
   // Bulk delete handler
-  const handleBulkDelete = () => {
-    console.log('Bulk delete ledgers:', selectedLedgers);
-    setLedgers(prev => prev.filter(l => !selectedLedgers.includes(l.id)));
-    setSelectedLedgers([]);
+  const handleBulkDelete = async () => {
+    try {
+      await bulkDeleteLedgers(selectedLedgers);
+      
+      // Remove from local state
+      setLedgers(prev => prev.filter(l => !selectedLedgers.includes(l.id)));
+      setAllLedgers(prev => prev.filter(l => !selectedLedgers.includes(l.id)));
+      setSelectedLedgers([]);
+      
+    } catch (err) {
+      // Error already handled in bulkDeleteLedgers function
+    }
   };
+
+  // Refresh data
+  const handleRefresh = useCallback(() => {
+    fetchLedgers();
+  }, [fetchLedgers]);
 
   // Load initial data
   useEffect(() => {
+    fetchLedgers();
+  }, [fetchLedgers]);
+
+  // Apply filters when allLedgers changes
+  useEffect(() => {
     handleSubmit();
-  }, []);
+  }, [allLedgers]);
+
+  if (error && !isLoading) {
+    return (
+      <div className="space-y-4 md:space-y-6 p-4 md:p-6">
+        <Breadcrumb>
+          <BreadcrumbList>
+            <BreadcrumbItem>
+              <BreadcrumbLink href="/dashboard">Home</BreadcrumbLink>
+            </BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem>
+              <BreadcrumbPage>Ledger List</BreadcrumbPage>
+            </BreadcrumbItem>
+          </BreadcrumbList>
+        </Breadcrumb>
+
+        <Card>
+          <CardContent className="p-16 text-center">
+            <AlertCircle className="h-16 w-16 text-red-500 mx-auto mb-4" />
+            <h3 className="text-xl font-medium text-gray-800 mb-2">Failed to Load Ledgers</h3>
+            <p className="text-gray-600 mb-6">{error}</p>
+            <div className="flex gap-4 justify-center">
+              <Button onClick={handleRefresh}>
+                Try Again
+              </Button>
+              <Button variant="outline" onClick={handleAddNewLedger}>
+                Add New Ledger
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4 md:space-y-6 p-4 md:p-6">
@@ -266,7 +367,7 @@ export default function LedgerPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">--All Groups--</SelectItem>
-                  {sampleGroups.map((group) => (
+                  {groups.map((group) => (
                     <SelectItem key={group.id} value={group.id}>
                       {group.name}
                     </SelectItem>
@@ -290,13 +391,22 @@ export default function LedgerPage() {
             </div>
 
             {/* Submit Button */}
-            <Button 
-              onClick={handleSubmit}
-              disabled={isLoading}
-              className="w-full"
-            >
-              {isLoading ? "Loading..." : "Search"}
-            </Button>
+            <div className="flex gap-2">
+              <Button 
+                onClick={handleSubmit}
+                disabled={isLoading}
+                className="flex-1"
+              >
+                {isLoading ? "Loading..." : "Search"}
+              </Button>
+              <Button 
+                variant="outline"
+                onClick={handleRefresh}
+                disabled={isLoading}
+              >
+                Refresh
+              </Button>
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -335,7 +445,7 @@ export default function LedgerPage() {
                 </AlertDialogHeader>
                 <AlertDialogFooter>
                   <AlertDialogCancel>Cancel</AlertDialogCancel>
-                  <AlertDialogAction onClick={handleBulkDelete}>
+                  <AlertDialogAction onClick={handleBulkDelete}   className="bg-red-500 hover:bg-red-600">
                     Delete
                   </AlertDialogAction>
                 </AlertDialogFooter>
@@ -399,7 +509,7 @@ export default function LedgerPage() {
                             </div>
                           )}
                         </TableCell>
-                        <TableCell>{ledger.contactInfo || '-'}</TableCell>
+                        <TableCell>{ledger.phoneNumber || '-'}</TableCell>
                         <TableCell>{ledger.address || '-'}</TableCell>
                         <TableCell className="text-right">
                           <DropdownMenu>
@@ -409,15 +519,11 @@ export default function LedgerPage() {
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
-                              <DropdownMenuItem
-                                onClick={() => router.push(`/dashboard/ledger/${ledger.id}/entries`)}
-                              >
+                              <DropdownMenuItem onClick={() => handleViewEntries(ledger.id)}>
                                 <Eye className="mr-2 h-4 w-4" />
                                 View Ledger Entries
                               </DropdownMenuItem>
-                              <DropdownMenuItem
-                                onClick={() => router.push(`/dashboard/ledger/${ledger.id}/edit`)}
-                              >
+                              <DropdownMenuItem onClick={() => handleEditLedger(ledger.id)}>
                                 <Edit className="mr-2 h-4 w-4" />
                                 Edit
                               </DropdownMenuItem>
@@ -437,7 +543,7 @@ export default function LedgerPage() {
                                   </AlertDialogHeader>
                                   <AlertDialogFooter>
                                     <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                    <AlertDialogAction onClick={() => handleDeleteLedger(ledger.id)}>
+                                    <AlertDialogAction onClick={() => handleDeleteLedger(ledger.id)}   className="bg-red-500 hover:bg-red-600">
                                       Delete
                                     </AlertDialogAction>
                                   </AlertDialogFooter>
@@ -476,10 +582,10 @@ export default function LedgerPage() {
                       </div>
                       
                       <div className="grid grid-cols-1 gap-2 text-sm">
-                        {ledger.contactInfo && (
+                        {ledger.phoneNumber && (
                           <div>
                             <span className="text-muted-foreground">Contact:</span>
-                            <p>{ledger.contactInfo}</p>
+                            <p>{ledger.phoneNumber}</p>
                           </div>
                         )}
                         {ledger.address && (
@@ -494,7 +600,7 @@ export default function LedgerPage() {
                         <Button
                           size="sm"
                           variant="outline"
-                          onClick={() => router.push(`/dashboard/ledger/${ledger.id}/entries`)}
+                          onClick={() => handleViewEntries(ledger.id)}
                           className="flex-1"
                         >
                           <Eye className="h-4 w-4 mr-1" />
@@ -503,7 +609,7 @@ export default function LedgerPage() {
                         <Button
                           size="sm"
                           variant="outline"
-                          onClick={() => router.push(`/dashboard/ledger/${ledger.id}/edit`)}
+                          onClick={() => handleEditLedger(ledger.id)}
                           className="flex-1"
                         >
                           <Edit className="h-4 w-4 mr-1" />
@@ -524,7 +630,7 @@ export default function LedgerPage() {
                             </AlertDialogHeader>
                             <AlertDialogFooter>
                               <AlertDialogCancel>Cancel</AlertDialogCancel>
-                              <AlertDialogAction onClick={() => handleDeleteLedger(ledger.id)}>
+                              <AlertDialogAction onClick={() => handleDeleteLedger(ledger.id)}   className="bg-red-500 hover:bg-red-600">
                                 Delete
                               </AlertDialogAction>
                             </AlertDialogFooter>

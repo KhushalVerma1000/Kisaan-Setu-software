@@ -29,8 +29,9 @@ function getDefaultUnitByCode(unitCode: string): Unit | null {
   const defaultUnits = Unit.defaultUnits();
   return defaultUnits.find(unit => unit.code === unitCode) || null;
 }
+// Key changes to ItemSupabase.ts for current stock support
 
-// Helper function to convert database row to Item props
+// Helper function to convert database row to Item props (UPDATED)
 function dbRowToItemProps(data: any, category: Category, unit?: Unit): Product | Service {
   const baseProps = {
     id: data.id,
@@ -59,6 +60,8 @@ function dbRowToItemProps(data: any, category: Category, unit?: Unit): Product |
       data.opening_stock_date ? new Date(data.opening_stock_date) : null,
       data.mfg_date ? new Date(data.mfg_date) : null,
       data.exp_date ? new Date(data.exp_date) : null,
+      data.current_stock !== undefined ? data.current_stock : (data.opening_quantity || 0), // 🟢 Default to opening quantity
+      data.last_stock_update ? new Date(data.last_stock_update) : (data.opening_stock_date ? new Date(data.opening_stock_date) : null), // 🟢 Default to opening date
       data.barcode,
       data.discount ? {
         value: data.discount.value,
@@ -76,6 +79,235 @@ function dbRowToItemProps(data: any, category: Category, unit?: Unit): Product |
       baseProps.salePriceInclusive,
       baseProps.gstTaxPercent
     );
+  }
+}
+
+// 🟢 NEW: Helper function to create a Product with stock defaulting to opening quantity
+export function createProductWithStock(
+  id: string,
+  name: string,
+  category: Category,
+  hsn_sac: string,
+  salePrice: number,
+  salePriceInclusive: boolean,
+  gstTaxPercent: number,
+  purchasePrice: number,
+  purchasePriceInclusive: boolean,
+  unit: Unit,
+  openingQuantity: number,
+  openingStockDate: Date | null,
+  mfgDate: Date | null,
+  expDate: Date | null,
+  barcode?: string,
+  discount?: { value: number; type: "fixed" | "percent" },
+  lowStockAlert?: number,
+  currentStock?: number // Optional override for current stock
+): Product {
+  return new Product(
+    id,
+    name,
+    category,
+    hsn_sac,
+    salePrice,
+    salePriceInclusive,
+    gstTaxPercent,
+    purchasePrice,
+    purchasePriceInclusive,
+    unit,
+    openingQuantity,
+    openingStockDate,
+    mfgDate,
+    expDate,
+    currentStock !== undefined ? currentStock : openingQuantity, // Use override or default to opening
+    openingStockDate, // Default last update to opening date
+    barcode,
+    discount,
+    lowStockAlert
+  );
+}
+
+// 🟢 NEW: Function to update current stock
+export async function updateProductStock(
+  id: string, 
+  quantity: number, 
+  operation: 'add' | 'subtract' | 'set' = 'set'
+): Promise<Product | null> {
+  const supabase = await createClient()
+  
+  try {
+    let updateData: any = {
+      last_stock_update: new Date().toISOString()
+    }
+
+    if (operation === 'set') {
+      updateData.current_stock = quantity
+    } else {
+      // For add/subtract operations, we need to use SQL functions
+      const { data: currentItem, error: fetchError } = await supabase
+        .from('items')
+        .select('current_stock')
+        .eq('id', id)
+        .eq('type', 'product')
+        .single()
+
+      if (fetchError) {
+        throw new Error(fetchError.message)
+      }
+
+      const currentStock = currentItem.current_stock || 0
+      updateData.current_stock = operation === 'add' 
+        ? currentStock + quantity 
+        : currentStock - quantity
+    }
+
+    const { data, error } = await supabase
+      .from('items')
+      .update(updateData)
+      .eq('id', id)
+      .eq('type', 'product')
+      .select(`
+        *,
+        categories!inner(id, name, description, parent_category_id)
+      `)
+      .single()
+
+    if (error) {
+      throw new Error(error.message)
+    }
+
+    const category = dbRowToCategoryProps(data.categories)
+    
+    let unit: Unit | undefined
+    if (data.unit_code) {
+      unit = await getUnitByCode(data.unit_code) || undefined
+      if (!unit) {
+        throw new Error(`Unit with code ${data.unit_code} not found`)
+      }
+    }
+    
+    return dbRowToItemProps(data, category, unit) as Product
+  } catch (error) {
+    console.error('Error updating product stock:', error)
+    return null
+  }
+}
+
+// 🟢 NEW: Function to get low stock products
+export async function getLowStockProducts(fpo_id: string): Promise<Product[] | null> {
+  try {
+    const supabase = await createClient()
+
+    const { data, error } = await supabase
+      .from('items')
+      .select(`
+        *,
+        categories!inner(id, name, description, parent_category_id)
+      `)
+      .eq('fpo_id', fpo_id)
+      .eq('type', 'product')
+      .not('low_stock_alert', 'is', null)
+      .filter('current_stock', 'lte', 'low_stock_alert')
+      .order('current_stock', { ascending: true })
+
+    if (error) {
+      throw new Error(error.message)
+    }
+
+    if (!data) return []
+
+    const products = []
+    for (const row of data) {
+      const category = dbRowToCategoryProps(row.categories)
+      
+      let unit: Unit | undefined
+      if (row.unit_code) {
+        unit = await getUnitByCode(row.unit_code) || undefined
+        if (!unit) {
+          console.warn(`Unit with code ${row.unit_code} not found for item ${row.id}`)
+          continue
+        }
+      }
+      
+      products.push(dbRowToItemProps(row, category, unit) as Product)
+    }
+
+    return products
+  } catch (error) {
+    console.error('Error fetching low stock products:', error)
+    return null
+  }
+}
+
+// 🟢 NEW: Function to get out of stock products
+export async function getOutOfStockProducts(fpo_id: string): Promise<Product[] | null> {
+  try {
+    const supabase = await createClient()
+
+    const { data, error } = await supabase
+      .from('items')
+      .select(`
+        *,
+        categories!inner(id, name, description, parent_category_id)
+      `)
+      .eq('fpo_id', fpo_id)
+      .eq('type', 'product')
+      .lte('current_stock', 0)
+      .order('name', { ascending: true })
+
+    if (error) {
+      throw new Error(error.message)
+    }
+
+    if (!data) return []
+
+    const products = []
+    for (const row of data) {
+      const category = dbRowToCategoryProps(row.categories)
+      
+      let unit: Unit | undefined
+      if (row.unit_code) {
+        unit = await getUnitByCode(row.unit_code) || undefined
+        if (!unit) {
+          console.warn(`Unit with code ${row.unit_code} not found for item ${row.id}`)
+          continue
+        }
+      }
+      
+      products.push(dbRowToItemProps(row, category, unit) as Product)
+    }
+
+    return products
+  } catch (error) {
+    console.error('Error fetching out of stock products:', error)
+    return null
+  }
+}
+
+// 🟢 NEW: Function to get total stock value for all products
+export async function getTotalStockValue(fpo_id: string): Promise<number | null> {
+  try {
+    const supabase = await createClient()
+
+    const { data, error } = await supabase
+      .from('items')
+      .select('current_stock, purchase_price')
+      .eq('fpo_id', fpo_id)
+      .eq('type', 'product')
+
+    if (error) {
+      throw new Error(error.message)
+    }
+
+    if (!data) return 0
+
+    const totalValue = data.reduce((sum, item) => {
+      return sum + (item.current_stock || 0) * (item.purchase_price || 0)
+    }, 0)
+
+    return totalValue
+  } catch (error) {
+    console.error('Error calculating total stock value:', error)
+    return null
   }
 }
 
@@ -351,6 +583,54 @@ export async function initializeDefaultUnits(fpo_id: string): Promise<Unit[] | n
 
 // ============ ITEM FUNCTIONS ============
 
+
+// Add this function to your ItemSupabase.ts file
+
+export async function getItemByNameAndFpo(name: string, fpo_id: string): Promise<Product | Service | null> {
+  const supabase = await createClient()
+  
+  try {
+    const { data, error } = await supabase
+      .from('items')
+      .select(`
+        *,
+        categories!inner(id, name, description, parent_category_id)
+      `)
+      .eq('name', name)
+      .eq('fpo_id', fpo_id)
+      .single()
+
+    if (error) {
+      // If no data found, return null (not an error)
+      if (error.code === 'PGRST116') {
+        return null
+      }
+      throw new Error(error.message)
+    }
+
+    if (!data) return null
+
+    const category = dbRowToCategoryProps(data.categories)
+    
+    // Get unit information (from default units or database)
+    let unit: Unit | undefined
+    if (data.unit_code) {
+      unit = await getUnitByCode(data.unit_code) || undefined
+      if (!unit) {
+        console.warn(`Unit with code ${data.unit_code} not found for item ${data.id}`)
+      }
+    }
+    
+    return dbRowToItemProps(data, category, unit)
+  } catch (error) {
+    console.error('Error checking item by name and FPO:', error)
+    throw error // Re-throw to be handled by the caller
+  }
+}
+
+// Optimized approach - try to insert first, handle duplicates gracefully
+
+// UPDATED: createItem function to handle current stock
 export async function createItem(item: Product | Service, fpo_id: string): Promise<Product | Service | null> {
   const supabase = await createClient()
 
@@ -384,13 +664,15 @@ export async function createItem(item: Product | Service, fpo_id: string): Promi
         opening_stock_date: item.openingStockDate?.toISOString(),
         mfg_date: item.mfgDate?.toISOString(),
         exp_date: item.expDate?.toISOString(),
+        current_stock: item.currentStock !== undefined ? item.currentStock : item.openingQuantity, // 🟢 Default to opening quantity
+        last_stock_update: item.lastStockUpdate?.toISOString() || item.openingStockDate?.toISOString(), // 🟢 Default to opening date
         barcode: item.barcode,
         discount: item.discount,
         low_stock_alert: item.lowStockAlert
       }
     }
 
-    // Modified query to handle both default and custom units
+    // Try to insert directly - most efficient for new items
     const { data, error } = await supabase
       .from('items')
       .insert([insertData])
@@ -401,6 +683,13 @@ export async function createItem(item: Product | Service, fpo_id: string): Promi
       .single()
 
     if (error) {
+      // Handle specific PostgreSQL errors
+      if (error.code === '23505') { // Unique constraint violation
+        throw new Error(`DUPLICATE_ITEM:${item.name}`)
+      }
+      if (error.code === '23503') { // Foreign key constraint violation
+        throw new Error(`INVALID_REFERENCE:${error.message}`)
+      }
       throw new Error(error.message)
     }
 
@@ -415,14 +704,14 @@ export async function createItem(item: Product | Service, fpo_id: string): Promi
       }
     }
 
-    console.log(dbRowToItemProps(data, category, unit))
     return dbRowToItemProps(data, category, unit)
   } catch (error) {
     console.error('Error creating item:', error)
-    return null
+    throw error // Re-throw the error to be handled by the caller
   }
 }
 
+// UPDATED: updateItem function to handle current stock and fix date handling
 export async function updateItem(id: string, updates: Partial<Product | Service>): Promise<Product | Service | null> {
   const supabase = await createClient()
   
@@ -447,9 +736,54 @@ export async function updateItem(id: string, updates: Partial<Product | Service>
     updateData.unit_code = productUpdates.unit.code
   }
   if (productUpdates.openingQuantity !== undefined) updateData.opening_quantity = productUpdates.openingQuantity
-  if (productUpdates.openingStockDate !== undefined) updateData.opening_stock_date = productUpdates.openingStockDate?.toISOString()
-  if (productUpdates.mfgDate !== undefined) updateData.mfg_date = productUpdates.mfgDate?.toISOString()
-  if (productUpdates.expDate !== undefined) updateData.exp_date = productUpdates.expDate?.toISOString()
+  
+  // Fix date handling - convert string to Date if needed, then to ISO string
+  if (productUpdates.openingStockDate !== undefined) {
+    if (productUpdates.openingStockDate === null) {
+      updateData.opening_stock_date = null
+    } else {
+      const date = typeof productUpdates.openingStockDate === 'string' 
+        ? new Date(productUpdates.openingStockDate) 
+        : productUpdates.openingStockDate
+      updateData.opening_stock_date = date?.toISOString()
+    }
+  }
+  
+  if (productUpdates.mfgDate !== undefined) {
+    if (productUpdates.mfgDate === null) {
+      updateData.mfg_date = null
+    } else {
+      const date = typeof productUpdates.mfgDate === 'string' 
+        ? new Date(productUpdates.mfgDate) 
+        : productUpdates.mfgDate
+      updateData.mfg_date = date?.toISOString()
+    }
+  }
+  
+  if (productUpdates.expDate !== undefined) {
+    if (productUpdates.expDate === null) {
+      updateData.exp_date = null
+    } else {
+      const date = typeof productUpdates.expDate === 'string' 
+        ? new Date(productUpdates.expDate) 
+        : productUpdates.expDate
+      updateData.exp_date = date?.toISOString()
+    }
+  }
+  
+  if (productUpdates.currentStock !== undefined) updateData.current_stock = productUpdates.currentStock
+  
+  if (productUpdates.lastStockUpdate !== undefined) {
+    if (productUpdates.lastStockUpdate === null) {
+      updateData.last_stock_update = null
+    } else {
+      const date = typeof productUpdates.lastStockUpdate === 'string' 
+        ? new Date(productUpdates.lastStockUpdate) 
+        : productUpdates.lastStockUpdate
+      updateData.last_stock_update = date?.toISOString()
+    }
+  }
+  
   if (productUpdates.barcode !== undefined) updateData.barcode = productUpdates.barcode
   if (productUpdates.discount !== undefined) updateData.discount = productUpdates.discount
   if (productUpdates.lowStockAlert !== undefined) updateData.low_stock_alert = productUpdates.lowStockAlert
@@ -486,7 +820,6 @@ export async function updateItem(id: string, updates: Partial<Product | Service>
     return null
   }
 }
-
 export async function getAllItems(fpo_id: string): Promise<(Product | Service)[] | null> {
   try {
     const supabase = await createClient()

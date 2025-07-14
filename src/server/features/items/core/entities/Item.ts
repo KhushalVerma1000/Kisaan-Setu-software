@@ -53,6 +53,8 @@ export class Product extends Item {
     public openingStockDate: Date | null,
     public mfgDate: Date | null,
     public expDate: Date | null,
+    public currentStock: number = openingQuantity, // 🟢 NEW: Current stock defaults to opening quantity
+    public lastStockUpdate: Date | null = openingStockDate, // 🟢 NEW: Defaults to opening stock date
     public barcode?: string,
     public discount?: {
       value: number;
@@ -61,5 +63,30 @@ export class Product extends Item {
     public lowStockAlert?: number
   ) {
     super(id, name, "product", category, hsn_sac, salePrice, salePriceInclusive, gstTaxPercent);
+  }
+
+  // 🟢 NEW: Check if product is low in stock
+  isLowStock(): boolean {
+    return this.lowStockAlert !== undefined && this.currentStock <= this.lowStockAlert;
+  }
+
+  // 🟢 NEW: Check if product is out of stock
+  isOutOfStock(): boolean {
+    return this.currentStock <= 0;
+  }
+
+  // 🟢 NEW: Update current stock (typically called after sales/purchases)
+  updateStock(quantity: number, operation: 'add' | 'subtract' = 'add'): void {
+    if (operation === 'add') {
+      this.currentStock += quantity;
+    } else {
+      this.currentStock -= quantity;
+    }
+    this.lastStockUpdate = new Date();
+  }
+
+  // 🟢 NEW: Get stock value (current stock * purchase price)
+  getStockValue(): number {
+    return this.currentStock * this.purchasePrice;
   }
 }

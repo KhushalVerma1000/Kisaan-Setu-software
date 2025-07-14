@@ -25,14 +25,24 @@ import {
   X,
   Loader2
 } from 'lucide-react'
+import { toast } from 'react-toastify'
+import { Unit } from '@/server/features/items/core/entities/Unit'
+import { useAppDispatch, useAppSelector } from '@/store/hooks'
 
 interface EditItemPageProps {
   itemId: string
 }
 
+interface Category {
+  id: string;
+  name: string;
+  description?: string;
+  parentCategory?: Category;
+}
+
 interface FormData {
   name: string
-  category: { id: string; name: string } | null
+  category: Category | null
   hsn_sac: string
   salePrice: number
   salePriceInclusive: boolean
@@ -40,7 +50,7 @@ interface FormData {
   // Product specific fields
   purchasePrice?: number
   purchasePriceInclusive?: boolean
-  unit?: { code: string; name: string } | null
+  unit?: { code: string; name: string; label: string } | null
   openingQuantity?: number
   openingStockDate?: Date
   mfgDate?: Date
@@ -48,10 +58,26 @@ interface FormData {
   barcode?: string
   discount?: number
   lowStockAlert?: number
+  currentStock?: number
+  lastStockUpdate?: Date
 }
+
+// GST rates array
+const GST_RATES = [
+  { value: 0, label: '0% - Exempt' },
+  { value: 3, label: '3% - Essential goods' },
+  { value: 5, label: '5% - Household necessities' },
+  { value: 12, label: '12% - Standard rate' },
+  { value: 18, label: '18% - Standard rate' },
+  { value: 28, label: '28% - Luxury goods' },
+]
 
 export default function EditItemPage({ itemId }: EditItemPageProps) {
   const router = useRouter()
+  const user = useAppSelector((state) => state.user);
+  const dispatch = useAppDispatch();
+  
+  const fpoId = user.fpoId;
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [itemType, setItemType] = useState<'product' | 'service'>('product')
@@ -67,68 +93,103 @@ export default function EditItemPage({ itemId }: EditItemPageProps) {
     unit: null,
     openingQuantity: 0,
     discount: 0,
-    lowStockAlert: 0
+    lowStockAlert: 0,
+    currentStock: 0,
   })
   const [errors, setErrors] = useState<Record<string, string>>({})
-
-  // Mock data - replace with actual API calls
-  const categories = [
-    { id: '1', name: 'Electronics' },
-    { id: '2', name: 'Clothing' },
-    { id: '3', name: 'Books' },
-    { id: '4', name: 'Services' }
-  ]
-
-  const units = [
-    { code: 'PCS', name: 'Pieces' },
-    { code: 'KG', name: 'Kilogram' },
-    { code: 'L', name: 'Liter' },
-    { code: 'M', name: 'Meter' }
-  ]
+  const [categories, setCategories] = useState<Category[]>([])
+  const [units, setUnits] = useState<Unit[]>([])
 
   useEffect(() => {
     loadItem()
+    loadCategories()
+    loadUnits()
   }, [itemId])
 
-  
+  const loadCategories = async () => {
+    try {
+      const response = await fetch(`/api/items/categories?fpo_id=${fpoId}`);
+      if (response.ok) {
+        const data = await response.json();
+        const categorylist = data.categories || [];
+        setCategories(categorylist);
+      }
+    } catch (error) {
+      console.error('Error loading categories:', error);
+      // Fallback data
+      setCategories([
+        { id: "1", name: "General", description: "General items" },
+        { id: "2", name: "Fertilizers", description: "Agricultural fertilizers" },
+        { id: "3", name: "Seeds", description: "Agricultural seeds" },
+      ]);
+    }
+  };
+
+  const loadUnits = async () => {
+    try {
+      const response = await fetch(`/api/items/units?fpo_id=${fpoId}`);
+      if (response.ok) {
+        const data = await response.json();
+        setUnits([...data.units]);
+      }
+    } catch (error) {
+      console.error('Error loading units:', error);
+      // Fallback to default units
+      const unitlist = Unit.defaultUnits();
+      setUnits(unitlist);
+    }
+  };
+
   const loadItem = async () => {
     try {
       setLoading(true)
-      const data = await fetch(`/api/items/${itemId}`)
-      const item = await data.json()
+      const response = await fetch(`/api/items/${itemId}`)
+      
+      if (!response.ok) {
+        throw new Error('Failed to load item')
+      }
+      
+      const item = await response.json()
       
       if (!item) {
-        router.push('/items')
+        router.push('/Items/ItemList')
+        toast.error('Item not found')
         return
       }
-
+      
+      console.log('Loaded item:', item)
+      
       // Determine item type based on properties
-      const isProduct = 'purchasePrice' in item
+      const isProduct = item.purchasePrice !== undefined || item.unit !== undefined
       setItemType(isProduct ? 'product' : 'service')
 
       // Set form data
       setFormData({
-        name: item.name,
-        category: item.category,
-        hsn_sac: item.hsn_sac,
-        salePrice: item.salePrice,
-        salePriceInclusive: item.salePriceInclusive,
-        gstTaxPercent: item.gstTaxPercent,
+        name: item.name || '',
+        category: item.category || null,
+        hsn_sac: item.hsn_sac || '',
+        salePrice: item.salePrice || 0,
+        salePriceInclusive: item.salePriceInclusive || false,
+        gstTaxPercent: item.gstTaxPercent || 18,
         ...(isProduct && {
-          purchasePrice: (item as any).purchasePrice,
-          purchasePriceInclusive: (item as any).purchasePriceInclusive,
-          unit: (item as any).unit,
-          openingQuantity: (item as any).openingQuantity,
-          openingStockDate: (item as any).openingStockDate,
-          mfgDate: (item as any).mfgDate,
-          expDate: (item as any).expDate,
-          barcode: (item as any).barcode,
-          discount: (item as any).discount,
-          lowStockAlert: (item as any).lowStockAlert
+          purchasePrice: item.purchasePrice || 0,
+          purchasePriceInclusive: item.purchasePriceInclusive || false,
+          unit: item.unit || null,
+          openingQuantity: item.openingQuantity || 0,
+          openingStockDate: item.openingStockDate ? new Date(item.openingStockDate) : undefined,
+          mfgDate: item.mfgDate ? new Date(item.mfgDate) : undefined,
+          expDate: item.expDate ? new Date(item.expDate) : undefined,
+          barcode: item.barcode || '',
+          discount: item.discount || 0,
+          lowStockAlert: item.lowStockAlert || 0,
+          currentStock: item.currentStock || 0,
+          lastStockUpdate: item.lastStockUpdate ? new Date(item.lastStockUpdate) : undefined,
         })
       })
     } catch (error) {
       console.error('Error loading item:', error)
+      toast.error('Failed to load item')
+      router.push('/Items/ItemList')
     } finally {
       setLoading(false)
     }
@@ -175,40 +236,49 @@ export default function EditItemPage({ itemId }: EditItemPageProps) {
     try {
       setSaving(true)
       
-      const updates = {
+      const updates: any = {
         name: formData.name,
         category: formData.category!,
         hsn_sac: formData.hsn_sac,
         salePrice: formData.salePrice,
         salePriceInclusive: formData.salePriceInclusive,
         gstTaxPercent: formData.gstTaxPercent,
-        ...(itemType === 'product' && {
-          purchasePrice: formData.purchasePrice,
-          purchasePriceInclusive: formData.purchasePriceInclusive,
-          unit: formData.unit,
-          openingQuantity: formData.openingQuantity,
-          openingStockDate: formData.openingStockDate,
-          mfgDate: formData.mfgDate,
-          expDate: formData.expDate,
-          barcode: formData.barcode,
-          discount: formData.discount,
-          lowStockAlert: formData.lowStockAlert
-        })
       }
 
-      const result = await fetch(`/api/items/${itemId}`,{
-        method:'PUT',
-        headers:{
-            'content-type':'application/json'
+      // Add product-specific fields only if it's a product
+      if (itemType === 'product') {
+        updates.purchasePrice = formData.purchasePrice
+        updates.purchasePriceInclusive = formData.purchasePriceInclusive
+        updates.unit = formData.unit
+        updates.openingQuantity = formData.openingQuantity
+        updates.openingStockDate = formData.openingStockDate
+        updates.mfgDate = formData.mfgDate
+        updates.expDate = formData.expDate
+        updates.barcode = formData.barcode
+        updates.discount = formData.discount
+        updates.lowStockAlert = formData.lowStockAlert
+        updates.currentStock = formData.currentStock
+        updates.lastStockUpdate = formData.lastStockUpdate
+      }
+
+      const response = await fetch(`/api/items/${itemId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json'
         },
-        body:JSON.stringify(updates)
+        body: JSON.stringify(updates)
       })
       
-      if (result) {
-        router.push('/Items/ItemList')
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.message || 'Failed to update item')
       }
+
+      toast.success('Item updated successfully')
+      router.push('/Items/ItemList')
     } catch (error) {
       console.error('Error updating item:', error)
+      toast.error(error instanceof Error ? error.message : 'Failed to update item')
     } finally {
       setSaving(false)
     }
@@ -413,22 +483,21 @@ export default function EditItemPage({ itemId }: EditItemPageProps) {
                   <Label htmlFor="gstTax">
                     GST Tax <span className="text-red-500">*</span>
                   </Label>
-                  <div className="relative">
-                    <Input
-                      id="gstTax"
-                      type="number"
-                      value={formData.gstTaxPercent}
-                      onChange={(e) => handleInputChange('gstTaxPercent', parseFloat(e.target.value) || 0)}
-                      placeholder="18"
-                      className="pr-8"
-                      min="0"
-                      max="100"
-                      step="0.01"
-                    />
-                    <span className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500">
-                      %
-                    </span>
-                  </div>
+                  <Select
+                    value={formData.gstTaxPercent.toString()}
+                    onValueChange={(value) => handleInputChange('gstTaxPercent', parseFloat(value))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select GST rate" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {GST_RATES.map((rate) => (
+                        <SelectItem key={rate.value} value={rate.value.toString()}>
+                          {rate.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
 
@@ -498,7 +567,7 @@ export default function EditItemPage({ itemId }: EditItemPageProps) {
                       <SelectContent>
                         {units.map((unit) => (
                           <SelectItem key={unit.code} value={unit.code}>
-                            {unit.name} ({unit.code})
+                            {unit.label} ({unit.code})
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -524,30 +593,42 @@ export default function EditItemPage({ itemId }: EditItemPageProps) {
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="openingStockDate">Opening Stock Date</Label>
-                    <Popover>
-                      <PopoverTrigger asChild>
-                        <Button
-                          variant="outline"
-                          className={cn(
-                            "w-full justify-start text-left font-normal",
-                            !formData.openingStockDate && "text-muted-foreground"
-                          )}
-                        >
-                          <CalendarIcon className="mr-2 h-4 w-4" />
-                          {formData.openingStockDate ? format(formData.openingStockDate, "PPP") : "Pick a date"}
-                        </Button>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-auto p-0">
-                        <Calendar
-                          mode="single"
-                          selected={formData.openingStockDate}
-                          onSelect={(date) => handleInputChange('openingStockDate', date)}
-                          initialFocus
-                        />
-                      </PopoverContent>
-                    </Popover>
+                    <Label htmlFor="currentStock">Current Stock</Label>
+                    <Input
+                      id="currentStock"
+                      type="number"
+                      value={formData.currentStock || 0}
+                      onChange={(e) => handleInputChange('currentStock', parseInt(e.target.value) || 0)}
+                      placeholder="0"
+                      min="0"
+                    />
                   </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="openingStockDate">Opening Stock Date</Label>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        className={cn(
+                          "w-full justify-start text-left font-normal",
+                          !formData.openingStockDate && "text-muted-foreground"
+                        )}
+                      >
+                        <CalendarIcon className="mr-2 h-4 w-4" />
+                        {formData.openingStockDate ? format(formData.openingStockDate, "PPP") : "Pick a date"}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0">
+                      <Calendar
+                        mode="single"
+                        selected={formData.openingStockDate}
+                        onSelect={(date) => handleInputChange('openingStockDate', date)}
+                        initialFocus
+                      />
+                    </PopoverContent>
+                  </Popover>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

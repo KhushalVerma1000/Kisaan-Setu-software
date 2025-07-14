@@ -1,7 +1,9 @@
-import { Service, Product } from "@/server/features/items/core/entities/Item";
-import { Category } from "@/server/features/items/core/entities/Category";
-import { NextRequest, NextResponse } from "next/server";
-import { createItem, getUnitByCode ,getAllItems} from "@/server/features/items/infrastructure/persistence/ItemSupabase";
+// GET /api/items - Get all items for an FPO
+import { NextRequest, NextResponse } from 'next/server'
+import { getAllItems , getUnitByCode , createItem , getCategoryById  } from '@/server/features/items/infrastructure/persistence/ItemSupabase'
+
+import { Product, Service } from '@/server/features/items/core/entities/Item'
+// GET /api/items - Get all items for an FPO
 
 export async function GET(request: NextRequest) {
   try {
@@ -10,33 +12,24 @@ export async function GET(request: NextRequest) {
 
     if (!fpo_id) {
       return NextResponse.json(
-        { error: 'FPO ID is required' },
+        { error: 'fpo_id is required' },
         { status: 400 }
       )
     }
 
-    // Get all items without pagination
-    const allItems = await getAllItems(fpo_id)
-    
-    if (allItems === null) {
+    const items = await getAllItems(fpo_id)
+
+    if (items === null) {
       return NextResponse.json(
         { error: 'Failed to fetch items' },
         { status: 500 }
       )
     }
 
-    // Transform to ItemLite format for the frontend
-    const itemsLite = allItems.map(item => ({
-      id: item.id,
-      name: item.name,
-      categoryName: item.category.name,
-      salePrice: item.salePrice,
-      purchasePrice: item.type === 'product' ? (item as any).purchasePrice : 0
-    }))
-
     return NextResponse.json({
-      data: itemsLite,
-      totalItems: itemsLite.length
+      success: true,
+      data: items,
+      count: items.length
     })
 
   } catch (error) {
@@ -48,107 +41,160 @@ export async function GET(request: NextRequest) {
   }
 }
 
-export async function POST(request: Request) {
+// POST /api/items - Create a new item
+interface CreateItemRequest {
+  name: string
+  type: 'product' | 'service'
+  category_id: string
+  hsn_sac: string
+  salePrice: number
+  salePriceInclusive: boolean
+  gstTaxPercent: number
+  fpo_id: string
+  
+  // Product-specific fields (optional)
+  purchasePrice?: number
+  purchasePriceInclusive?: boolean
+  unit_code?: string
+  openingQuantity?: number
+  openingStockDate?: string // ISO date string
+  mfgDate?: string // ISO date string
+  expDate?: string // ISO date string
+  currentStock?: number
+  barcode?: string
+  discount?: {
+    value: number
+    type: 'fixed' | 'percent'
+  }
+  lowStockAlert?: number
+}
+
+export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-    const formData = body;
-    const fpo_id = formData.fpo_id;
+    const body: CreateItemRequest = await request.json()
 
     // Validate required fields
-    if (!formData.name || !formData.category || !formData.hsn_sac || 
-        formData.salePrice === undefined || formData.salePriceInclusive === undefined || 
-        formData.gstTaxPercent === undefined) {
-      return NextResponse.json({ 
-        error: "Missing required fields: name, category, hsn_sac, salePrice, salePriceInclusive, gstTaxPercent" 
-      }, { status: 400 });
+    if (!body.name || !body.type || !body.category_id || !body.hsn_sac || 
+        body.salePrice === undefined || body.salePriceInclusive === undefined || 
+        body.gstTaxPercent === undefined || !body.fpo_id) {
+      return NextResponse.json(
+        { error: 'Missing required fields: name, type, category_id, hsn_sac, salePrice, salePriceInclusive, gstTaxPercent, fpo_id' },
+        { status: 400 }
+      )
     }
 
-    if (!fpo_id) {
-      return NextResponse.json({ error: "FPO ID is required" }, { status: 400 });
+    // Validate type
+    if (!['product', 'service'].includes(body.type)) {
+      return NextResponse.json(
+        { error: 'type must be either "product" or "service"' },
+        { status: 400 }
+      )
     }
 
-    // Create Category object with the selected category ID
-    // Note: The category name will be populated from the database when creating the item
-    const category = new Category(formData.category, ""); // Empty name will be filled by DB query
+    // Get category
+    const category = await getCategoryById(body.category_id)
+    if (!category) {
+      return NextResponse.json(
+        { error: 'Category not found' },
+        { status: 404 }
+      )
+    }
 
-    let item;
+    let item: Product | Service
 
-    if (formData.type === "product") {
-      if (!formData.unit) {
-        return NextResponse.json({ error: "Unit is required for product" }, { status: 400 });
+    if (body.type === 'product') {
+      // Validate product-specific required fields
+      if (!body.unit_code || body.purchasePrice === undefined) {
+        return NextResponse.json(
+          { error: 'unit_code and purchasePrice are required for products' },
+          { status: 400 }
+        )
       }
 
-      // Validate that the unit exists (either default or custom)
-      const unitExists = await getUnitByCode(formData.unit);
-      if (!unitExists) {
-        return NextResponse.json({ 
-          error: `Unit with code '${formData.unit}' does not exist` 
-        }, { status: 400 });
+      // Get unit
+      const unit = await getUnitByCode(body.unit_code)
+      if (!unit) {
+        return NextResponse.json(
+          { error: 'Unit not found' },
+          { status: 404 }
+        )
       }
 
-      // Create Unit object - use the validated unit data
-      const unit = unitExists;
-
+      // Create Product instance (ID will be generated by Supabase)
       item = new Product(
-        "", // id will be generated by DB
-        formData.name,
+        '', // Empty ID - will be generated by Supabase
+        body.name,
         category,
-        formData.hsn_sac,
-        formData.salePrice,
-        formData.salePriceInclusive,
-        formData.gstTaxPercent,
-        formData.purchasePrice || 0,
-        formData.purchasePriceInclusive || false,
+        body.hsn_sac,
+        body.salePrice,
+        body.salePriceInclusive,
+        body.gstTaxPercent,
+        body.purchasePrice,
+        body.purchasePriceInclusive || false,
         unit,
-        formData.openingQuantity || 0,
-        formData.openingStockDate ? new Date(formData.openingStockDate) : null,
-        formData.mfgDate ? new Date(formData.mfgDate) : null,
-        formData.expDate ? new Date(formData.expDate) : null,
-        formData.barcode || null,
-        formData.discount || null,
-        formData.lowStockAlert || 0
-      );
+        body.openingQuantity || 0,
+        body.openingStockDate ? new Date(body.openingStockDate) : null,
+        body.mfgDate ? new Date(body.mfgDate) : null,
+        body.expDate ? new Date(body.expDate) : null,
+        body.currentStock, // Will default to opening quantity in createItem if undefined
+        body.openingStockDate ? new Date(body.openingStockDate) : null, // lastStockUpdate
+        body.barcode,
+        body.discount,
+        body.lowStockAlert
+      )
     } else {
+      // Create Service instance (ID will be generated by Supabase)
       item = new Service(
-        "", // id will be generated by DB
-        formData.name,
+        '', // Empty ID - will be generated by Supabase
+        body.name,
         category,
-        formData.hsn_sac,
-        formData.salePrice,
-        formData.salePriceInclusive,
-        formData.gstTaxPercent
-      );
+        body.hsn_sac,
+        body.salePrice,
+        body.salePriceInclusive,
+        body.gstTaxPercent
+      )
     }
 
-    // Debug log
-    // console.log("Constructed item for createItem:", {
-    //   name: item.name,
-    //   type: item.type,
-    //   category_id: item.category.id,
-    //   unit_code: item instanceof Product ? item.unit.code : null,
-    //   fpo_id: fpo_id,
-    //   sendingdata: item
-    // });
+    // Create item in database
+    const createdItem = await createItem(item, body.fpo_id)
 
-    const data = await createItem(item, fpo_id);
-    
-    if (!data) {
-      return NextResponse.json({ 
-        error: "item already exists " 
-      }, { status: 500 });
+    if (!createdItem) {
+      return NextResponse.json(
+        { error: 'Failed to create item' },
+        { status: 500 }
+      )
     }
 
-    return NextResponse.json({ 
-      success: true, 
-      data: data,
-      message: "Item created successfully" 
-    }, { status: 201 });
+    return NextResponse.json({
+      success: true,
+      data: createdItem,
+      message: 'Item created successfully'
+    }, { status: 201 })
 
   } catch (error) {
-    console.error("Error in POST /api/items:", error);
-    return NextResponse.json({ 
-      error: "Failed to create item", 
-      details: error instanceof Error ? error.message : "Unknown error" 
-    }, { status: 500 });
+    console.error('Error in POST /api/items:', error)
+    
+    // Handle specific error types
+    if (error instanceof Error) {
+      if (error.message.startsWith('DUPLICATE_ITEM:')) {
+        const itemName = error.message.split(':')[1]
+        return NextResponse.json(
+          { error: `Item with name "${itemName}" already exists` },
+          { status: 409 }
+        )
+      }
+      
+      if (error.message.startsWith('INVALID_REFERENCE:')) {
+        return NextResponse.json(
+          { error: 'Invalid reference (category or unit not found)' },
+          { status: 400 }
+        )
+      }
+    }
+
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    )
   }
 }

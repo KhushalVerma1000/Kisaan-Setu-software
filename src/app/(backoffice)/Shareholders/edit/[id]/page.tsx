@@ -33,7 +33,7 @@ interface Shareholder {
 export default function EditShareholderPage() {
   const router = useRouter();
   const params = useParams();
-  const { profile, loading: userLoading } = useUserDetails();
+
   const shareholderId = params.id as string;
 
   const [form, setForm] = useState<Shareholder>({
@@ -269,7 +269,7 @@ export default function EditShareholderPage() {
 
       <div className="flex items-center gap-4">
         <Button 
-          disabled={userLoading || isSubmitting || isLoading} 
+          disabled={isSubmitting || isLoading} 
           onClick={handleSubmit}
         >
           {isSubmitting ? 'Updating...' : 'Update Shareholder'}

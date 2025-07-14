@@ -18,7 +18,22 @@ import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, A
 import { toast } from "react-toastify";
 import { useAppSelector } from "@/store/hooks";
 import { useHeaderButtons } from "@/hooks/useHeaderButtons";
+import { Item } from "@/server/features/items/core/entities/Item";
+import { Unit } from "@/server/features/items/core/entities/Unit";
 
+interface ItemApiResponse {
+  id: string;
+  name: string;
+  categoryName: string;
+  salePrice: number;
+  purchasePrice: number;
+  currentStock?: number;
+  unit?: {
+    label: string;
+    // Add other unit properties if they exist
+  };
+  hsn_sac?: string;
+}
 interface ItemLite {
   id: string;
   name: string;
@@ -28,7 +43,7 @@ interface ItemLite {
   type?: 'product' | 'service'; // Add type to interface
   lowStockAlert?: number;
   currentStock?: number;
-  unit?: string;
+  unit?: string ;
   hsn_sac?: string;
 }
 
@@ -68,22 +83,23 @@ export default function ItemListPage() {
       }
       
       const json = await res.json();
-      
+      console.log('Data coming from api',json.data)
       if (json.error) {
         throw new Error(json.error);
       }
       
       // Mock type assignment for demonstration - you'll need to update your API to return type
-      const itemsWithType = (json.data || []).map((item: ItemLite) => ({
+      const itemsWithType = (json.data || []).map((item:ItemApiResponse) => ({
         ...item,
         type: item.purchasePrice > 0 ? 'product' : 'service' as 'product' | 'service',
-        currentStock: Math.floor(Math.random() * 100), // Mock data
-        unit: item.purchasePrice > 0 ? 'pcs' : undefined,
+        currentStock: item.currentStock, 
+        unit: item.unit? item.unit.label : 'pcs',
         lowStockAlert: item.purchasePrice > 0 ? 10 : undefined,
-        hsn_sac: `${Math.floor(Math.random() * 90000000) + 10000000}` // Mock HSN/SAC
+        hsn_sac: item.hsn_sac 
       }));
       
       setAllItems(itemsWithType);
+      console.log('item which is maped',itemsWithType);
       setPage(1);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "Failed to load items";
@@ -520,7 +536,7 @@ export default function ItemListPage() {
                         <TableCell>
                           <div className="flex items-center gap-1 text-blue-600">
                             <IndianRupee className="h-3 w-3" />
-                            {item.purchasePrice.toLocaleString()}
+                            {item.purchasePrice}
                           </div>
                         </TableCell>
                         <TableCell>

@@ -44,14 +44,14 @@ interface ItemFormData {
   id?: string;
   name: string;
   type: "product" | "service";
-  category: string;
+  category_id: string; // Updated to match API
   hsn_sac: string;
   salePrice: number;
   salePriceInclusive: boolean;
   gstTaxPercent: number;
   purchasePrice?: number;
   purchasePriceInclusive?: boolean;
-  unit?: string;
+  unit_code?: string; // Updated to match API
   openingQuantity?: number;
   openingStockDate?: string;
   mfgDate?: string;
@@ -90,14 +90,14 @@ export default function ItemAddPage() {
   const [formData, setFormData] = useState<ItemFormData>({
     name: "",
     type: "product",
-    category: "",
+    category_id: "", // Updated field name
     hsn_sac: "",
     salePrice: 0,
     salePriceInclusive: false,
     gstTaxPercent: 18,
     purchasePrice: 0,
     purchasePriceInclusive: false,
-    unit: "",
+    unit_code: "", // Updated field name
     openingQuantity: 0,
     openingStockDate: "",
     mfgDate: "",
@@ -155,7 +155,6 @@ export default function ItemAddPage() {
   };
 
   const handleInputChange = (field: string, value: any) => {
-
     setFormData(prev => ({
       ...prev,
       [field]: value
@@ -181,7 +180,7 @@ export default function ItemAddPage() {
       return;
     }
 
-    if (!formData.category) {
+    if (!formData.category_id) {
       toast.error("Please select a category");
       return;
     }
@@ -191,7 +190,7 @@ export default function ItemAddPage() {
       return;
     }
 
-    if (formData.type === "product" && !formData.unit) {
+    if (formData.type === "product" && !formData.unit_code) {
       toast.error("Please select a unit for the product");
       return;
     }
@@ -208,7 +207,7 @@ export default function ItemAddPage() {
       const requestData: any = {
         name: formData.name.trim(),
         type: formData.type,
-        category: formData.category,
+        category_id: formData.category_id, // Updated field name
         hsn_sac: formData.hsn_sac.trim(),
         salePrice: Number(formData.salePrice),
         salePriceInclusive: formData.salePriceInclusive,
@@ -219,7 +218,7 @@ export default function ItemAddPage() {
       // Add product-specific fields
       if (formData.type === "product") {
         Object.assign(requestData, {
-          unit: formData.unit,
+          unit_code: formData.unit_code, // Updated field name
           purchasePrice: Number(formData.purchasePrice) || 0,
           purchasePriceInclusive: formData.purchasePriceInclusive || false,
           openingQuantity: Number(formData.openingQuantity) || 0,
@@ -262,8 +261,32 @@ export default function ItemAddPage() {
       console.log('Item created successfully:', result);
       toast.success(result.message || "Item created successfully!");
 
-      // Navigate back to items list
-      // router.push('/items');
+      // Reset form after successful creation
+      setFormData({
+        name: "",
+        type: "product",
+        category_id: "",
+        hsn_sac: "",
+        salePrice: 0,
+        salePriceInclusive: false,
+        gstTaxPercent: 18,
+        purchasePrice: 0,
+        purchasePriceInclusive: false,
+        unit_code: "",
+        openingQuantity: 0,
+        openingStockDate: "",
+        mfgDate: "",
+        expDate: "",
+        barcode: "",
+        discount: {
+          value: 0,
+          type: "percent"
+        },
+        lowStockAlert: 0
+      });
+
+      // Optionally navigate back to items list
+      // router.push('/Items/ItemList');
 
     } catch (error) {
       console.error('Error creating item:', error);
@@ -295,10 +318,8 @@ export default function ItemAddPage() {
       if (response.ok) {
         const result = await response.json();
         const category = result.data || result;
-        // console.log(category)
-        // setCategories(prev => [...prev, category]);
         loadCategories()
-        setFormData(prev => ({ ...prev, category: category.id }));
+        setFormData(prev => ({ ...prev, category_id: category.id })); // Updated field name
         setNewCategory({ name: "", description: "", parentCategoryId: "" });
         setShowCategoryDialog(false);
         toast.success("Category added successfully!");
@@ -333,12 +354,12 @@ export default function ItemAddPage() {
         const result = await response.json();
         const unit = result.data || result;
         loadUnits()
-        setFormData(prev => ({ ...prev, unit: unit.code }));
+        setFormData(prev => ({ ...prev, unit_code: unit.code })); // Updated field name
         setNewUnit({ code: "", label: "" });
         setShowUnitDialog(false);
         toast.success("Unit added successfully!");
       } else {
-        throw new Error('unit already exists');
+        throw new Error('Unit already exists');
       }
     } catch (error) {
       console.error('Error adding unit:', error);
@@ -444,8 +465,8 @@ export default function ItemAddPage() {
                 </Label>
                 <div className="flex gap-2">
                   <Select
-                    value={formData.category}
-                    onValueChange={(value) => handleInputChange("category", value)}
+                    value={formData.category_id}
+                    onValueChange={(value) => handleInputChange("category_id", value)}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Select category" />
@@ -615,7 +636,9 @@ export default function ItemAddPage() {
 
             {formData.type === "product" && (
               <div className="space-y-2">
-                <Label htmlFor="purchasePrice">Purchase Price</Label>
+                <Label htmlFor="purchasePrice">
+                  Purchase Price <span className="text-red-500">*</span>
+                </Label>
                 <div className="flex">
                   <div className="flex items-center px-3 border border-r-0 rounded-l-md bg-muted">
                     ₹
@@ -629,6 +652,7 @@ export default function ItemAddPage() {
                     className="rounded-l-none"
                     min="0"
                     step="0.01"
+                    required
                   />
                   <Select
                     value={formData.purchasePriceInclusive ? "including" : "excluding"}
@@ -662,8 +686,8 @@ export default function ItemAddPage() {
                   </Label>
                   <div className="flex gap-2">
                     <Select
-                      value={formData.unit}
-                      onValueChange={(value) => handleInputChange("unit", value)}
+                      value={formData.unit_code}
+                      onValueChange={(value) => handleInputChange("unit_code", value)}
                     >
                       <SelectTrigger>
                         <SelectValue placeholder="Select unit" />
