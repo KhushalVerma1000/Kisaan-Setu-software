@@ -13,10 +13,16 @@ export async function getUserContext(): Promise<UserContext | null> {
   } = await supabase.auth.getUser();
 
   if (!user) return null;
-
+   const { data, error } = await supabase
+      .from("fpo_profiles")
+      .select("*")
+      .eq("id", user.id)
+      .single();
+    
+      
   return {
     fpoId: user.id,
     email: user.email,
-    fpoName: user.user_metadata?.FPOname || null, // ✅ pick from metadata
+    fpoName: data.company_name || user.user_metadata?.FPOname || null, // ✅ pick from metadata
   };
 }

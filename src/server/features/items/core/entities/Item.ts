@@ -90,3 +90,17 @@ export class Product extends Item {
     return this.currentStock * this.purchasePrice;
   }
 }
+
+
+
+
+// export function rehydrateItems(items: any[]) {
+//   return items.map((item) => {
+//     if (item.type === "product") {
+//       return new Product(item);
+//     } else if (item.type === "service") {
+//       return new Service(item);
+//     }
+//     return item; // fallback for unknown types
+//   });
+// }

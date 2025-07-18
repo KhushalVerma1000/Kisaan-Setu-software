@@ -247,7 +247,7 @@ export default function LedgerPage() {
   const handleViewEntries = useCallback((ledgerId: string) => {
     console.log('View entries for ledger:', ledgerId);
     // TODO: Navigate to ledger entries page
-    router.push(`/dashboard/ledger/${ledgerId}/entries`);
+    router.push(`/Ledger/LedgerEntries/${ledgerId}`);
     toast.info('Redirecting to ledger entries...');
   }, [router]);
 

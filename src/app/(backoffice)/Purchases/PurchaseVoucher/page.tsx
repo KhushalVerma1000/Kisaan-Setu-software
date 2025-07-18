@@ -12,223 +12,245 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { useState, useCallback, useMemo, useEffect } from "react";
 import { useHeaderButtons } from "@/hooks/useHeaderButtons";
 import { useRouter } from "next/navigation";
-import { Search, FileDown, Plus, Eye, Edit, Trash2, MoreHorizontal, Calendar, ShoppingCart } from "lucide-react";
-import ExcelJS from "exceljs";
-import { saveAs } from "file-saver";
+import { Search, FileDown, Plus, Eye, Edit, Trash2, MoreHorizontal, Calendar, ShoppingCart, FileText } from "lucide-react";
+import { PurchaseVoucherAPI } from "@/server/features/purchase/infrastructure/apihelpers/purchaseVoucher/purchaseVoucherApi";
+import { useAppDispatch, useAppSelector } from "@/store/hooks";
+import { fetchLedgerAccountsAsync, selectAllLedgerAccounts, selectLedgerAccountsError, selectLedgerAccountsLoading } from "@/store/slices/ledgerAccountSlice";
 
-// Purchase Voucher data structure
+// Purchase Voucher interface matching your API structure
 interface PurchaseVoucher {
   id: string;
-  voucherNumber: string;
-  customerName: string;
-  supplierName: string;
-  amount: number;
-  date: string;
-  dueDate: string;
-  status: 'Draft' | 'Pending' | 'Approved' | 'Paid' | 'Cancelled';
-  description: string;
+  poNumber?: string;
+  supplierVendorName: string;
+  supplierVendorId: string;
+  supplierVendorBillingAddress: string;
+  partyInvoiceNumber: string;
+  partyInvoiceDate: Date;
+  gstin?: string;
+  summary: {
+    subTotal: number;
+    totalGST: number;
+    grandTotal: number;
+  };
+  status: 'draft' | 'approved' | 'rejected';
+  fpoId: string;
+  createdAt?: Date;
+  updatedAt?: Date;
+}
+
+// Stats interface
+interface PurchaseVoucherStats {
+  totalVouchers: number;
+  totalAmount: number;
+  draftCount: number;
+  approvedCount: number;
+  rejectedCount: number;
+  avgAmount: number;
 }
 
 export default function PurchaseVoucherPage() {
   const router = useRouter();
+  const dispatch = useAppDispatch();
   const [purchaseVouchers, setPurchaseVouchers] = useState<PurchaseVoucher[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [itemsPerPage, setItemsPerPage] = useState("25");
   const [isLoading, setIsLoading] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
-  const [selectedCustomer, setSelectedCustomer] = useState("");
+  const [selectedSupplier, setSelectedSupplier] = useState("");
+  const [selectedStatus, setSelectedStatus] = useState<"all" | "draft" | "approved" | "rejected">("all");
   const [fromDate, setFromDate] = useState("2025-04-01");
   const [toDate, setToDate] = useState("2026-03-31");
+  const [stats, setStats] = useState<PurchaseVoucherStats | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  // Sample data - replace with your API calls
-  const samplePurchaseVouchers: PurchaseVoucher[] = [
-    {
-      id: "1",
-      voucherNumber: "PV-2024-001",
-      customerName: "ABC Farm Supplies",
-      supplierName: "Green Valley Seeds Ltd",
-      amount: 25000,
-      date: "2024-01-15",
-      dueDate: "2024-02-15",
-      status: "Approved",
-      description: "Seed purchase for wheat farming"
-    },
-    {
-      id: "2",
-      voucherNumber: "PV-2024-002",
-      customerName: "Rural Supply Chain",
-      supplierName: "Fertilizer Co.",
-      amount: 18500,
-      date: "2024-01-20",
-      dueDate: "2024-02-20",
-      status: "Pending",
-      description: "Organic fertilizer procurement"
-    },
-    {
-      id: "3",
-      voucherNumber: "PV-2024-003",
-      customerName: "Farmers United Ltd",
-      supplierName: "Equipment Rental Inc",
-      amount: 42000,
-      date: "2024-01-25",
-      dueDate: "2024-02-25",
-      status: "Paid",
-      description: "Tractor rental for harvest season"
-    },
-    {
-      id: "4",
-      voucherNumber: "PV-2024-004",
-      customerName: "Agro Mart Express",
-      supplierName: "Pesticide Solutions",
-      amount: 12750,
-      date: "2024-02-01",
-      dueDate: "2024-03-01",
-      status: "Draft",
-      description: "Pest control chemicals"
-    },
-    {
-      id: "5",
-      voucherNumber: "PV-2024-005",
-      customerName: "Green Valley Co-op",
-      supplierName: "Irrigation Systems",
-      amount: 35000,
-      date: "2024-02-05",
-      dueDate: "2024-03-05",
-      status: "Cancelled",
-      description: "Drip irrigation equipment"
+  // redux states
+  const user = useAppSelector((state) => state.user);
+  const ledgerAccounts = useAppSelector(selectAllLedgerAccounts);
+  const ledgerAccountsLoading = useAppSelector(selectLedgerAccountsLoading);
+  const ledgerAccountsError = useAppSelector(selectLedgerAccountsError);
+
+  // Get FPO ID with null check
+  const fpoId = user?.fpoId;
+
+  // Fetch ledger accounts on component mount
+  useEffect(() => {
+    if (fpoId && ledgerAccounts.length === 0) {
+      dispatch(fetchLedgerAccountsAsync());
     }
-  ];
+  }, [dispatch, fpoId, ledgerAccounts.length]);
 
-  // Header button functionalities
-  const handleAddNewPurchaseOrder = useCallback(() => {
-    console.log("Add Purchase Order clicked");
-    router.push('/dashboard/purchase/vouchers/new');
-  }, [router]);
-
-  // ✅ Updated Excel Export Handler using ExcelJS
-  const handleExportExcel = useCallback(async () => {
-    setIsLoading(true);
-    try {
-      const dataToExport = purchaseVouchers.length > 0 ? purchaseVouchers : samplePurchaseVouchers;
-
-      const workbook = new ExcelJS.Workbook();
-      const worksheet = workbook.addWorksheet("Purchase Vouchers");
-
-      worksheet.columns = [
-        { header: 'Voucher Number', key: 'voucherNumber', width: 20 },
-        { header: 'Customer Name', key: 'customerName', width: 25 },
-        { header: 'Supplier Name', key: 'supplierName', width: 25 },
-        { header: 'Amount (₹)', key: 'amount', width: 15 },
-        { header: 'Date', key: 'date', width: 15 },
-        { header: 'Due Date', key: 'dueDate', width: 15 },
-        { header: 'Status', key: 'status', width: 15 },
-        { header: 'Description', key: 'description', width: 30 },
-      ];
-
-      dataToExport.forEach((voucher) => {
-        worksheet.addRow({
-          voucherNumber: voucher.voucherNumber,
-          customerName: voucher.customerName,
-          supplierName: voucher.supplierName,
-          amount: voucher.amount,
-          date: voucher.date,
-          dueDate: voucher.dueDate,
-          status: voucher.status,
-          description: voucher.description,
-        });
-      });
-
-      const buffer = await workbook.xlsx.writeBuffer();
-      const fileName = `purchase_vouchers_${new Date().toISOString().split('T')[0]}.xlsx`;
-      saveAs(new Blob([buffer]), fileName);
-    } catch (error) {
-      console.error("Error exporting Excel:", error);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [purchaseVouchers]);
-
-  // Search functionality
-  const handleSearch = useCallback((value: string) => {
-    setSearchTerm(value);
-    setCurrentPage(1);
-    
-    if (value.trim()) {
-      const filtered = samplePurchaseVouchers.filter(voucher =>
-        voucher.customerName.toLowerCase().includes(value.toLowerCase()) ||
-        voucher.voucherNumber.toLowerCase().includes(value.toLowerCase()) ||
-        voucher.supplierName.toLowerCase().includes(value.toLowerCase()) ||
-        voucher.status.toLowerCase().includes(value.toLowerCase())
-      );
-      setPurchaseVouchers(filtered);
-    } else {
-      setPurchaseVouchers(samplePurchaseVouchers);
-    }
-  }, []);
-
-  // Filter functionality
-  const handleSubmitFilter = useCallback(() => {
-    console.log("Filter submitted:", { selectedCustomer, fromDate, toDate });
-    setCurrentPage(1);
-    
-    let filtered = samplePurchaseVouchers;
-    
-    if (selectedCustomer) {
-      filtered = filtered.filter(voucher => 
-        voucher.customerName.toLowerCase().includes(selectedCustomer.toLowerCase())
-      );
-    }
-    
-    if (fromDate) {
-      filtered = filtered.filter(voucher => 
-        new Date(voucher.date) >= new Date(fromDate)
-      );
-    }
-    
-    if (toDate) {
-      filtered = filtered.filter(voucher => 
-        new Date(voucher.date) <= new Date(toDate)
-      );
-    }
-    
-    setPurchaseVouchers(filtered);
-  }, [selectedCustomer, fromDate, toDate]);
-
-  // Load sample data on component mount
+  // Load purchase vouchers from API
   const loadPurchaseVouchers = useCallback(async () => {
+    if (!fpoId) {
+      setError("FPO ID is required");
+      return;
+    }
+
     setIsLoading(true);
+    setError(null);
     try {
-      await new Promise(resolve => setTimeout(resolve, 500));
-      setPurchaseVouchers(samplePurchaseVouchers);
+      const response = await PurchaseVoucherAPI.getAll(fpoId);
+      setPurchaseVouchers(response.data || []);
     } catch (error) {
       console.error("Error loading purchase vouchers:", error);
+      setError("Failed to load purchase vouchers");
+      setPurchaseVouchers([]);
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [fpoId]);
+
+  // Load statistics
+  const loadStats = useCallback(async () => {
+    if (!fpoId) {
+      return;
+    }
+
+    try {
+      const response = await PurchaseVoucherAPI.getStats(fpoId);
+      setStats(response.data);
+    } catch (error) {
+      console.error("Error loading stats:", error);
+    }
+  }, [fpoId]);
+
+  // Header button functionalities
+  const handleAddNewPurchaseVoucher = useCallback(() => {
+    if (!fpoId) {
+      setError("FPO ID is required to add purchase voucher");
+      return;
+    }
+    console.log("Add Purchase Voucher clicked");
+    router.push('/Purchases/PurchaseVoucher/AddNewPurchaseVoucher');
+  }, [router, fpoId]);
+
+  // status handler
+  const handleStatusChange = (value: string) => {
+    setSelectedStatus(value as "all" | "draft" | "approved" | "rejected");
+  };
+
+  // Export to Excel using API
+  const handleExportExcel = useCallback(async () => {
+    if (!fpoId) {
+      setError("FPO ID is required for export");
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      await PurchaseVoucherAPI.export(fpoId, 'csv');
+    } catch (error) {
+      console.error("Error exporting Excel:", error);
+      setError("Failed to export data");
+    } finally {
+      setIsLoading(false);
+    }
+  }, [fpoId]);
+
+  // Search functionality using API
+  const handleSearch = useCallback(async (value: string) => {
+    setSearchTerm(value);
+    setCurrentPage(1);
+
+    if (!fpoId) {
+      setError("FPO ID is required for search");
+      return;
+    }
+
+    if (value.trim()) {
+      setIsLoading(true);
+      try {
+        const response = await PurchaseVoucherAPI.search(fpoId, value);
+        setPurchaseVouchers(response.data || []);
+      } catch (error) {
+        console.error("Error searching:", error);
+        setError("Search failed");
+      } finally {
+        setIsLoading(false);
+      }
+    } else {
+      loadPurchaseVouchers();
+    }
+  }, [fpoId, loadPurchaseVouchers]);
+
+  // Filter functionality
+
+  // Updated filtering logic to handle the new values
+  const handleSubmitFilter = useCallback(async () => {
+    if (!fpoId) {
+      setError("FPO ID is required for filtering");
+      return;
+    }
+
+    console.log("Filter submitted:", { selectedSupplier, selectedStatus, fromDate, toDate });
+    setCurrentPage(1);
+    setIsLoading(true);
+
+    try {
+      let response;
+
+      if (selectedStatus !== "all") {
+        response = await PurchaseVoucherAPI.getByStatus(fpoId, selectedStatus);
+      } else if (fromDate && toDate) {
+        response = await PurchaseVoucherAPI.getByDateRange(fpoId, fromDate, toDate);
+      } else {
+        response = await PurchaseVoucherAPI.getAll(fpoId);
+      }
+
+      let filteredData = response.data || [];
+
+      // Additional client-side filtering for supplier if needed
+      // Skip filtering for "all", "loading", and "no-suppliers" values
+      if (selectedSupplier &&
+        selectedSupplier !== "all" &&
+        selectedSupplier !== "loading" &&
+        selectedSupplier !== "no-suppliers") {
+        filteredData = filteredData.filter((voucher: PurchaseVoucher) =>
+          voucher.supplierVendorName.toLowerCase().includes(selectedSupplier.toLowerCase()) ||
+          voucher.supplierVendorId === selectedSupplier
+        );
+      }
+
+      setPurchaseVouchers(filteredData);
+    } catch (error) {
+      console.error("Error filtering:", error);
+      setError("Filter failed");
+    } finally {
+      setIsLoading(false);
+    }
+  }, [fpoId, selectedSupplier, selectedStatus, fromDate, toDate]);
+  // Delete voucher handler
+  const handleDeleteVoucher = useCallback(async (voucherId: string) => {
+    try {
+      await PurchaseVoucherAPI.delete(voucherId);
+      setPurchaseVouchers(prev => prev.filter(v => v.id !== voucherId));
+      loadStats(); // Refresh stats after deletion
+    } catch (error) {
+      console.error('Error deleting voucher:', error);
+      setError("Failed to delete voucher");
+    }
+  }, [loadStats]);
 
   // Header buttons configuration
   const headerButtons = useMemo(() => [
-    { 
-      label: "Add Purchase Order", 
-      onClick: handleAddNewPurchaseOrder 
+    {
+      label: "Add Purchase Voucher",
+      onClick: handleAddNewPurchaseVoucher
     },
-    { 
-      label: isLoading ? "Exporting..." : "Export Excel", 
-      onClick: handleExportExcel 
+    {
+      label: isLoading ? "Exporting..." : "Export Excel",
+      onClick: handleExportExcel
     },
-  ], [handleAddNewPurchaseOrder, handleExportExcel, isLoading]);
+  ], [handleAddNewPurchaseVoucher, handleExportExcel, isLoading]);
 
   useHeaderButtons(headerButtons);
 
   // Get status variant for Badge
   const getStatusVariant = (status: PurchaseVoucher['status']) => {
     switch (status) {
-      case 'Draft': return 'secondary';
-      case 'Pending': return 'default';
-      case 'Approved': return 'default';
-      case 'Paid': return 'default';
-      case 'Cancelled': return 'destructive';
+      case 'draft': return 'secondary';
+      case 'approved': return 'default';
+      case 'rejected': return 'destructive';
       default: return 'secondary';
     }
   };
@@ -236,11 +258,9 @@ export default function PurchaseVoucherPage() {
   // Get status color classes
   const getStatusColor = (status: PurchaseVoucher['status']) => {
     switch (status) {
-      case 'Draft': return 'bg-gray-100 text-gray-800 hover:bg-gray-200';
-      case 'Pending': return 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200';
-      case 'Approved': return 'bg-blue-100 text-blue-800 hover:bg-blue-200';
-      case 'Paid': return 'bg-green-100 text-green-800 hover:bg-green-200';
-      case 'Cancelled': return 'bg-red-100 text-red-800 hover:bg-red-200';
+      case 'draft': return 'bg-gray-100 text-gray-800 hover:bg-gray-200';
+      case 'approved': return 'bg-green-100 text-green-800 hover:bg-green-200';
+      case 'rejected': return 'bg-red-100 text-red-800 hover:bg-red-200';
       default: return 'bg-gray-100 text-gray-800 hover:bg-gray-200';
     }
   };
@@ -252,24 +272,57 @@ export default function PurchaseVoucherPage() {
   const endIndex = startIndex + itemsPerPageNum;
   const currentPurchaseVouchers = purchaseVouchers.slice(startIndex, endIndex);
 
-  // Delete voucher handler
-  const handleDeleteVoucher = (voucherId: string) => {
-    console.log('Delete voucher:', voucherId);
-    setPurchaseVouchers(prev => prev.filter(v => v.id !== voucherId));
+  // Get suppliers from ledger accounts instead of purchase vouchers
+  const suppliers = useMemo(() => {
+    if (!ledgerAccounts || ledgerAccounts.length === 0) {
+      return [];
+    }
+
+    // Filter and sort ledger accounts to use as suppliers
+    return ledgerAccounts
+      .filter(account => account?.name) // Ensure account has a name
+      .map(account => ({
+        id: account.id || "",
+        name: account.name,
+        // Add any other relevant fields from ledger account
+      }))
+      .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  }, [ledgerAccounts]);
+
+  // Format date for display
+  const formatDate = (date: Date | string) => {
+    const d = new Date(date);
+    return d.toLocaleDateString('en-IN');
   };
 
-  // Sample customers for dropdown
-  const customers = [
-    "ABC Farm Supplies",
-    "Green Valley Co-op",
-    "Farmers United Ltd",
-    "Rural Supply Chain",
-    "Agro Mart Express"
-  ];
+  // Format currency
+  const formatCurrency = (amount: number) => {
+    return `₹${amount.toLocaleString('en-IN')}`;
+  };
 
+  // Load data when fpoId is available
   useEffect(() => {
-    loadPurchaseVouchers();
-  }, [loadPurchaseVouchers]);
+    if (fpoId) {
+      loadPurchaseVouchers();
+      loadStats();
+    }
+  }, [loadPurchaseVouchers, loadStats, fpoId]);
+
+  // Show loading state if FPO ID is not available
+  if (!fpoId) {
+    return (
+      <div className="space-y-4 md:space-y-6 p-4 md:p-6">
+        <Card className="border-yellow-200 bg-yellow-50">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-2 text-yellow-700">
+              <span className="font-medium">Warning:</span>
+              <span>FPO ID is not available. Please ensure you are logged in properly.</span>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4 md:space-y-6 p-4 md:p-6">
@@ -290,6 +343,84 @@ export default function PurchaseVoucherPage() {
         </BreadcrumbList>
       </Breadcrumb>
 
+      {/* Error Display */}
+      {error && (
+        <Card className="border-red-200 bg-red-50">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-2 text-red-700">
+              <span className="font-medium">Error:</span>
+              <span>{error}</span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setError(null)}
+                className="ml-auto"
+              >
+                Dismiss
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Ledger Accounts Error Display */}
+      {ledgerAccountsError && (
+        <Card className="border-red-200 bg-red-50">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-2 text-red-700">
+              <span className="font-medium">Ledger Accounts Error:</span>
+              <span>{ledgerAccountsError}</span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => dispatch(fetchLedgerAccountsAsync())}
+                className="ml-auto"
+              >
+                Retry
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Stats Cards */}
+      {stats && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium">Total Vouchers</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{stats.totalVouchers}</div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium">Total Amount</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{formatCurrency(stats.totalAmount)}</div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium">Approved</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-green-600">{stats.approvedCount}</div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium">Draft</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-yellow-600">{stats.draftCount}</div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
       {/* Page Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
@@ -297,11 +428,11 @@ export default function PurchaseVoucherPage() {
           <p className="text-muted-foreground">Manage your purchase vouchers and orders</p>
         </div>
         <div className="flex gap-2">
-          <Button onClick={handleAddNewPurchaseOrder}>
+          <Button onClick={handleAddNewPurchaseVoucher} disabled={!fpoId}>
             <Plus className="h-4 w-4 mr-2" />
-            Add Purchase Order
+            Add Purchase Voucher
           </Button>
-          <Button variant="outline" onClick={handleExportExcel} disabled={isLoading}>
+          <Button variant="outline" onClick={handleExportExcel} disabled={isLoading || !fpoId}>
             <FileDown className="h-4 w-4 mr-2" />
             Export Excel
           </Button>
@@ -311,24 +442,49 @@ export default function PurchaseVoucherPage() {
       {/* Filter Section */}
       <Card>
         <CardContent className="p-4 md:p-6">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-4 items-end">
             <div className="space-y-2">
-              <label className="text-sm font-medium">Customer</label>
-              <Select value={selectedCustomer} onValueChange={setSelectedCustomer}>
+              <label className="text-sm font-medium">Supplier</label>
+              <Select value={selectedSupplier} onValueChange={setSelectedSupplier}>
                 <SelectTrigger>
-                  <SelectValue placeholder="--Select Customer--" />
+                  <SelectValue placeholder="--Select Supplier--" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="customers">--Select Customer--</SelectItem>
-                  {customers.map((customer) => (
-                    <SelectItem key={customer} value={customer}>
-                      {customer}
+                  <SelectItem value="all">--Select Supplier--</SelectItem>
+                  {ledgerAccountsLoading && (
+                    <SelectItem value="loading" disabled>
+                      Loading suppliers...
+                    </SelectItem>
+                  )}
+                  {suppliers.map((supplier) => (
+                    <SelectItem key={supplier.id} value={supplier.id}>
+                      {supplier.name}
                     </SelectItem>
                   ))}
+                  {!ledgerAccountsLoading && suppliers.length === 0 && (
+                    <SelectItem value="no-suppliers" disabled>
+                      No suppliers available
+                    </SelectItem>
+                  )}
                 </SelectContent>
               </Select>
             </div>
-            
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Status</label>
+              <Select value={selectedStatus} onValueChange={handleStatusChange}>
+                <SelectTrigger>
+                  <SelectValue placeholder="--Select Status--" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">--Select Status--</SelectItem>
+                  <SelectItem value="draft">Draft</SelectItem>
+                  <SelectItem value="approved">Approved</SelectItem>
+                  <SelectItem value="rejected">Rejected</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
             <div className="space-y-2">
               <label className="text-sm font-medium">From Date</label>
               <div className="relative">
@@ -341,7 +497,7 @@ export default function PurchaseVoucherPage() {
                 <Calendar className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
               </div>
             </div>
-            
+
             <div className="space-y-2">
               <label className="text-sm font-medium">To Date</label>
               <div className="relative">
@@ -354,8 +510,8 @@ export default function PurchaseVoucherPage() {
                 <Calendar className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
               </div>
             </div>
-            
-            <Button onClick={handleSubmitFilter} className="w-full">
+
+            <Button onClick={handleSubmitFilter} className="w-full" disabled={isLoading || !fpoId}>
               Submit
             </Button>
           </div>
@@ -377,14 +533,15 @@ export default function PurchaseVoucherPage() {
           </Select>
           <span className="text-sm text-muted-foreground hidden sm:inline">items/page</span>
         </div>
-        
+
         <div className="relative">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
-          <Input 
-            className="pl-10 w-full sm:w-80" 
-            placeholder="Search..." 
+          <Input
+            className="pl-10 w-full sm:w-80"
+            placeholder="Search vouchers, suppliers, invoice numbers..."
             value={searchTerm}
             onChange={(e) => handleSearch(e.target.value)}
+            disabled={!fpoId}
           />
         </div>
       </div>
@@ -404,12 +561,11 @@ export default function PurchaseVoucherPage() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Voucher Number</TableHead>
-                      <TableHead>Customer</TableHead>
+                      <TableHead>PO Number</TableHead>
                       <TableHead>Supplier</TableHead>
+                      <TableHead>Invoice Number</TableHead>
+                      <TableHead>Invoice Date</TableHead>
                       <TableHead>Amount</TableHead>
-                      <TableHead>Date</TableHead>
-                      <TableHead>Due Date</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
@@ -418,16 +574,22 @@ export default function PurchaseVoucherPage() {
                     {currentPurchaseVouchers.map((voucher) => (
                       <TableRow key={voucher.id}>
                         <TableCell className="font-medium text-primary">
-                          {voucher.voucherNumber}
+                          {voucher.poNumber || 'N/A'}
                         </TableCell>
-                        <TableCell>{voucher.customerName}</TableCell>
-                        <TableCell>{voucher.supplierName}</TableCell>
-                        <TableCell>₹{voucher.amount.toLocaleString('en-IN')}</TableCell>
-                        <TableCell>{new Date(voucher.date).toLocaleDateString('en-IN')}</TableCell>
-                        <TableCell>{new Date(voucher.dueDate).toLocaleDateString('en-IN')}</TableCell>
+                        <TableCell>
+                          <div>
+                            <div className="font-medium">{voucher.supplierVendorName}</div>
+                            {voucher.gstin && (
+                              <div className="text-sm text-muted-foreground">GSTIN: {voucher.gstin}</div>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell>{voucher.partyInvoiceNumber}</TableCell>
+                        <TableCell>{formatDate(voucher.partyInvoiceDate)}</TableCell>
+                        <TableCell>{formatCurrency(voucher.summary.grandTotal)}</TableCell>
                         <TableCell>
                           <Badge className={getStatusColor(voucher.status)}>
-                            {voucher.status}
+                            {voucher.status.charAt(0).toUpperCase() + voucher.status.slice(1)}
                           </Badge>
                         </TableCell>
                         <TableCell className="text-right">
@@ -439,13 +601,12 @@ export default function PurchaseVoucherPage() {
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
                               <DropdownMenuItem
-                                onClick={() => router.push(`/dashboard/purchase/vouchers/${voucher.id}`)}
-                              >
-                                <Eye className="mr-2 h-4 w-4" />
-                                View
+ onSelect={(e) => e.preventDefault()}                              >
+                                <FileText className="mr-2 h-4 w-4" />
+                                Pdf
                               </DropdownMenuItem>
                               <DropdownMenuItem
-                                onClick={() => router.push(`/dashboard/purchase/vouchers/${voucher.id}/edit`)}
+                                onClick={() => router.push(`/Purchases/PurchaseVoucher/${voucher.id}/edit`)}
                               >
                                 <Edit className="mr-2 h-4 w-4" />
                                 Edit
@@ -488,33 +649,33 @@ export default function PurchaseVoucherPage() {
                     <div className="space-y-3">
                       <div className="flex justify-between items-start">
                         <div>
-                          <p className="font-medium text-primary">{voucher.voucherNumber}</p>
-                          <p className="text-sm text-muted-foreground">{voucher.customerName}</p>
+                          <p className="font-medium text-primary">{voucher.poNumber || 'N/A'}</p>
+                          <p className="text-sm text-muted-foreground">{voucher.supplierVendorName}</p>
                         </div>
                         <Badge className={getStatusColor(voucher.status)}>
-                          {voucher.status}
+                          {voucher.status.charAt(0).toUpperCase() + voucher.status.slice(1)}
                         </Badge>
                       </div>
-                      
+
                       <div className="grid grid-cols-2 gap-4 text-sm">
                         <div>
-                          <span className="text-muted-foreground">Supplier:</span>
-                          <p className="font-medium">{voucher.supplierName}</p>
+                          <span className="text-muted-foreground">Invoice:</span>
+                          <p className="font-medium">{voucher.partyInvoiceNumber}</p>
                         </div>
                         <div>
                           <span className="text-muted-foreground">Amount:</span>
-                          <p className="font-medium">₹{voucher.amount.toLocaleString('en-IN')}</p>
+                          <p className="font-medium">{formatCurrency(voucher.summary.grandTotal)}</p>
                         </div>
                         <div>
                           <span className="text-muted-foreground">Date:</span>
-                          <p>{new Date(voucher.date).toLocaleDateString('en-IN')}</p>
+                          <p>{formatDate(voucher.partyInvoiceDate)}</p>
                         </div>
                         <div>
-                          <span className="text-muted-foreground">Due Date:</span>
-                          <p>{new Date(voucher.dueDate).toLocaleDateString('en-IN')}</p>
+                          <span className="text-muted-foreground">GSTIN:</span>
+                          <p>{voucher.gstin || 'N/A'}</p>
                         </div>
                       </div>
-                      
+
                       <div className="flex gap-2 pt-2">
                         <Button
                           size="sm"
@@ -568,15 +729,15 @@ export default function PurchaseVoucherPage() {
               </div>
               <h3 className="text-xl font-medium text-gray-500 mb-2">No Record Found!!</h3>
               <p className="text-gray-400 mb-6">
-                {searchTerm ? 
-                  `No purchase vouchers found matching "${searchTerm}"` : 
+                {searchTerm ?
+                  `No purchase vouchers found matching "${searchTerm}"` :
                   "No purchase vouchers available. Create your first purchase voucher to get started."
                 }
               </p>
               {!searchTerm && (
-                <Button onClick={handleAddNewPurchaseOrder}>
+                <Button onClick={handleAddNewPurchaseVoucher} disabled={!fpoId}>
                   <Plus className="h-4 w-4 mr-2" />
-                  Add Purchase Order
+                  Add Purchase Voucher
                 </Button>
               )}
             </div>
@@ -593,8 +754,8 @@ export default function PurchaseVoucherPage() {
                 Showing {startIndex + 1} to {Math.min(endIndex, purchaseVouchers.length)} of {purchaseVouchers.length} results
               </div>
               <div className="flex gap-2">
-                <Button 
-                  variant="outline" 
+                <Button
+                  variant="outline"
                   size="sm"
                   onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
                   disabled={currentPage === 1}
@@ -613,8 +774,8 @@ export default function PurchaseVoucherPage() {
                     </Button>
                   ))}
                 </div>
-                <Button 
-                  variant="outline" 
+                <Button
+                  variant="outline"
                   size="sm"
                   onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
                   disabled={currentPage === totalPages}

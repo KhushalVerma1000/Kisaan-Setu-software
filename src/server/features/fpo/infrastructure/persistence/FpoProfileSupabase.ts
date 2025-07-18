@@ -2,6 +2,7 @@ import { FpoProfile } from "../../core/entities/FpoProfile";
 import { BankDetail } from "../../core/entities/BankDetail";
 import { InvoiceSettings } from "../../core/entities/InvoiceSettings";
 import { createClient } from "@/utils/supabase/server";
+import { LogoStorageService } from "@/utils/supabase/storage/logoStorage";
 
 export function getFpoProfile() {
   return async (): Promise<FpoProfile | null> => {
@@ -179,6 +180,135 @@ export function updateFpoProfile(profile: FpoProfile) {
       }
 
       // Return the updated profile using the DB response
+      return new FpoProfile({
+        ...updatedProfile,
+        bankDetails: bankDetails.map((bd) => new BankDetail(bd)),
+        invoiceSettings: updatedInvoiceSettings
+          ? new InvoiceSettings({
+              id: updatedInvoiceSettings.id,
+              fpoId: updatedInvoiceSettings.fpo_id,
+              invoicePrefix: updatedInvoiceSettings.invoice_prefix,
+              defaultTerms: updatedInvoiceSettings.default_terms,
+              signatureUrl: updatedInvoiceSettings.signature_url,
+            })
+          : undefined,
+      });
+    } catch (error) {
+      console.error("Unexpected error updating FPO profile:", error);
+      return null;
+    }
+  };
+}
+
+
+export function updateFpoProfileWithLogo(profile: FpoProfile, logoFile?: File) {
+  return async (): Promise<FpoProfile | null> => {
+    try {
+      const supabase = await createClient();
+      const user = await supabase.auth.getUser();
+      const id = user.data.user?.id;
+
+      let logoUrl = profile.logoUrl;
+
+      // Handle logo upload if file is provided
+      if (logoFile) {
+        logoUrl = await LogoStorageService.updateLogo(logoFile, id!, profile.logoUrl);
+        if (!logoUrl) {
+          console.error('Failed to upload logo');
+          return null;
+        }
+      }
+
+      // Prepare data for update
+      const {
+        companyName, incorporationDate, ceoName, phoneNumber, invoiceEmail, gstNumber,
+        addressLine1, city, state, pincode, bankDetails, invoiceSettings
+      } = profile;
+
+      // Convert incorporationDate to ISO string if it's a valid date
+      let incorporationDateIso: string | null = null;
+      if (incorporationDate) {
+        let dateValue = incorporationDate;
+        if (typeof dateValue === "string") {
+          dateValue = new Date(dateValue);
+        }
+        if (dateValue instanceof Date && !isNaN(dateValue.getTime())) {
+          incorporationDateIso = dateValue.toISOString();
+        }
+      }
+
+      // Update fpo_profiles table with new logo URL
+      const { data: updatedProfile, error: profileError } = await supabase
+        .from('fpo_profiles')
+        .upsert({
+          id,
+          company_name: companyName,
+          incorporation_date: incorporationDateIso,
+          logo_url: logoUrl, // Use the uploaded logo URL
+          ceo_name: ceoName,
+          phone_number: phoneNumber,
+          invoice_email: invoiceEmail,
+          gst_number: gstNumber,
+          address_line1: addressLine1,
+          city,
+          state,
+          pincode,
+        }, { onConflict: 'id' })
+        .eq('id', id)
+        .select('*')
+        .single();
+
+      if (profileError) {
+        console.error("Error updating FPO profile:", profileError);
+        return null;
+      }
+
+      // Handle bank details and invoice settings updates (same as before)
+      if (bankDetails && bankDetails.length > 0) {
+        for (const bankDetail of bankDetails) {
+          const { error: bankError } = await supabase
+            .from('bank_details')
+            .upsert({
+              id: bankDetail.id || undefined,
+              fpo_id: id,
+              account_holder_name: bankDetail.accountHolderName,
+              account_number: bankDetail.accountNumber,
+              bank_name: bankDetail.bankName,
+              ifsc_code: bankDetail.ifscCode,
+              is_primary: bankDetail.isPrimary,
+              upi_id: bankDetail.upiId,
+            });
+
+          if (bankError) {
+            console.error("Error updating bank details:", bankError);
+            return null;
+          }
+        }
+      }
+
+      let updatedInvoiceSettings = undefined;
+
+      if (invoiceSettings) {
+        const { data, error: invoiceError } = await supabase
+          .from('invoice_settings')
+          .upsert({
+            fpo_id: id,
+            invoice_prefix: invoiceSettings.invoicePrefix,
+            default_terms: invoiceSettings.defaultTerms,
+            signature_url: invoiceSettings.signatureUrl,
+            updated_at: new Date().toISOString(),
+          }, { onConflict: 'fpo_id' })
+          .select('*')
+          .single();
+
+        if (invoiceError) {
+          console.error("Error updating invoice settings:", invoiceError);
+          return null;
+        }
+        updatedInvoiceSettings = data;
+      }
+
+      // Return the updated profile
       return new FpoProfile({
         ...updatedProfile,
         bankDetails: bankDetails.map((bd) => new BankDetail(bd)),
