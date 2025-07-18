@@ -28,6 +28,7 @@ import {
 import { toast } from 'react-toastify'
 import { Unit } from '@/server/features/items/core/entities/Unit'
 import { useAppDispatch, useAppSelector } from '@/store/hooks'
+import { Gst } from '@/server/features/items/core/entities/Gst'
 
 interface EditItemPageProps {
   itemId: string
@@ -63,14 +64,7 @@ interface FormData {
 }
 
 // GST rates array
-const GST_RATES = [
-  { value: 0, label: '0% - Exempt' },
-  { value: 3, label: '3% - Essential goods' },
-  { value: 5, label: '5% - Household necessities' },
-  { value: 12, label: '12% - Standard rate' },
-  { value: 18, label: '18% - Standard rate' },
-  { value: 28, label: '28% - Luxury goods' },
-]
+const GST_RATES =Gst.defaultGsts()
 
 export default function EditItemPage({ itemId }: EditItemPageProps) {
   const router = useRouter()
@@ -492,8 +486,8 @@ export default function EditItemPage({ itemId }: EditItemPageProps) {
                     </SelectTrigger>
                     <SelectContent>
                       {GST_RATES.map((rate) => (
-                        <SelectItem key={rate.value} value={rate.value.toString()}>
-                          {rate.label}
+                        <SelectItem key={rate.rate} value={rate.rate.toString()}>
+                          {rate.rate}
                         </SelectItem>
                       ))}
                     </SelectContent>

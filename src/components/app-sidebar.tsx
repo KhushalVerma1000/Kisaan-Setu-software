@@ -79,7 +79,7 @@ const items: MenuItem[] = [
   },
   { title: "Cashbook", url: "/Cashbook", icon: Wallet2 },
   { title: "Reports", url: "/Reports", icon: ChartBar },
-  { title: "Registers", url: "/registers", icon: BookOpen },
+  { title: "Registers", url: "/Register", icon: BookOpen },
   { title: "Settings", url: "/ProfileSettings", icon: Settings },
   { title: "Logout", url: "#logout", icon: LogOut }
 ];

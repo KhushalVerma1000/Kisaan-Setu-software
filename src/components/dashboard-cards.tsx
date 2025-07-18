@@ -17,10 +17,10 @@ export function DashboardCards() {
     },
     {
       title: "Share Holders",
-      value: "120",
+      value: "NAN",
       color: "text-emerald-600",
       icon: <Users className="w-5 h-5" />,
-      href: "/Register",
+      href: "/Shareholder",
       linkText: "View shareholders",
     },
     {

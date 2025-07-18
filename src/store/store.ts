@@ -3,11 +3,13 @@ import { configureStore, combineReducers } from "@reduxjs/toolkit";
 /* ─── Slice Reducers ─── */
 import userReducer, { UserState } from "./slices/userSlice";
 import itemsReducer, { ItemsState } from "./slices/itemsSlice";
+import ledgerAccountReducer, { LedgerAccountState } from "./slices/ledgerAccountSlice";
 
 /* ─── Root Reducer ─── */
 const rootReducer = combineReducers({
   user: userReducer,
   items: itemsReducer,
+  ledgerAccounts: ledgerAccountReducer,
 });
 
 /* ─── Factory ─── */
@@ -15,6 +17,7 @@ export const makeStore = (
   preloadedState?: {
     user?: UserState;
     items?: ItemsState;
+    ledgerAccounts?: LedgerAccountState;
   }
 ) =>
   configureStore({
@@ -32,4 +35,5 @@ export type AppDispatch = AppStore["dispatch"];
 export interface RootReducer {
   user: UserState;
   items: ItemsState;
+  ledgerAccounts: LedgerAccountState;
 }

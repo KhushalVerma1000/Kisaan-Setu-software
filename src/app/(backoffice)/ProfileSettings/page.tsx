@@ -24,6 +24,7 @@ export default function SettingsPage() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [activeTab, setActiveTab] = useState("general");
   const [profile, setProfile] = useState<FrontendProfile | null>(null);
+    const [logoFile, setLogoFile] = useState<File | null>(null);
 
   const tabs = [
     { value: "general", label: "General", shortLabel: "General" },
@@ -52,38 +53,55 @@ export default function SettingsPage() {
     }
   };
 
-  const saveProfileSettings = useCallback(() => {
+   const saveProfileSettings = useCallback(async () => {
     if (!profile) {
       console.log("no profiles");
       return;
     }
     
-    // Convert frontend profile to database format
-    const dbProfile = convertToDbProfile(profile);
-    
-    // Prepare payload for the API
-    const payload = {
-      ...dbProfile,
-      bankDetails: dbProfile.bankDetails && dbProfile.bankDetails.length > 0 
-        ? [dbProfile.bankDetails[0]] 
-        : [],
-    };
+    try {
+      // Convert frontend profile to database format
+      const dbProfile = convertToDbProfile(profile);
+      
+      // Prepare payload for the API
+      const payload = {
+        ...dbProfile,
+        bankDetails: dbProfile.bankDetails && dbProfile.bankDetails.length > 0 
+          ? [dbProfile.bankDetails[0]] 
+          : [],
+      };
 
-    fetch('/api/fpo/profile', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(payload),
-    })
-      .then(response => response.json())
-      .then(data => {
-        console.log("Profile updated successfully:", data);
-      })
-      .catch(error => {
-        console.error("Error updating profile:", error);
+      // Create FormData for multipart request
+      const formData = new FormData();
+      formData.append('profileData', JSON.stringify(payload));
+      
+      // Add logo file if present
+      if (logoFile) {
+        formData.append('logoFile', logoFile);
+      }
+
+      const response = await fetch('/api/fpo/profile', {
+        method: 'POST',
+        body: formData, // Send as FormData instead of JSON
       });
-  }, [profile]);
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      console.log("Profile updated successfully:", data);
+      
+      // Update the profile with the response data
+      setProfile(convertToFrontendProfile(data));
+      
+      // Clear the logo file after successful upload
+      setLogoFile(null);
+      
+    } catch (error) {
+      console.error("Error updating profile:", error);
+    }
+  }, [profile, logoFile]);
 
   const headerButtons = useMemo(() => [
     {
@@ -116,7 +134,15 @@ export default function SettingsPage() {
     fetchProfile();
   }, []);
 
+  
+  // Updated handleProfileChange function
   const handleProfileChange = (field: string, value: any) => {
+    // Handle logo file separately
+    if (field === 'logoFile') {
+      setLogoFile(value);
+      return;
+    }
+
     setProfile((prev) => {
       if (!prev) return prev;
 
@@ -173,7 +199,7 @@ export default function SettingsPage() {
       return { ...prev, [field]: value };
     });
   };
-
+   
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="w-full">
