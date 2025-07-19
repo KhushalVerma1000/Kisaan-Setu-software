@@ -42,6 +42,7 @@ export async function updateSession(request: NextRequest) {
     !request.nextUrl.pathname.startsWith('/Login') &&
     !request.nextUrl.pathname.startsWith('/Signup') &&
     !request.nextUrl.pathname.startsWith('/ForgotPassword') &&
+    !request.nextUrl.pathname.startsWith('/ContactAdmin') &&
     !request.nextUrl.pathname.startsWith('/')
   ) {
     // no user, potentially respond by redirecting the user to the login page

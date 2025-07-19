@@ -83,7 +83,7 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({ className = "" }) => {
           "
           asChild
         >
-          <Link href="/Signup" className="relative z-10">
+          <Link href="/ContactAdmin" className="relative z-10">
             Sign Up
           </Link>
         </Button>
