@@ -5,6 +5,8 @@ export class InvoiceSettings {
     public invoicePrefix: string;
     public defaultTerms: string;
     public signatureUrl?: string;
+    public startNumber: number;
+    public showPrefix: boolean;
 
     constructor(props: {
         id: string;
@@ -12,11 +14,15 @@ export class InvoiceSettings {
         invoicePrefix?: string;
         defaultTerms?: string;
         signatureUrl?: string;
+        startNumber?: number;
+        showPrefix?: boolean;
     }) {
         this.id = props.id;
         this.fpoId = props.fpoId;
         this.invoicePrefix = props.invoicePrefix ?? 'INV-';
         this.defaultTerms = props.defaultTerms ?? '';
         this.signatureUrl = props.signatureUrl;
+        this.startNumber = props.startNumber ?? 1;
+        this.showPrefix = props.showPrefix ?? false;
     }
 }

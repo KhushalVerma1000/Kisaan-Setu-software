@@ -38,6 +38,8 @@ export function getFpoProfile() {
             ifscCode: bd.ifsc_code,
             isPrimary: bd.is_primary,
             upiId: bd.upi_id,
+            printBankDetails: bd.print_bank_details,
+            printUpiQr: bd.print_upi_qr,
           }))
         : [];
 
@@ -56,6 +58,8 @@ export function getFpoProfile() {
             invoicePrefix: invoiceSettingsObj.invoice_prefix,
             defaultTerms: invoiceSettingsObj.default_terms,
             signatureUrl: invoiceSettingsObj.signature_url,
+            startNumber: invoiceSettingsObj.start_number,
+            showPrefix: invoiceSettingsObj.show_prefix,
           })
         : undefined;
 
@@ -147,6 +151,8 @@ export function updateFpoProfile(profile: FpoProfile) {
               ifsc_code: bankDetail.ifscCode,
               is_primary: bankDetail.isPrimary,
               upi_id: bankDetail.upiId,
+              print_bank_details: bankDetail.printBankDetails,
+              print_upi_qr: bankDetail.printUpiQr,
             });
 
           if (bankError) {
@@ -167,6 +173,8 @@ export function updateFpoProfile(profile: FpoProfile) {
             invoice_prefix: invoiceSettings.invoicePrefix,
             default_terms: invoiceSettings.defaultTerms,
             signature_url: invoiceSettings.signatureUrl,
+            start_number: invoiceSettings.startNumber,
+            show_prefix: invoiceSettings.showPrefix,
             updated_at: new Date().toISOString(),
           }, { onConflict: 'fpo_id' })
           .select('*')
@@ -182,7 +190,18 @@ export function updateFpoProfile(profile: FpoProfile) {
       // Return the updated profile using the DB response
       return new FpoProfile({
         ...updatedProfile,
-        bankDetails: bankDetails.map((bd) => new BankDetail(bd)),
+        bankDetails: bankDetails.map((bd) => new BankDetail({
+          id: bd.id,
+          fpoId: bd.fpoId,
+          accountHolderName: bd.accountHolderName,
+          accountNumber: bd.accountNumber,
+          bankName: bd.bankName,
+          ifscCode: bd.ifscCode,
+          isPrimary: bd.isPrimary,
+          upiId: bd.upiId,
+          printBankDetails: bd.printBankDetails,
+          printUpiQr: bd.printUpiQr,
+        })),
         invoiceSettings: updatedInvoiceSettings
           ? new InvoiceSettings({
               id: updatedInvoiceSettings.id,
@@ -190,6 +209,8 @@ export function updateFpoProfile(profile: FpoProfile) {
               invoicePrefix: updatedInvoiceSettings.invoice_prefix,
               defaultTerms: updatedInvoiceSettings.default_terms,
               signatureUrl: updatedInvoiceSettings.signature_url,
+              startNumber: updatedInvoiceSettings.start_number,
+              showPrefix: updatedInvoiceSettings.show_prefix,
             })
           : undefined,
       });
@@ -199,7 +220,6 @@ export function updateFpoProfile(profile: FpoProfile) {
     }
   };
 }
-
 
 export function updateFpoProfileWithLogo(profile: FpoProfile, logoFile?: File) {
   return async (): Promise<FpoProfile | null> => {
@@ -263,7 +283,7 @@ export function updateFpoProfileWithLogo(profile: FpoProfile, logoFile?: File) {
         return null;
       }
 
-      // Handle bank details and invoice settings updates (same as before)
+      // Handle bank details updates with new properties
       if (bankDetails && bankDetails.length > 0) {
         for (const bankDetail of bankDetails) {
           const { error: bankError } = await supabase
@@ -277,6 +297,8 @@ export function updateFpoProfileWithLogo(profile: FpoProfile, logoFile?: File) {
               ifsc_code: bankDetail.ifscCode,
               is_primary: bankDetail.isPrimary,
               upi_id: bankDetail.upiId,
+              print_bank_details: bankDetail.printBankDetails,
+              print_upi_qr: bankDetail.printUpiQr,
             });
 
           if (bankError) {
@@ -296,6 +318,8 @@ export function updateFpoProfileWithLogo(profile: FpoProfile, logoFile?: File) {
             invoice_prefix: invoiceSettings.invoicePrefix,
             default_terms: invoiceSettings.defaultTerms,
             signature_url: invoiceSettings.signatureUrl,
+            start_number: invoiceSettings.startNumber,
+            show_prefix: invoiceSettings.showPrefix,
             updated_at: new Date().toISOString(),
           }, { onConflict: 'fpo_id' })
           .select('*')
@@ -311,7 +335,18 @@ export function updateFpoProfileWithLogo(profile: FpoProfile, logoFile?: File) {
       // Return the updated profile
       return new FpoProfile({
         ...updatedProfile,
-        bankDetails: bankDetails.map((bd) => new BankDetail(bd)),
+        bankDetails: bankDetails.map((bd) => new BankDetail({
+          id: bd.id,
+          fpoId: bd.fpoId,
+          accountHolderName: bd.accountHolderName,
+          accountNumber: bd.accountNumber,
+          bankName: bd.bankName,
+          ifscCode: bd.ifscCode,
+          isPrimary: bd.isPrimary,
+          upiId: bd.upiId,
+          printBankDetails: bd.printBankDetails,
+          printUpiQr: bd.printUpiQr,
+        })),
         invoiceSettings: updatedInvoiceSettings
           ? new InvoiceSettings({
               id: updatedInvoiceSettings.id,
@@ -319,6 +354,8 @@ export function updateFpoProfileWithLogo(profile: FpoProfile, logoFile?: File) {
               invoicePrefix: updatedInvoiceSettings.invoice_prefix,
               defaultTerms: updatedInvoiceSettings.default_terms,
               signatureUrl: updatedInvoiceSettings.signature_url,
+              startNumber: updatedInvoiceSettings.start_number,
+              showPrefix: updatedInvoiceSettings.show_prefix,
             })
           : undefined,
       });

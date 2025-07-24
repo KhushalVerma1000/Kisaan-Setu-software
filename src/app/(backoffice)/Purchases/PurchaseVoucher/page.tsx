@@ -89,7 +89,7 @@ export default function PurchaseVoucherPage() {
     setIsLoading(true);
     setError(null);
     try {
-      const response = await PurchaseVoucherAPI.getAll(fpoId);
+      const response = await PurchaseVoucherAPI.getAll({fpoId });
       setPurchaseVouchers(response.data || []);
     } catch (error) {
       console.error("Error loading purchase vouchers:", error);
@@ -190,11 +190,11 @@ export default function PurchaseVoucherPage() {
       let response;
 
       if (selectedStatus !== "all") {
-        response = await PurchaseVoucherAPI.getByStatus(fpoId, selectedStatus);
+        response = await PurchaseVoucherAPI.getByStatus( selectedStatus,fpoId);
       } else if (fromDate && toDate) {
         response = await PurchaseVoucherAPI.getByDateRange(fpoId, fromDate, toDate);
       } else {
-        response = await PurchaseVoucherAPI.getAll(fpoId);
+        response = await PurchaseVoucherAPI.getAll({fpoId});
       }
 
       let filteredData = response.data || [];

@@ -29,6 +29,8 @@ export interface ILineItemHook {
   hasProducts: boolean;
   hasServices: boolean;
   checkStockAvailability: (productId: string, requestedQuantity: number) => { available: boolean; currentStock: number };
+    resetWithNewData: (newInitialItems: any[]) => void; // Add this
+
 }
 
 export const useLineItemManager = (
@@ -53,12 +55,24 @@ export const useLineItemManager = (
   }, [lineItemManager]);
 
   // Initialize with data if provided
-  useEffect(() => {
-    if (initialItems && initialItems.length > 0) {
-      lineItemManager.importItems(initialItems);
-      refreshState();
-    }
-  }, [initialItems, lineItemManager, refreshState]);
+const [isInitialized, setIsInitialized] = useState(false);
+
+useEffect(() => {
+  if (initialItems && initialItems.length > 0 && !isInitialized) {
+    lineItemManager.importItems(initialItems);
+    refreshState();
+    setIsInitialized(true);
+  }
+}, [initialItems, lineItemManager, refreshState, isInitialized]);
+
+const resetWithNewData = useCallback((newInitialItems: any[]) => {
+  lineItemManager.clearAllItems();
+  if (newInitialItems && newInitialItems.length > 0) {
+    lineItemManager.importItems(newInitialItems);
+  }
+  refreshState();
+  setIsInitialized(true);
+}, [lineItemManager, refreshState]);
 
   // Enhanced addItem with conditional stock validation for products
   const addItem = useCallback((item: Item, quantity: number = 1, unitPrice?: number): SelectedItem => {
@@ -214,6 +228,7 @@ export const useLineItemManager = (
     hasProducts,
     hasServices,
     checkStockAvailability,
+    resetWithNewData
   };
 };
 
@@ -347,5 +362,6 @@ export const useItemTypeManager = (lineItemHook: ILineItemHook) => {
   return {
     getItemDisplayInfo,
     canUpdateQuantity,
+    
   };
 };

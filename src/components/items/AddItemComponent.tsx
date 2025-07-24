@@ -1,6 +1,6 @@
 // components/AddItemComponent.tsx
 "use client"
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { Plus, X, Package, ShoppingCart, Calculator, Download, Save } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -15,6 +15,8 @@ import { useLineItemManager, useLineItemValidation } from '@/hooks/useLineItemMa
 import { Item, Product, Service } from '@/server/features/items/core/entities/Item';
 import { Category } from '@/server/features/items/core/entities/Category';
 import { Unit } from '@/server/features/items/core/entities/Unit';
+import  { SelectedItem, ILineItemSummary } from '@/server/features/items/core/entities/selecteditem';
+
 import { 
   fetchItemsAsync, 
   selectAllItems, 
@@ -24,13 +26,12 @@ import {
 } from '@/store/slices/itemsSlice';
 import { RootState } from '@/store/store';
 import { useAppSelector, useAppDispatch } from '@/store/hooks';
-import { SelectedItem } from '@/server/features/items/core/entities/selecteditem';
 
 interface AddItemComponentProps {
   documentType: 'invoice' | 'purchase_voucher' | 'quotation';
   initialItems?: any[];
-  onSummaryChange?: (summary: LineItemSummary) => void;
-  onItemsChange?: (items: LineItem[]) => void;
+  onSummaryChange?: (summary:ILineItemSummary ) => void;
+  onItemsChange?: (items: SelectedItem[]) => void;
   onValidationChange?: (isValid: boolean, errors: string[]) => void;
   onExportData?: (data: any) => void;
   className?: string;
@@ -39,15 +40,7 @@ interface AddItemComponentProps {
   compact?: boolean;
 }
 
-interface LineItemSummary {
-  subTotal: number;
-  totalDiscount: number;
-  totalGST: number;
-  shipmentAmount: number;
-  roundOff: number;
-  grandTotal: number;
-  itemCount: number;
-}
+
 
 export interface LineItem {
   id: string;
@@ -60,7 +53,7 @@ export interface LineItem {
   isProduct(): boolean;
 }
 
-const GST_RATES = [0, 3, 5, 12, 18, 28];
+const GST_RATES = [0,2 , 3, 5, 12, 18, 28];
 
 const AddItemComponent: React.FC<AddItemComponentProps> = ({
   documentType,
@@ -128,8 +121,41 @@ const AddItemComponent: React.FC<AddItemComponentProps> = ({
     if (!itemsData || !Array.isArray(itemsData)) return [];
     return itemsData.map(createItemInstance);
   }, [itemsData, createItemInstance]);
+
+  // Add this new useMemo after the existing items useMemo
+const processedInitialItems = useMemo(() => {
+  if (!initialItems || !Array.isArray(initialItems)) return undefined;
   
-  const lineItemHook = useLineItemManager(initialItems, documentType);
+  return initialItems.map(initialItem => {
+    // If the initialItem already has an item property with raw data, use that
+    if (initialItem.item && typeof initialItem.item === 'object') {
+      return {
+        ...initialItem,
+        item: createItemInstance(initialItem.item)
+      };
+    }
+    
+    // If the initialItem itself is the raw item data, create instance directly
+    if (initialItem.id && initialItem.name) {
+      return {
+        id: initialItem.id,
+        item: createItemInstance(initialItem),
+        quantity: initialItem.quantity || 1,
+        unitPrice: initialItem.unitPrice || initialItem.salePrice || 0,
+        discount: initialItem.discount || { value: 0, type: 'fixed' as const },
+        gstConfig: initialItem.gstConfig || { 
+          rate: initialItem.gstTaxPercent || 18, 
+          type: 'excluding' as const 
+        }
+      };
+    }
+    
+    // Return as-is if it's already processed
+    return initialItem;
+  });
+}, [initialItems, createItemInstance]);
+  
+  const lineItemHook = useLineItemManager(processedInitialItems, documentType);
   const { errors, isValid } = useLineItemValidation(lineItemHook, documentType);
 
   useEffect(() => {
@@ -152,11 +178,21 @@ const AddItemComponent: React.FC<AddItemComponentProps> = ({
     }
   }, [lineItemHook.summary, lineItemHook.itemCount, onSummaryChange]);
 
-  useEffect(() => {
-    if (onItemsChange) {
-      onItemsChange(lineItemHook.items);
-    }
-  }, [lineItemHook.items, onItemsChange]);
+const prevItemsRef = useRef<string>('');
+const onItemsChangeRef = useRef(onItemsChange);
+
+// Update the ref when the callback changes
+useEffect(() => {
+  onItemsChangeRef.current = onItemsChange;
+}, [onItemsChange]);
+
+useEffect(() => {
+  const currentItems = JSON.stringify(lineItemHook.items);
+  if (prevItemsRef.current !== currentItems && onItemsChangeRef.current) {
+    onItemsChangeRef.current(lineItemHook.items);
+    prevItemsRef.current = currentItems;
+  }
+}, [lineItemHook.items]); // Remove onItemsChange from dependencies
 
   useEffect(() => {
     if (onValidationChange) {

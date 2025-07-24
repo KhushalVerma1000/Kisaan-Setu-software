@@ -5,7 +5,7 @@ export interface DiscountInterface {
 
 export interface GSTConfigInterface {
     rate: number;
-    type: 'including' | 'excluding';
+    type: 'including' | 'excluding' | 'exempt';
 }
 
 export interface ItemCategoryInterface {
@@ -47,7 +47,10 @@ export interface LineCalculationsInterface {
     baseAmount: number;
     discountAmount: number;
     taxableAmount: number;
-    gstAmount: number;
+    cgstAmount: number;
+    sgstAmount: number;
+    igstAmount: number;
+    totalGstAmount: number;
     lineTotal: number;
 }
 
@@ -65,27 +68,40 @@ export interface InvoiceItemInterface {
 export interface InvoiceSummaryInterface {
     subTotal: number;
     totalDiscount: number;
+    totalCGST: number;
+    totalSGST: number;
+    totalIGST: number;
     totalGST: number;
     shipmentAmount: number;
     roundOff: number;
     grandTotal: number;
+    gstType: 'intrastate' | 'interstate'; // CGST+SGST vs IGST
 }
 
 export interface GSTBreakdownInterface {
     [rate: string]: {
         taxable: number;
-        gst: number;
+        cgst?: number;
+        sgst?: number;
+        igst?: number;
+        totalGst: number;
     };
 }
 
+// Updated Address Interface
+export interface AddressInterface {
+    address: string;
+    phone: string;
+    state: string;
+}
+
+// Updated Customer Interface
 export interface CustomerInterface {
     id?: string;
     name: string;
-    billingAddress: string;
-    shippingAddress?: string;
+    billingAddress: AddressInterface;
+    shippingAddress?: AddressInterface;
     gstin?: string;
-    phone?: string;
-    state?: string;
     isSameAsBilling?: boolean;
 }
 
@@ -263,57 +279,193 @@ export class Invoice implements InvoiceInterface {
         };
     }
 
-    // Calculate totals (utility method)
-    calculateTotals(): void {
-        let subTotal = 0;
-        let totalDiscount = 0;
-        let totalGST = 0;
-        const gstBreakdown: GSTBreakdownInterface = {};
-
-        this.items.forEach(item => {
-            subTotal += item.calculations.baseAmount;
-            totalDiscount += item.calculations.discountAmount;
-            totalGST += item.calculations.gstAmount;
-
-            // Update GST breakdown
-            const rate = item.gstConfig.rate.toString();
-            if (!gstBreakdown[rate]) {
-                gstBreakdown[rate] = { taxable: 0, gst: 0 };
-            }
-            gstBreakdown[rate].taxable += item.calculations.taxableAmount;
-            gstBreakdown[rate].gst += item.calculations.gstAmount;
-        });
-
-        this.summary = {
-            subTotal,
-            totalDiscount,
-            totalGST,
-            shipmentAmount: this.summary?.shipmentAmount || 0,
-            roundOff: this.summary?.roundOff || 0,
-            grandTotal: subTotal - totalDiscount + totalGST + (this.summary?.shipmentAmount || 0) + (this.summary?.roundOff || 0)
-        };
-
-        this.gstBreakdown = gstBreakdown;
+// Calculate line item GST based on invoice GST type and GST config
+private calculateLineItemGST(item: InvoiceItemInterface, isInterstate: boolean): LineCalculationsInterface {
+    const baseAmount = item.quantity * item.unitPrice;
+    
+    let discountAmount = 0;
+    if (item.discount.type === 'percent') {
+        discountAmount = (baseAmount * item.discount.value) / 100;
+    } else {
+        discountAmount = item.discount.value;
     }
+    
+    const amountAfterDiscount = baseAmount - discountAmount;
+    const gstRate = item.gstConfig.rate / 100;
+    
+    let taxableAmount: number;
+    let totalGstAmount: number;
+    
+    // Handle GST calculation based on GST config type
+    if (item.gstConfig.type === 'exempt') {
+        // GST exempt items - no GST applicable
+        taxableAmount = amountAfterDiscount;
+        totalGstAmount = 0;
+    } else if (item.gstConfig.type === 'including') {
+        // Price includes GST - need to extract GST from the discounted amount
+        taxableAmount = amountAfterDiscount / (1 + gstRate);
+        totalGstAmount = amountAfterDiscount - taxableAmount;
+    } else {
+        // Price excludes GST - add GST to the discounted amount
+        taxableAmount = amountAfterDiscount;
+        totalGstAmount = taxableAmount * gstRate;
+    }
+    
+    let cgstAmount = 0;
+    let sgstAmount = 0;
+    let igstAmount = 0;
+    
+    // Only split GST if not exempt
+    if (item.gstConfig.type !== 'exempt' && totalGstAmount > 0) {
+        if (isInterstate) {
+            // Interstate: IGST only
+            igstAmount = totalGstAmount;
+        } else {
+            // Intrastate: CGST + SGST (split equally)
+            cgstAmount = totalGstAmount / 2;
+            sgstAmount = totalGstAmount / 2;
+        }
+    }
+    
+    // Line total calculation
+    let lineTotal: number;
+    if (item.gstConfig.type === 'exempt') {
+        // For exempt items, line total is just the discounted amount
+        lineTotal = amountAfterDiscount;
+    } else if (item.gstConfig.type === 'including') {
+        // If GST is included in price, line total is the discounted amount
+        lineTotal = amountAfterDiscount;
+    } else {
+        // If GST is excluded from price, add GST to get line total
+        lineTotal = taxableAmount + totalGstAmount;
+    }
+    
+    return {
+        baseAmount: Math.round(baseAmount * 100) / 100,
+        discountAmount: Math.round(discountAmount * 100) / 100,
+        taxableAmount: Math.round(taxableAmount * 100) / 100,
+        cgstAmount: Math.round(cgstAmount * 100) / 100,
+        sgstAmount: Math.round(sgstAmount * 100) / 100,
+        igstAmount: Math.round(igstAmount * 100) / 100,
+        totalGstAmount: Math.round(totalGstAmount * 100) / 100,
+        lineTotal: Math.round(lineTotal * 100) / 100
+    };
+}
 
+// Updated calculateTotals method to handle GST type properly
+async calculateTotals(fpoState?: string): Promise<void> {
+    // Determine if interstate based on shipping address
+    const shippingState = this.customer.shippingAddress?.state || this.customer.billingAddress.state;
+    const isInterstate = fpoState ? shippingState !== fpoState : false;
+    
+    let subTotal = 0;
+    let totalDiscount = 0;
+    let totalCGST = 0;
+    let totalSGST = 0;
+    let totalIGST = 0;
+    const gstBreakdown: GSTBreakdownInterface = {};
+
+    // Calculate each line item
+    this.items.forEach(item => {
+        const calculations = this.calculateLineItemGST(item, isInterstate);
+        
+        // Update item calculations
+        item.calculations = calculations;
+        
+        // Add to totals
+        subTotal += calculations.baseAmount;
+        totalDiscount += calculations.discountAmount;
+        totalCGST += calculations.cgstAmount;
+        totalSGST += calculations.sgstAmount;
+        totalIGST += calculations.igstAmount;
+
+        // Update GST breakdown - only add to breakdown if not exempt
+        const rate = item.gstConfig.rate.toString();
+        
+        // Only create GST breakdown entries for non-exempt items
+        if (item.gstConfig.type !== 'exempt') {
+            if (!gstBreakdown[rate]) {
+                gstBreakdown[rate] = { 
+                    taxable: 0, 
+                    cgst: 0, 
+                    sgst: 0, 
+                    igst: 0, 
+                    totalGst: 0 
+                };
+            }
+            
+            gstBreakdown[rate].taxable += calculations.taxableAmount;
+            
+            if (isInterstate) {
+                gstBreakdown[rate].igst! += calculations.igstAmount;
+            } else {
+                gstBreakdown[rate].cgst! += calculations.cgstAmount;
+                gstBreakdown[rate].sgst! += calculations.sgstAmount;
+            }
+            
+            gstBreakdown[rate].totalGst += calculations.totalGstAmount;
+        }
+    });
+
+    const totalGST = totalCGST + totalSGST + totalIGST;
+
+    // Calculate grand total
+    // let grandTotalCalculation: number;
+    const shipmentAmount = this.summary?.shipmentAmount || 0;
+    const roundOff = this.summary?.roundOff || 0;
+    
+    // For mixed inclusive/exclusive items, we sum up line totals
+    const totalLineAmount = this.items.reduce((sum, item) => sum + item.calculations.lineTotal, 0);
+  const  grandTotalCalculation = totalLineAmount + shipmentAmount + roundOff;
+
+    this.summary = {
+        subTotal: Math.round(subTotal * 100) / 100,
+        totalDiscount: Math.round(totalDiscount * 100) / 100,
+        totalCGST: Math.round(totalCGST * 100) / 100,
+        totalSGST: Math.round(totalSGST * 100) / 100,
+        totalIGST: Math.round(totalIGST * 100) / 100,
+        totalGST: Math.round(totalGST * 100) / 100,
+        shipmentAmount: shipmentAmount,
+        roundOff: roundOff,
+        grandTotal: Math.round(grandTotalCalculation * 100) / 100,
+        gstType: isInterstate ? 'interstate' : 'intrastate'
+    };
+
+    // Round GST breakdown values
+    Object.keys(gstBreakdown).forEach(rate => {
+        gstBreakdown[rate].taxable = Math.round(gstBreakdown[rate].taxable * 100) / 100;
+        if (gstBreakdown[rate].cgst !== undefined) {
+            gstBreakdown[rate].cgst = Math.round(gstBreakdown[rate].cgst! * 100) / 100;
+        }
+        if (gstBreakdown[rate].sgst !== undefined) {
+            gstBreakdown[rate].sgst = Math.round(gstBreakdown[rate].sgst! * 100) / 100;
+        }
+        if (gstBreakdown[rate].igst !== undefined) {
+            gstBreakdown[rate].igst = Math.round(gstBreakdown[rate].igst! * 100) / 100;
+        }
+        gstBreakdown[rate].totalGst = Math.round(gstBreakdown[rate].totalGst * 100) / 100;
+    });
+
+    this.gstBreakdown = gstBreakdown;
+}
     // Add item to invoice
-    addItem(item: InvoiceItemInterface): void {
+    async addItem(item: InvoiceItemInterface, fpoState?: string): Promise<void> {
         this.items.push(item);
-        this.calculateTotals();
+        await this.calculateTotals(fpoState);
     }
 
     // Remove item from invoice
-    removeItem(itemId: string): void {
+    async removeItem(itemId: string, fpoState?: string): Promise<void> {
         this.items = this.items.filter(item => item.id !== itemId);
-        this.calculateTotals();
+        await this.calculateTotals(fpoState);
     }
 
     // Update item in invoice
-    updateItem(itemId: string, updatedItem: InvoiceItemInterface): void {
+    async updateItem(itemId: string, updatedItem: InvoiceItemInterface, fpoState?: string): Promise<void> {
         const index = this.items.findIndex(item => item.id === itemId);
         if (index !== -1) {
             this.items[index] = updatedItem;
-            this.calculateTotals();
+            await this.calculateTotals(fpoState);
         }
     }
 
@@ -358,8 +510,22 @@ export class Invoice implements InvoiceInterface {
             errors.push('Customer name is required');
         }
 
-        if (!this.customer.billingAddress.trim()) {
+        if (!this.customer.billingAddress.address.trim()) {
             errors.push('Customer billing address is required');
+        }
+
+        if (!this.customer.billingAddress.state.trim()) {
+            errors.push('Customer billing address state is required');
+        }
+
+        // Validate shipping address if provided and not same as billing
+        if (!this.customer.isSameAsBilling && this.customer.shippingAddress) {
+            if (!this.customer.shippingAddress.address.trim()) {
+                errors.push('Customer shipping address is required');
+            }
+            if (!this.customer.shippingAddress.state.trim()) {
+                errors.push('Customer shipping address state is required');
+            }
         }
 
         if (!this.fpoId) {

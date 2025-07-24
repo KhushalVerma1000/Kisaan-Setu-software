@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useParams } from 'next/navigation';
 import { toast } from 'react-toastify';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -11,7 +11,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Separator } from '@/components/ui/separator';
-import { Calendar, Save, X, FileText, Plus } from 'lucide-react';
+import { Calendar, Save, X, FileText, Plus, Loader2, ArrowLeft } from 'lucide-react';
 import { InvoiceAPI } from '@/server/features/sales/invoice/infrastructure/apihelpers/invoiceApi';
 import type { 
   InvoiceInterface, 
@@ -29,6 +29,7 @@ import AddItemComponent from '@/components/items/AddItemComponent';
 import { useAppSelector, useAppDispatch } from '@/store/hooks';
 import { selectAllLedgerAccounts, selectLedgerAccountsLoading, selectLedgerAccountsError } from '@/store/slices/ledgerAccountSlice';
 import { fetchLedgerAccountsAsync } from '@/store/slices/ledgerAccountSlice';
+import { Item } from '@/server/features/items/core/entities/Item';
 
 interface FormData {
   customerId: string;
@@ -60,9 +61,13 @@ const STATES = [
   'Telangana', 'Tripura', 'Uttar Pradesh', 'Uttarakhand', 'West Bengal'
 ];
 
-const AddInvoicePage: React.FC = () => {
+const EditInvoicePage: React.FC = () => {
   const router = useRouter();
+  const params = useParams();
   const dispatch = useAppDispatch();
+  
+  // Get invoice ID from URL parameters
+  const invoiceId = params.id as string;
   
   // Redux state
   const user = useAppSelector((state) => state.user);
@@ -72,18 +77,21 @@ const AddInvoicePage: React.FC = () => {
   
   const fpoIdOfUser = user.fpoId;
 
+  // Loading states
   const [loading, setLoading] = useState(false);
+  const [initialLoading, setInitialLoading] = useState(true);
   const [selectedCustomer, setSelectedCustomer] = useState<any | null>(null);
+  const [originalInvoice, setOriginalInvoice] = useState<InvoiceInterface | null>(null);
   
   // State for managing items and calculations
-  const [currentItems, setCurrentItems] = useState<SelectedItem[]>([]);
+  const [currentItems, setCurrentItems] = useState<any>([]);
   const [exportedData, setExportedData] = useState<any>(null);
   const [itemsDataReady, setItemsDataReady] = useState(false);
 
   const [formData, setFormData] = useState<FormData>({
     customerId: '',
     invoiceNumber: '',
-    invoiceDate: new Date().toISOString().split('T')[0],
+    invoiceDate: '',
     eWayBillNumber: '',
     vehicleNumber: '',
     poNumber: '',
@@ -102,6 +110,18 @@ const AddInvoicePage: React.FC = () => {
     }
   });
 
+  const formatDateForInput = (dateString: string): string => {
+  if (!dateString) return '';
+  
+  try {
+    const date = new Date(dateString);
+    if (isNaN(date.getTime())) return '';
+    return date.toISOString().split('T')[0];
+  } catch (error) {
+    console.error('Error formatting date:', error);
+    return '';
+  }
+};
   // Fetch ledger accounts on component mount
   useEffect(() => {
     if (fpoIdOfUser && ledgerAccounts.length === 0) {
@@ -109,27 +129,103 @@ const AddInvoicePage: React.FC = () => {
     }
   }, [dispatch, fpoIdOfUser, ledgerAccounts.length]);
 
-  // Generate next invoice number on component mount
+  // Fetch invoice data
   useEffect(() => {
-    if (fpoIdOfUser) {
-      generateNextInvoiceNumber();
+    if (invoiceId && fpoIdOfUser) {
+      fetchInvoiceData();
     }
-  }, [fpoIdOfUser]);
+  }, [invoiceId, fpoIdOfUser]);
 
-  const generateNextInvoiceNumber = async () => {
+  const fetchInvoiceData = async () => {
     try {
-      if (!fpoIdOfUser) {
-        toast.error('FPO ID not found');
+      setInitialLoading(true);
+      const invoice = await InvoiceAPI.getById(invoiceId);
+      
+      if (!invoice) {
+        toast.error('Invoice not found');
+        router.push('/Sales/Invoice');
         return;
       }
-      const result = await InvoiceAPI.getNextInvoiceNumber(fpoIdOfUser, 'INV');
-      setFormData(prev => ({ ...prev, invoiceNumber: result.nextNumber }));
+      console.log("your invoice is " , invoice)
+      console.log("iem data is here" , invoice.items)
+      setOriginalInvoice(invoice);
+      
+      // Populate form data
+      setFormData({
+        customerId: invoice.customer.id,
+        invoiceNumber: invoice.invoiceNumber,
+invoiceDate: formatDateForInput(invoice.invoiceDate),
+        eWayBillNumber: invoice.eWayBillNumber || '',
+        vehicleNumber: invoice.vehicleNumber || '',
+        poNumber: invoice.poNumber || '',
+        notes: invoice.notes || '',
+        sameAsBillingAddress: invoice.customer.isSameAsBilling,
+        billingAddress: {
+          address: invoice.customer.billingAddress.address,
+          state: invoice.customer.billingAddress.state,
+          phone: invoice.customer.billingAddress.phone,
+          gstin: invoice.customer.gstin || ''
+        },
+        shippingAddress: {
+          address: invoice.customer.shippingAddress.address,
+          state: invoice.customer.shippingAddress.state,
+          phone: invoice.customer.shippingAddress.phone
+        }
+      });
+
+      // Find and set selected customer
+      const customer = ledgerAccounts.find(account => account.id === invoice.customer.id);
+      if (customer) {
+        setSelectedCustomer(customer);
+      }
+
+      // Convert InvoiceItemInterface to SelectedItem for the AddItemComponent
+      const convertedItems: SelectedItem[] = invoice.items.map((item:InvoiceItemInterface, index:number) => ({
+        id: item.id,
+        item: item.item,
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+        discount: item.discount,
+        gstConfig: item.gstConfig,
+        lineNumber: item.lineNumber || index + 1
+        
+      }));
+      console.log("the converted item is this",convertedItems)
+
+      setCurrentItems(convertedItems);
+      
+      // Prepare exported data structure that matches what AddItemComponent expects
+      const summaryData = {
+        subTotal: invoice.summary.subTotal,
+        totalDiscount: invoice.summary.totalDiscount,
+        totalCGST: invoice.summary.totalCGST,
+        totalSGST: invoice.summary.totalSGST,
+        totalIGST: invoice.summary.totalIGST,
+        totalGST: invoice.summary.totalGST,
+        shipmentAmount: invoice.summary.shipmentAmount,
+        roundOff: invoice.summary.roundOff,
+        grandTotal: invoice.summary.grandTotal,
+        gstType: invoice.summary.gstType
+      };
+
+      setExportedData({
+        items: convertedItems,
+        summary: summaryData,
+        gstBreakdown: invoice.gstBreakdown
+      });
+      
+      setItemsDataReady(true);
+      
     } catch (error) {
-      toast.error('Failed to generate invoice number');
+      console.error('Error fetching invoice:', error);
+      toast.error('Failed to load invoice data');
+      router.push('/Sales/Invoice');
+    } finally {
+      setInitialLoading(false);
     }
   };
 
-  const handleCustomerSelect = (customerId: string) => {
+const handleCustomerSelect = (customerId: string) => {
     const customer = ledgerAccounts.find(account => account.id === customerId);
     if (customer) {
       setSelectedCustomer(customer);
@@ -221,7 +317,7 @@ const AddInvoicePage: React.FC = () => {
     return true;
   };
 
-  // // Helper function to calculate line calculations from SelectedItem
+  // Helper function to calculate line calculations from SelectedItem
   // const calculateLineCalculations = (selectedItem: SelectedItem): LineCalculationsInterface => {
   //   const baseAmount = selectedItem.quantity * selectedItem.unitPrice;
     
@@ -283,10 +379,10 @@ const AddInvoicePage: React.FC = () => {
   //   };
   // };
 
-  const handleSave = async (status: 'draft' | 'sent' = 'draft') => {
+  const handleUpdate = async (status?: 'draft' | 'sent') => {
     if (!validateForm()) return;
-    if (!fpoIdOfUser) {
-      toast.error('FPO ID not found');
+    if (!fpoIdOfUser || !originalInvoice) {
+      toast.error('Invalid invoice data');
       return;
     }
 
@@ -294,7 +390,7 @@ const AddInvoicePage: React.FC = () => {
     try {
       // Map SelectedItem to InvoiceItemInterface with proper calculations
       const invoiceItems: InvoiceItemInterface[] = exportedData.items.map((selectedItem: SelectedItem) => {
-        // const calculations = selectedItem.summary;
+        // const calculations = calculateLineCalculations(selectedItem);
         
         return {
           id: selectedItem.id,
@@ -304,7 +400,7 @@ const AddInvoicePage: React.FC = () => {
           discount: selectedItem.discount,
           gstConfig: selectedItem.gstConfig,
           lineNumber: selectedItem.lineNumber,
-          
+         
         };
       });
 
@@ -349,7 +445,8 @@ const AddInvoicePage: React.FC = () => {
       // Create GST breakdown from exported data
       const gstBreakdown: GSTBreakdownInterface = exportedData.gstBreakdown || {};
 
-      const invoiceData: InvoiceInterface = {
+      const updatedInvoiceData: InvoiceInterface = {
+        id: originalInvoice.id,
         invoiceNumber: formData.invoiceNumber,
         invoiceDate: formData.invoiceDate,
         customer,
@@ -361,24 +458,44 @@ const AddInvoicePage: React.FC = () => {
         gstBreakdown,
         documentType: 'invoice',
         fpoId: fpoIdOfUser,
-        status,
-        notes: formData.notes
+        status: status || originalInvoice.status,
+        notes: formData.notes,
+        createdAt: originalInvoice.createdAt,
+        updatedAt: new Date()
       };
 
-      await InvoiceAPI.create(invoiceData);
-      toast.success(`Invoice ${status === 'draft' ? 'saved as draft' : 'created'} successfully!`);
+      await InvoiceAPI.update( updatedInvoiceData);
+      toast.success('Invoice updated successfully!');
       router.push('/Sales/Invoice');
     } catch (error) {
-      toast.error(`Failed to ${status === 'draft' ? 'save' : 'create'} invoice`);
-      console.error('Invoice creation error:', error);
+      toast.error('Failed to update invoice');
+      console.error('Invoice update error:', error);
     } finally {
       setLoading(false);
     }
   };
 
   const handleCancel = () => {
-    router.push('/invoices');
+    router.push('/Sales/Invoice');
   };
+
+  const handleGoBack = () => {
+    router.back();
+  };
+
+  // Show loading spinner while fetching initial data
+  if (initialLoading) {
+    return (
+      <div className="container mx-auto max-w-full">
+        <div className="flex items-center justify-center py-20">
+          <div className="text-center">
+            <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4" />
+            <p className="text-gray-600">Loading invoice data...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // Filter ledger accounts that are customers
   const customerAccounts = ledgerAccounts;
@@ -387,12 +504,26 @@ const AddInvoicePage: React.FC = () => {
   const isSaveDisabled = loading || !itemsDataReady;
 
   return (
-    <div className="container mx-auto  max-w-full">
+    <div className="container mx-auto max-w-full">
       {/* Header */}
       <div className="flex flex-col md:flex-row items-center justify-between md:mb-6">
-        <div className=' max-md:w-full max-md:px-4 px-6'>
-          <h1 className="text-3xl font-bold text-gray-900">Create Invoice</h1>
-          <p className="text-gray-600 mt-1">Add a new invoice to your system</p>
+        <div className="max-md:w-full max-md:px-4 px-6">
+          <div className="flex items-center gap-3 mb-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleGoBack}
+              className="p-1"
+            >
+              <ArrowLeft className="w-4 h-4" />
+            </Button>
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900">Edit Invoice</h1>
+              <p className="text-gray-600 mt-1">
+                Editing Invoice #{originalInvoice?.invoiceNumber}
+              </p>
+            </div>
+          </div>
         </div>
         <div className="flex gap-3">
           <Button variant="outline" onClick={handleCancel}>
@@ -401,20 +532,28 @@ const AddInvoicePage: React.FC = () => {
           </Button>
           <Button 
             variant="outline" 
-            onClick={() => handleSave('draft')} 
+            onClick={() => handleUpdate('draft')} 
             disabled={isSaveDisabled}
             title={!itemsDataReady ? "Please save items first using the 'Save Items' button below" : ""}
           >
-            <Save className="w-4 h-4 mr-2" />
-            Save as Draft
+            {loading ? (
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            ) : (
+              <Save className="w-4 h-4 mr-2" />
+            )}
+            Update as Draft
           </Button>
           <Button 
-            onClick={() => handleSave('sent')} 
+            onClick={() => handleUpdate('sent')} 
             disabled={isSaveDisabled}
             title={!itemsDataReady ? "Please save items first using the 'Save Items' button below" : ""}
           >
-            <FileText className="w-4 h-4 mr-2" />
-            Generate Invoice
+            {loading ? (
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            ) : (
+              <FileText className="w-4 h-4 mr-2" />
+            )}
+            Update Invoice
           </Button>
         </div>
       </div>
@@ -423,7 +562,7 @@ const AddInvoicePage: React.FC = () => {
       {!itemsDataReady && (
         <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-md max-w-4xl">
           <p className="text-blue-800 text-sm">
-            <strong>Note:</strong> Please add items and click the "Save Items" button in the Items section below to enable the invoice save buttons.
+            <strong>Note:</strong> Please add items and click the "Save Items" button in the Items section below to enable the invoice update buttons.
           </p>
         </div>
       )}
@@ -663,14 +802,14 @@ const AddInvoicePage: React.FC = () => {
             <CardTitle>Invoice Items</CardTitle>
             {!itemsDataReady && (
               <p className="text-sm text-blue-600">
-                Add items below and click "Save Items" to enable invoice creation buttons.
+                Add items below and click "Save Items" to enable invoice update buttons.
               </p>
             )}
           </CardHeader>
           <CardContent>
             <AddItemComponent
               documentType="invoice"
-         
+              initialItems={currentItems}
               onItemsChange={handleItemsChange}
               onExportData={handleExportData}
               showSummary={true}
@@ -699,18 +838,6 @@ const AddInvoicePage: React.FC = () => {
                     <span>Total Discount:</span>
                     <span>₹{exportedData.summary.totalDiscount?.toFixed(2) || '0.00'}</span>
                   </div>
-                  {/* <div className="flex justify-between">
-                    <span>CGST:</span>
-                    <span>₹{exportedData.summary.totalCGST?.toFixed(2) || '0.00'}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>SGST:</span>
-                    <span>₹{exportedData.summary.totalSGST?.toFixed(2) || '0.00'}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>IGST:</span>
-                    <span>₹{exportedData.summary.totalIGST?.toFixed(2) || '0.00'}</span>
-                  </div> */}
                   <div className="flex justify-between">
                     <span>Total GST:</span>
                     <span>₹{exportedData.summary.totalGST?.toFixed(2) || '0.00'}</span>
@@ -728,7 +855,6 @@ const AddInvoicePage: React.FC = () => {
                     <span>Grand Total:</span>
                     <span>₹{exportedData.summary.grandTotal?.toFixed(2) || '0.00'}</span>
                   </div>
-                 
                 </div>
               ) : (
                 <div className="text-gray-500 text-sm text-center py-4">
@@ -745,7 +871,7 @@ const AddInvoicePage: React.FC = () => {
                 <p className="text-sm font-medium" style={{
                   color: itemsDataReady ? '#0369a1' : '#92400e'
                 }}>
-                  Status: {itemsDataReady ? '✅ Items saved - Ready to create invoice' : '⏳ Please save items first'}
+                  Status: {itemsDataReady ? '✅ Items saved - Ready to update invoice' : '⏳ Please save items first'}
                 </p>
               </div>
             </CardContent>
@@ -756,4 +882,4 @@ const AddInvoicePage: React.FC = () => {
   );
 };
 
-export default AddInvoicePage;
+export default EditInvoicePage;
