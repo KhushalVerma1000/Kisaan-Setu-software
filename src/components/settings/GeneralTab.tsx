@@ -12,6 +12,48 @@ import {
 import { FrontendProfile } from "@/types/FrontendProfile"
 import { Upload, X, Camera } from "lucide-react"
 
+// All Indian States and Union Territories
+const INDIAN_STATES = [
+  // States (28)
+  "Andhra Pradesh",
+  "Arunachal Pradesh",
+  "Assam",
+  "Bihar",
+  "Chhattisgarh",
+  "Goa",
+  "Gujarat",
+  "Haryana",
+  "Himachal Pradesh",
+  "Jharkhand",
+  "Karnataka",
+  "Kerala",
+  "Madhya Pradesh",
+  "Maharashtra",
+  "Manipur",
+  "Meghalaya",
+  "Mizoram",
+  "Nagaland",
+  "Odisha",
+  "Punjab",
+  "Rajasthan",
+  "Sikkim",
+  "Tamil Nadu",
+  "Telangana",
+  "Tripura",
+  "Uttar Pradesh",
+  "Uttarakhand",
+  "West Bengal",
+  // Union Territories (8)
+  "Andaman and Nicobar Islands",
+  "Chandigarh",
+  "Dadra and Nagar Haveli and Daman and Diu",
+  "Delhi",
+  "Jammu and Kashmir",
+  "Ladakh",
+  "Lakshadweep",
+  "Puducherry"
+]
+
 type ProfileForm = {
   companyName?: string;
   incorporationDate?: Date;
@@ -232,10 +274,12 @@ export default function GeneralTab({
               <SelectTrigger>
                 <SelectValue placeholder="Select state" />
               </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="Uttar Pradesh">Uttar Pradesh</SelectItem>
-                <SelectItem value="Bihar">Bihar</SelectItem>
-                <SelectItem value="Madhya Pradesh">Madhya Pradesh</SelectItem>
+              <SelectContent className="max-h-60">
+                {INDIAN_STATES.map((state) => (
+                  <SelectItem key={state} value={state}>
+                    {state}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>

@@ -140,7 +140,7 @@ const EditPurchaseVoucherPage: React.FC<EditPurchaseVoucherPageProps> = ({ param
         pauseOnHover: true,
         draggable: true,
       });
-      router.push('/login');
+      router.push('/Login');
       return;
     }
   }, [fpoIdOfUser, router]);
@@ -212,6 +212,7 @@ const EditPurchaseVoucherPage: React.FC<EditPurchaseVoucherPageProps> = ({ param
         setGstBreakdown(voucherData.gstBreakdown || {});
 
         // Set items data for AddItemComponent
+        console.log("the items i am passing to addditem component ", voucherData.items)
         setExportedItemsData({
           items: voucherData.items || [],
           summary: voucherData.summary || {},
@@ -412,7 +413,7 @@ const EditPurchaseVoucherPage: React.FC<EditPurchaseVoucherPageProps> = ({ param
         notes: formData.notes
       };
 
-      const response = await PurchaseVoucherAPI.update(id, voucherData);
+      const response = await PurchaseVoucherAPI.update( voucherData);
 
       toast.update(toastId, {
         render: `Purchase voucher updated successfully!`,

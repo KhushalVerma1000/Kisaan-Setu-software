@@ -8,6 +8,8 @@ export class BankDetail {
   public ifscCode: string;
   public upiId?: string;
   public isPrimary: boolean;
+  public printBankDetails: boolean;
+  public printUpiQr: boolean;
 
   constructor(props: {
     id: string;
@@ -18,6 +20,8 @@ export class BankDetail {
     ifscCode: string;
     upiId?: string;
     isPrimary?: boolean;
+    printBankDetails?: boolean;
+    printUpiQr?: boolean;
   }) {
     this.id = props.id;
     this.fpoId = props.fpoId;
@@ -27,5 +31,7 @@ export class BankDetail {
     this.ifscCode = props.ifscCode;
     this.upiId = props.upiId;
     this.isPrimary = props.isPrimary ?? false;
+    this.printBankDetails = props.printBankDetails ?? true;
+    this.printUpiQr = props.printUpiQr ?? true;
   }
 }

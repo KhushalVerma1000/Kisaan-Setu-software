@@ -78,7 +78,7 @@ export async function POST(request: NextRequest) {
     try {
         const body = await request.json();
         
-        console.log('=== POST /api/ledger-entries Debug ===');
+        console.log('=== POST /api/ledger/ledger-entries Debug ===');
         console.log('Request body:', body);
 
         const entryData: LedgerEntryInterface = {

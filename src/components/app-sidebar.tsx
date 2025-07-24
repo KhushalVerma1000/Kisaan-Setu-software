@@ -8,7 +8,8 @@ import {
   ReceiptIndianRupee, ShoppingCart, Layers, ChartBar, CircleUserRound, WalletCards, BookOpen, LogOut,
   LayoutDashboard, ChevronDown, ChevronRight, FileText, Plus, Eye, Edit, TrendingUp, Package, LucideIcon,
   Wallet2, Wallet, NotebookPen, Truck, BanknoteArrowDown, Notebook, Recycle, BanknoteArrowUpIcon,
-  Ticket, TicketsIcon, ShoppingBasket, Settings, Users, BlocksIcon, Tags, FileBox
+  Ticket, TicketsIcon, ShoppingBasket, Settings, Users, BlocksIcon, Tags, FileBox,
+  Quote
 } from "lucide-react";
 import {
   Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarHeader, SidebarMenu,
@@ -44,8 +45,8 @@ const items: MenuItem[] = [
   { title: "Fpo Lifecycle", url: "/FpoLifecycle", icon: Recycle },
   {
     title: "Sales", url: "#", icon: ReceiptIndianRupee, subItems: [
-      { title: "Invoice", url: "/Sales/Invoice", icon: Plus },
-      { title: "Quotation", url: "/Sales/Quotation", icon: Eye },
+      { title: "Invoice", url: "/Sales/Invoice", icon: FileText },
+      { title: "Quotation", url: "/Sales/Quotation", icon: Quote },
       { title: "Credit Note / Return", url: "/Sales/CreditNoteReturn", icon: Notebook },
       { title: "Delivery", url: "/Sales/Delivery", icon: Truck },
       { title: "Payment in", url: "/Sales/PaymentIn", icon: BanknoteArrowDown },

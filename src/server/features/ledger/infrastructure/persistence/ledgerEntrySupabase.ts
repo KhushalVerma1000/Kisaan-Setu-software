@@ -151,7 +151,7 @@ export async function createSalesInvoiceEntry(salesData: SalesInvoiceData): Prom
             salesData.amount,
             'Dr',
             undefined,
-            `Sales Invoice ${salesData.invoiceNumber} - ${salesData.description || 'Sales'}`
+            `Sales Invoice - ${salesData.description || 'Sales'}`
         );
 
         const { data, error } = await supabase
@@ -191,7 +191,7 @@ export async function createPurchaseVoucherEntry(purchaseData: PurchaseVoucherDa
             purchaseData.amount,
             'Cr',
             undefined,
-            `Purchase Voucher ${purchaseData.voucherNumber} - ${purchaseData.description || 'Purchase'}`
+            `Purchase Voucher - ${purchaseData.description || 'Purchase'}`
         );
 
         const { data, error } = await supabase
@@ -488,6 +488,7 @@ export async function getLedgerBalance(
         const balanceType = balance >= 0 ? originalBalanceType : 
                           (originalBalanceType === 'Dr' ? 'Cr' : 'Dr');
 
+                     
         return {
             balance: Math.abs(balance),
             balanceType

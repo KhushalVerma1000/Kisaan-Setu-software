@@ -41,6 +41,7 @@ export interface ILineItemSummary {
   shipmentAmount: number;
   roundOff: number;
   grandTotal: number;
+  itemCount? : number;
 }
 
 export class SelectedItem {

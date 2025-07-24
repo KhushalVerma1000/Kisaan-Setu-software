@@ -15,322 +15,633 @@ import { useRouter } from "next/navigation";
 import { Search, FileDown, Plus, Eye, Edit, Trash2, MoreHorizontal, Download, Send, CreditCard, AlertTriangle } from "lucide-react";
 import ExcelJS from "exceljs";
 import { saveAs } from "file-saver";
-
-// Invoice data structure
-interface Invoice {
-  id: string;
+import { InvoiceAPI } from '@/server/features/sales/invoice/infrastructure/apihelpers/invoiceApi';
+import { InvoiceInterface } from '@/server/features/sales/invoice/core/entities/invoice';
+import { useAppDispatch, useAppSelector } from "@/store/hooks";
+import { selectAllLedgerAccounts, selectLedgerAccountsError, selectLedgerAccountsLoading } from "@/store/slices/ledgerAccountSlice";
+import { toast } from 'react-toastify';
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
+import { CalendarIcon } from "lucide-react";
+import { format } from "date-fns";
+import { cn } from "@/lib/utils";
+import InvoiceSummary from "@/components/invoice/EnhancedSummaryCards";
+import EnhancedSummaryCards from "@/components/invoice/EnhancedSummaryCards";
+import { InvoiceStatsAPIExtended } from "@/server/features/sales/invoice/infrastructure/apihelpers/invoiceStatsApiHelper";
+import { InvoicePDFService } from "@/server/services/pdf/InvoicePDFService";
+// Extended Invoice interface with additional display properties
+interface InvoiceDisplay extends InvoiceInterface {
   customerName: string;
-  invoiceNumber: string;
-  amount: number;
-  issueDate: string;
-  dueDate: string;
-  status: 'Draft' | 'Sent' | 'Paid' | 'Overdue' | 'Cancelled';
-  paymentMethod?: string;
-  paidAmount?: number;
+  cgst?: number;
+  sgst?: number;
+  igst?: number;
 }
 
 export default function InvoicePage() {
   const router = useRouter();
-  const [invoices, setInvoices] = useState<Invoice[]>([]);
+
+  // State management
+  const [invoices, setInvoices] = useState<InvoiceDisplay[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
+  const [customerList, setcustomerList] = useState<string[]>([])
+  const [customerFilter, setCustomerFilter] = useState("all"); // New customer filter
   const [itemsPerPage, setItemsPerPage] = useState("25");
   const [isLoading, setIsLoading] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
-  const [statusFilter, setStatusFilter] = useState("all");
-  const [dateFilter, setDateFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState<'draft' | 'sent' | 'paid' | 'cancelled' | 'all'>("all");
+  // Replace dateFilter with proper date range
+  const [dateRange, setDateRange] = useState<{
+    from: Date | undefined;
+    to: Date | undefined;
+  }>(() => {
+    // Set default to current month
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
 
-  // Sample data - replace with your API calls
-  const sampleInvoices: Invoice[] = useMemo(() => [
-    {
-      id: "1",
-      customerName: "ABC Farm Supplies",
-      invoiceNumber: "INV-2024-001",
-      amount: 15000,
-      issueDate: "2024-01-15",
-      dueDate: "2024-02-15",
-      status: "Sent",
-      paymentMethod: "Bank Transfer"
-    },
-    {
-      id: "2",
-      customerName: "Green Valley Co-op",
-      invoiceNumber: "INV-2024-002",
-      amount: 25000,
-      issueDate: "2024-01-20",
-      dueDate: "2024-02-20",
-      status: "Draft"
-    },
-    {
-      id: "3",
-      customerName: "Farmers United Ltd",
-      invoiceNumber: "INV-2024-003",
-      amount: 8500,
-      issueDate: "2024-01-25",
-      dueDate: "2024-02-25",
-      status: "Paid",
-      paymentMethod: "Cash",
-      paidAmount: 8500
-    },
-    {
-      id: "4",
-      customerName: "Rural Supply Chain",
-      invoiceNumber: "INV-2024-004",
-      amount: 32000,
-      issueDate: "2024-01-10",
-      dueDate: "2024-02-10",
-      status: "Overdue",
-      paymentMethod: "Credit Card"
-    },
-    {
-      id: "5",
-      customerName: "Agro Mart Express",
-      invoiceNumber: "INV-2024-005",
-      amount: 18750,
-      issueDate: "2024-02-05",
-      dueDate: "2024-03-05",
-      status: "Cancelled"
-    },
-    {
-      id: "6",
-      customerName: "Prime Agriculture Ltd",
-      invoiceNumber: "INV-2024-006",
-      amount: 42500,
-      issueDate: "2024-02-10",
-      dueDate: "2024-03-10",
-      status: "Paid",
-      paymentMethod: "Bank Transfer",
-      paidAmount: 42500
+    return {
+      from: startOfMonth,
+      to: endOfMonth
+    };
+  });
+  const [totalCount, setTotalCount] = useState(0);
+  const [statistics, setStatistics] = useState<any>(null);
+  const [searchDebounceTimer, setSearchDebounceTimer] = useState<NodeJS.Timeout | null>(null);
+
+const [allInvoices, setAllInvoices] = useState<InvoiceDisplay[]>([]); // Store all loaded invoices
+const [filteredInvoices, setFilteredInvoices] = useState<InvoiceDisplay[]>([]); // Store filtered results
+
+
+  const dispatch = useAppDispatch();
+
+  // Redux state
+  const user = useAppSelector((state) => state.user);
+  const ledgerAccounts = useAppSelector(selectAllLedgerAccounts);
+  const ledgerAccountsLoading = useAppSelector(selectLedgerAccountsLoading);
+  const ledgerAccountsError = useAppSelector(selectLedgerAccountsError);
+
+  const fpoIdOfUser = user?.fpoId ? user.fpoId : "";
+  const [fpoId] = useState(fpoIdOfUser); // Replace with actual FPO ID from context/auth
+
+  // Load invoices from API
+
+ 
+const loadInvoices = useCallback(async (showSuccessToast = false) => {
+  setIsLoading(true);
+  try {
+    const filters: any = {
+      page: 1, // Always load from page 1
+      limit: 1000, // Load more records to reduce API calls
+      sortBy: 'created_at' as const,
+      sortOrder: 'desc' as const,
+      fpoId
+    };
+
+    // Only apply date range filter to API (expensive filters)
+    if (dateRange.from) {
+      filters.dateFrom = format(dateRange.from, 'yyyy-MM-dd');
     }
-  ], []);
+    if (dateRange.to) {
+      filters.dateTo = format(dateRange.to, 'yyyy-MM-dd');
+    }
+
+    const response = await InvoiceAPI.getAll(filters);
+
+    if (response.invoices) {
+      setAllInvoices(response.invoices || []); // Store all invoices
+      setTotalCount(response.total || 0);
+
+      if (showSuccessToast) {
+        toast.success(`Loaded ${response.invoices.length} invoices successfully`);
+      }
+    } else {
+      throw new Error(response.message || 'Failed to fetch invoices');
+    }
+  } catch (error) {
+    console.error("Error loading invoices:", error);
+    toast.error(error instanceof Error ? error.message : 'Failed to load invoices');
+    setAllInvoices([]);
+    setTotalCount(0);
+  } finally {
+    setIsLoading(false);
+  }
+}, [dateRange, fpoId]); // Remove other dependencies
+
+
+const applyClientSideFilters = useCallback(() => {
+  let filtered = [...allInvoices];
+
+  // Apply status filter
+  if (statusFilter !== "all") {
+    filtered = filtered.filter(invoice => 
+      invoice.status?.toLowerCase() === statusFilter.toLowerCase()
+    );
+  }
+
+  // Apply search filter
+  if (searchTerm.trim()) {
+    const search = searchTerm.toLowerCase().trim();
+    filtered = filtered.filter(invoice => 
+      invoice.invoiceNumber?.toLowerCase().includes(search) ||
+      invoice.customer?.name?.toLowerCase().includes(search) ||
+      invoice.summary?.grandTotal?.toString().includes(search)
+    );
+  }
+
+  // Apply customer filter
+  if (customerFilter && customerFilter !== "all" && customerFilter.trim()) {
+    filtered = filtered.filter(invoice => 
+      invoice.customer?.name === customerFilter
+    );
+  }
+
+  setFilteredInvoices(filtered);
+}, [allInvoices, statusFilter, searchTerm, customerFilter]);
+
+
+
+  // get current financial year
+  const getCurrentFinancialYear = () => {
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentMonth = now.getMonth(); // 0-based (0 = January, 3 = April)
+
+    // Financial year in India typically starts from April 1st
+    let fyStart, fyEnd;
+    if (currentMonth >= 3) { // April (3) to March (15)
+      fyStart = new Date(currentYear, 3, 1); // April 1st current year
+      fyEnd = new Date(currentYear + 1, 2, 31); // March 31st next year
+    } else {
+      fyStart = new Date(currentYear - 1, 3, 1); // April 1st previous year
+      fyEnd = new Date(currentYear, 2, 31); // March 31st current year
+    }
+
+    return {
+      start: fyStart,
+      end: fyEnd,
+      label: `FY ${fyStart.getFullYear()}-${fyEnd.getFullYear().toString().slice(-2)}`
+    };
+  };
+
+
+  const getFinancialYearRanges = () => {
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentMonth = now.getMonth(); // 0-based
+
+    const ranges = [];
+
+    // Helper function to create financial year
+    const createFY = (startYear: number) => {
+      const fyStart = new Date(startYear, 3, 1); // April 1st
+      const fyEnd = new Date(startYear + 1, 2, 31); // March 31st
+      return {
+        start: fyStart,
+        end: fyEnd,
+        label: `FY ${startYear}-${(startYear + 1).toString().slice(-2)}`
+      };
+    };
+
+    // Determine current FY start year
+    let currentFYStart;
+    if (currentMonth >= 3) { // April (3) to March (15)
+      currentFYStart = currentYear;
+    } else {
+      currentFYStart = currentYear - 1;
+    }
+
+    // Current FY
+    ranges.push({
+      ...createFY(currentFYStart),
+      key: 'current',
+      displayLabel: 'Current FY'
+    });
+
+    // Previous FY
+    ranges.push({
+      ...createFY(currentFYStart - 1),
+      key: 'previous1',
+      displayLabel: 'Previous FY'
+    });
+
+    // Previous 2 FY
+    ranges.push({
+      ...createFY(currentFYStart - 2),
+      key: 'previous2',
+      displayLabel: 'Previous 2 FY'
+    });
+
+    // Previous 3 FY
+    ranges.push({
+      ...createFY(currentFYStart - 3),
+      key: 'previous3',
+      displayLabel: 'Previous 3 FY'
+    });
+
+    return ranges;
+  };
+
+  // Load statistics
+  const loadStatistics = useCallback(async () => {
+    try {
+      // const stats = await InvoiceAPI.getDashboardStatistics(fpoId, 1);
+      const stats = await InvoiceStatsAPIExtended.getAllFYDashboards(fpoId)
+      if (stats.currentFY.success) {
+        console.log(stats)
+        setStatistics(stats.currentFY.data);
+      }
+      else {
+        toast.warning("Could not load statistics");
+
+      }
+    } catch (error) {
+      console.error("Error loading statistics:", error);
+      toast.error("Failed to load statistics");
+
+    }
+  }, [fpoId]);
+
+
 
   // Header button functionalities
   const handleAddNewInvoice = useCallback(() => {
-    console.log("Add New Invoice clicked");
     router.push('/Sales/Invoice/new');
   }, [router]);
-
   const handleExportExcel = useCallback(async () => {
     setIsLoading(true);
+    toast.info('Preparing export...');
+
     try {
-      const dataToExport = invoices.length > 0 ? invoices : sampleInvoices;
-      const workbook = new ExcelJS.Workbook();
-      const worksheet = workbook.addWorksheet("Invoices");
+      const exportFilters: any = {};
 
-      worksheet.columns = [
-        { header: "Invoice Number", key: "invoiceNumber", width: 18 },
-        { header: "Customer Name", key: "customerName", width: 25 },
-        { header: "Amount (₹)", key: "amount", width: 15 },
-        { header: "Issue Date", key: "issueDate", width: 12 },
-        { header: "Due Date", key: "dueDate", width: 12 },
-        { header: "Status", key: "status", width: 12 },
-        { header: "Payment Method", key: "paymentMethod", width: 15 },
-        { header: "Paid Amount (₹)", key: "paidAmount", width: 15 },
-      ];
+      if (statusFilter !== "all") {
+        exportFilters.status = statusFilter;
+      }
+      if (searchTerm.trim()) {
+        exportFilters.search = searchTerm.trim();
+      }
+      if (customerFilter.trim()) {
+        exportFilters.customerName = customerFilter.trim();
+      }
+      if (dateRange.from) {
+        exportFilters.dateFrom = format(dateRange.from, 'yyyy-MM-dd');
+      }
+      if (dateRange.to) {
+        exportFilters.dateTo = format(dateRange.to, 'yyyy-MM-dd');
+      }
 
-      dataToExport.forEach((invoice) => {
-        worksheet.addRow({
-          invoiceNumber: invoice.invoiceNumber,
-          customerName: invoice.customerName,
-          amount: invoice.amount,
-          issueDate: invoice.issueDate,
-          dueDate: invoice.dueDate,
-          status: invoice.status,
-          paymentMethod: invoice.paymentMethod || "N/A",
-          paidAmount: invoice.paidAmount || 0,
-        });
-      });
-
-      const buffer = await workbook.xlsx.writeBuffer();
-      saveAs(
-        new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
-        `invoices_${new Date().toISOString().split("T")[0]}.xlsx`
-      );
+      await InvoiceAPI.export(fpoId, 'csv', exportFilters);
+      toast.success('Export completed successfully');
     } catch (error) {
-      console.error("Error exporting to Excel:", error);
+      // console.error("Error exporting invoices:", error);
+      // toast.warning('API export failed, creating local Excel file...');
+
+      try {
+        const workbook = new ExcelJS.Workbook();
+        const worksheet = workbook.addWorksheet("Invoices");
+
+        worksheet.columns = [
+          { header: "Invoice Number", key: "invoice_number", width: 18 },
+          { header: "Customer Name", key: "customerName", width: 25 },
+          { header: "Amount (₹)", key: "total_amount", width: 15 },
+          { header: "Issue Date", key: "invoice_date", width: 12 },
+          { header: "Status", key: "status", width: 12 },
+          { header: "CGST (₹)", key: "cgst", width: 12 },
+          { header: "SGST (₹)", key: "sgst", width: 12 },
+          { header: "IGST (₹)", key: "igst", width: 12 },
+        ];
+
+        filteredInvoices.forEach((invoice) => {
+          worksheet.addRow({
+            invoice_number: invoice.invoiceNumber,
+            customerName: invoice.customer.name,
+            total_amount: invoice.summary.grandTotal,
+            invoice_date: invoice.invoiceDate,
+            status: invoice.status,
+            cgst: invoice.summary.totalCGST || invoice.cgst || 0,
+            sgst: invoice.summary.totalSGST || invoice.sgst || 0,
+            igst: invoice.summary.totalIGST || invoice.igst || 0,
+          });
+        });
+
+        const buffer = await workbook.xlsx.writeBuffer();
+        saveAs(
+          new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
+          `invoices_${new Date().toISOString().split("T")[0]}.xlsx`
+        );
+        toast.success('Excel file downloaded successfully');
+      } catch (excelError) {
+        console.error("Error creating Excel fallback:", excelError);
+        toast.error('Failed to export invoices');
+      }
     } finally {
       setIsLoading(false);
     }
-  }, [invoices, sampleInvoices]);
+  }, [invoices, fpoId, statusFilter, searchTerm, customerFilter, dateRange]);
 
-  // Apply all filters
-  const applyFilters = useCallback((search: string, status: string, date: string) => {
-    let filtered = [...sampleInvoices];
-
-    // Apply search filter
-    if (search.trim()) {
-      filtered = filtered.filter(invoice =>
-        invoice.customerName.toLowerCase().includes(search.toLowerCase()) ||
-        invoice.invoiceNumber.toLowerCase().includes(search.toLowerCase()) ||
-        invoice.status.toLowerCase().includes(search.toLowerCase())
-      );
-    }
-
-    // Apply status filter
-    if (status !== "all") {
-      filtered = filtered.filter(invoice => invoice.status.toLowerCase() === status.toLowerCase());
-    }
-
-    // Apply date filter
-    if (date !== "all") {
-      const today = new Date();
-      const currentMonth = today.getMonth();
-      const currentYear = today.getFullYear();
-
-      filtered = filtered.filter(invoice => {
-        const invoiceDate = new Date(invoice.issueDate);
-        const invoiceMonth = invoiceDate.getMonth();
-        const invoiceYear = invoiceDate.getFullYear();
-
-        switch (date) {
-          case "today":
-            return invoiceDate.toDateString() === today.toDateString();
-          case "yesterday":
-            const yesterday = new Date(today);
-            yesterday.setDate(today.getDate() - 1);
-            return invoiceDate.toDateString() === yesterday.toDateString();
-          case "last7days":
-            const last7Days = new Date(today);
-            last7Days.setDate(today.getDate() - 7);
-            return invoiceDate >= last7Days && invoiceDate <= today;
-          case "last30days":
-            const last30Days = new Date(today);
-            last30Days.setDate(today.getDate() - 30);
-            return invoiceDate >= last30Days && invoiceDate <= today;
-          case "thismonth":
-            return invoiceMonth === currentMonth && invoiceYear === currentYear;
-          case "lastmonth":
-            const lastMonth = currentMonth === 0 ? 11 : currentMonth - 1;
-            const lastMonthYear = currentMonth === 0 ? currentYear - 1 : currentYear;
-            return invoiceMonth === lastMonth && invoiceYear === lastMonthYear;
-          case "thisyear":
-            return invoiceYear === currentYear;
-          default:
-            return true;
-        }
-      });
-    }
-
-    setInvoices(filtered);
-  }, [sampleInvoices]);
-
-  // Search functionality
-  const handleSearch = useCallback((value: string) => {
-    setSearchTerm(value);
-    setCurrentPage(1);
-    applyFilters(value, statusFilter, dateFilter);
-  }, [statusFilter, dateFilter, applyFilters]);
+  // Search functionality with debouncing
+const handleSearch = useCallback((value: string) => {
+  setSearchTerm(value);
+  // Remove debouncing logic - filtering happens immediately via useEffect
+}, []);
 
   // Status filter functionality
   const handleStatusFilter = useCallback((value: string) => {
-    setStatusFilter(value);
+    setStatusFilter(value as any);
     setCurrentPage(1);
-    applyFilters(searchTerm, value, dateFilter);
-  }, [searchTerm, dateFilter, applyFilters]);
+  }, []);
 
   // Date filter functionality
-  const handleDateFilter = useCallback((value: string) => {
-    setDateFilter(value);
+  const handleDateRangeChange = useCallback((range: { from: Date | undefined; to: Date | undefined }) => {
+    setDateRange(range);
     setCurrentPage(1);
-    applyFilters(searchTerm, statusFilter, value);
-  }, [searchTerm, statusFilter, applyFilters]);
+  }, []);
 
-  // Load sample data on component mount
-  const loadInvoices = useCallback(async () => {
-    setIsLoading(true);
+  // getting current month
+  const isCurrentMonth = (from: Date | undefined, to: Date | undefined) => {
+    if (!from || !to) return false;
+
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+
+    return from.getTime() === startOfMonth.getTime() &&
+      to.getTime() === endOfMonth.getTime();
+  };
+  const clearDateRange = useCallback(() => {
+    setDateRange({ from: undefined, to: undefined });
+    setCurrentPage(1);
+  }, []);
+
+
+  //  custom filter
+
+ 
+const handleCustomerFilter = useCallback((value: string) => {
+  console.log('Customer filter changed to:', value); // Debug log
+  setCustomerFilter(value);
+  setCurrentPage(1);
+  
+  // Clear any existing debounce timer since this should be immediate
+  if (searchDebounceTimer) {
+    clearTimeout(searchDebounceTimer);
+    setSearchDebounceTimer(null);
+  }
+}, [searchDebounceTimer]);
+
+  // Add this function to get unique customers for the dropdown
+  const uniqueCustomers = useMemo(() => {
+    const customers = Array.from(new Set(invoices.map(invoice => invoice.customer.name)))
+      .sort()
+      .filter(name => name && name.trim() !== "");
+    return customers;
+  }, [invoices]);
+  // CRUD Operations
+  const handleDeleteInvoice = useCallback(async (invoiceId: string) => {
     try {
-      await new Promise(resolve => setTimeout(resolve, 500));
-      setInvoices(sampleInvoices);
+      setIsLoading(true);
+      const response = await InvoiceAPI.delete(invoiceId);
+
+      if (response.success) {
+        toast.success('Invoice deleted successfully');
+        await loadInvoices(false);
+        await loadStatistics();
+      } else {
+        throw new Error(response.message || 'Failed to delete invoice');
+      }
     } catch (error) {
-      console.error("Error loading invoices:", error);
+      console.error('Error deleting invoice:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to delete invoice');
     } finally {
       setIsLoading(false);
     }
-  }, [sampleInvoices]);
+  }, [loadInvoices, loadStatistics]);
+
+  const handleMarkAsPaid = useCallback(async (invoiceId: string) => {
+    try {
+      setIsLoading(true);
+      const response = await InvoiceAPI.updateStatus(invoiceId, 'paid');
+
+      if (response.success) {
+        toast.success('Invoice marked as paid successfully');
+        await loadInvoices(false);
+        await loadStatistics();
+      } else {
+        throw new Error(response.message || 'Failed to mark invoice as paid');
+      }
+    } catch (error) {
+      console.error('Error marking invoice as paid:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to mark invoice as paid');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [loadInvoices, loadStatistics]);
+
+  const handleSendInvoice = useCallback(async (invoiceId: string) => {
+    try {
+      setIsLoading(true);
+      const response = await InvoiceAPI.updateStatus(invoiceId, 'sent');
+
+      if (response.success) {
+        toast.success('Invoice sent successfully');
+        await loadInvoices(false);
+        await loadStatistics();
+      } else {
+        throw new Error(response.message || 'Failed to send invoice');
+      }
+    } catch (error) {
+      console.error('Error sending invoice:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to send invoice');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [loadInvoices, loadStatistics]);
+  // Bulk operations
+  const handleBulkDelete = useCallback(async (invoiceIds: string[]) => {
+    try {
+      setIsLoading(true);
+      const response = await InvoiceAPI.bulkDelete(invoiceIds);
+
+      if (response.success) {
+        await loadInvoices();
+        await loadStatistics();
+      } else {
+        throw new Error(response.message || 'Failed to delete invoices');
+      }
+    } catch (error) {
+      console.error('Error bulk deleting invoices:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [loadInvoices, loadStatistics]);
+
+  const handleBulkStatusUpdate = useCallback(async (invoiceIds: string[], status: 'draft' | 'sent' | 'paid' | 'cancelled') => {
+    try {
+      setIsLoading(true);
+      const response = await InvoiceAPI.bulkUpdateStatus(invoiceIds, status);
+
+      if (response.success) {
+        await loadInvoices();
+        await loadStatistics();
+      } else {
+        throw new Error(response.message || 'Failed to update invoice status');
+      }
+    } catch (error) {
+      console.error('Error bulk updating invoice status:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [loadInvoices, loadStatistics]);
 
   // Header buttons configuration
   const headerButtons = useMemo(() => [
-    { 
-      label: "Add New Invoice", 
-      onClick: handleAddNewInvoice 
+    {
+      label: "Add New Invoice",
+      onClick: handleAddNewInvoice
     },
-    { 
-      label: isLoading ? "Exporting..." : "Export Excel", 
-      onClick: handleExportExcel 
+    {
+      label: isLoading ? "Exporting..." : "Export Excel",
+      onClick: handleExportExcel
     },
   ], [handleAddNewInvoice, handleExportExcel, isLoading]);
 
   useHeaderButtons(headerButtons);
 
-  // Get status variant for Badge
-  const getStatusVariant = (status: Invoice['status']) => {
-    switch (status) {
-      case 'Draft': return 'secondary';
-      case 'Sent': return 'default';
-      case 'Paid': return 'default';
-      case 'Overdue': return 'destructive';
-      case 'Cancelled': return 'outline';
-      default: return 'secondary';
-    }
-  };
 
-  // Get status color classes
-  const getStatusColor = (status: Invoice['status']) => {
-    switch (status) {
-      case 'Draft': return 'bg-gray-100 text-gray-800 hover:bg-gray-200';
-      case 'Sent': return 'bg-blue-100 text-blue-800 hover:bg-blue-200';
-      case 'Paid': return 'bg-green-100 text-green-800 hover:bg-green-200';
-      case 'Overdue': return 'bg-red-100 text-red-800 hover:bg-red-200';
-      case 'Cancelled': return 'bg-orange-100 text-orange-800 hover:bg-orange-200';
+ const handleDownloadPDF = useCallback(
+  async (invoiceId: string)=> {
+     const invoicePDF = new InvoicePDFService();
+await invoicePDF.generatePDF(invoiceId);
+
+   },
+   [loadInvoices , loadStatistics],
+ )
+ 
+  const getStatusColor = (status: string | null | undefined) => {
+    if (!status) return 'bg-gray-100 text-gray-800 hover:bg-gray-200';
+    switch (status.toLowerCase()) {
+      case 'draft': return 'bg-gray-100 text-gray-800 hover:bg-gray-200';
+      case 'sent': return 'bg-blue-100 text-blue-800 hover:bg-blue-200';
+      case 'paid': return 'bg-green-100 text-green-800 hover:bg-green-200';
+      case 'cancelled': return 'bg-orange-100 text-orange-800 hover:bg-orange-200';
       default: return 'bg-gray-100 text-gray-800 hover:bg-gray-200';
     }
   };
 
-  // Check if invoice is overdue
-  const isOverdue = (dueDate: string, status: Invoice['status']) => {
+  const isOverdue = (status: string | null | undefined) => {
+    if (!status) return false;
     const today = new Date();
-    const due = new Date(dueDate);
-    return status !== 'Paid' && status !== 'Cancelled' && due < today;
+
+    // Check if due date is valid
+    return status.toLowerCase() !== 'paid' && status.toLowerCase() !== 'cancelled';
   };
+
+
+  // Calculate statistics from current data if API stats not available
+
+  const calculateStatistics = useMemo(() => {
+    if (statistics && statistics.success !== false) {
+      // Use API statistics data when available
+      return {
+        totalInvoices: statistics.totalInvoices || 0,
+        paidInvoices: statistics.paidInvoices || 0,
+        outstandingAmount: statistics.outstandingAmount || 0,
+        totalAmount: statistics.totalRevenue || 0,
+        gstCollected: statistics.gstCollected || 0,
+        averageInvoiceValue: statistics.averageInvoiceValue || 0,
+        monthlyGrowth: statistics.monthlyGrowth || 0,
+        currentMonthRevenue: statistics.currentMonthRevenue || 0,
+        previousMonthRevenue: statistics.previousMonthRevenue || 0,
+        draftInvoices: statistics.draftInvoices || 0,
+        sentInvoices: statistics.sentInvoices || 0,
+        cancelledInvoices: statistics.cancelledInvoices || 0,
+        overdueAmount: statistics.overdueAmount || 0,
+        overdueInvoices: statistics.overdueInvoices || 0,
+        topCustomers: statistics.topCustomers || [],
+        statusDistribution: statistics.statusDistribution || {}
+      };
+    }
+
+    // Fallback calculation from current invoices when API stats not available
+    const paidCount = invoices.filter(i => i.status?.toLowerCase() === 'paid').length;
+    const draftCount = invoices.filter(i => i.status?.toLowerCase() === 'draft').length;
+    const sentCount = invoices.filter(i => i.status?.toLowerCase() === 'sent').length;
+    const cancelledCount = invoices.filter(i => i.status?.toLowerCase() === 'cancelled').length;
+
+    const outstandingAmount = invoices
+      .filter(i => i.status?.toLowerCase() !== 'paid' && i.status?.toLowerCase() !== 'cancelled')
+      .reduce((sum, i) => sum + (i.summary.grandTotal || 0), 0);
+
+    const totalAmount = invoices.reduce((sum, i) => sum + (i.summary.grandTotal || 0), 0);
+
+    const gstCollected = invoices.reduce((sum, i) =>
+      sum + (i.summary.totalCGST || 0) + (i.summary.totalSGST || 0) + (i.summary.totalIGST || 0), 0
+    );
+
+    const averageInvoiceValue = totalCount > 0 ? totalAmount / totalCount : 0;
+
+    return {
+      totalInvoices: totalCount,
+      paidInvoices: paidCount,
+      outstandingAmount,
+      totalAmount,
+      gstCollected,
+      averageInvoiceValue,
+      monthlyGrowth: 0, // Can't calculate without historical data
+      currentMonthRevenue: 0, // Can't calculate without date filtering
+      previousMonthRevenue: 0, // Can't calculate without date filtering
+      draftInvoices: draftCount,
+      sentInvoices: sentCount,
+      cancelledInvoices: cancelledCount,
+      overdueAmount: 0, // Would need due date logic
+      overdueInvoices: 0, // Would need due date logic
+      topCustomers: [], // Would need aggregation logic
+      statusDistribution: {
+        draft: { count: draftCount },
+        sent: { count: sentCount },
+        paid: { count: paidCount },
+        cancelled: { count: cancelledCount }
+      }
+    };
+  }, [statistics, invoices, totalCount]);
 
   // Pagination logic
-  const itemsPerPageNum = parseInt(itemsPerPage);
-  const totalPages = Math.ceil(invoices.length / itemsPerPageNum);
-  const startIndex = (currentPage - 1) * itemsPerPageNum;
-  const endIndex = startIndex + itemsPerPageNum;
-  const currentInvoices = invoices.slice(startIndex, endIndex);
+ 
+const itemsPerPageNum = parseInt(itemsPerPage);
+const totalFilteredCount = filteredInvoices.length;
+const totalPages = Math.ceil(totalFilteredCount / itemsPerPageNum);
 
-  // Delete invoice handler
-  const handleDeleteInvoice = (invoiceId: string) => {
-    console.log('Delete invoice:', invoiceId);
-    setInvoices(prev => prev.filter(i => i.id !== invoiceId));
-  };
+// Get paginated results from filtered invoices
+const startIndex = (currentPage - 1) * itemsPerPageNum;
+const endIndex = startIndex + itemsPerPageNum;
+const paginatedInvoices = filteredInvoices.slice(startIndex, endIndex);
 
-  // Mark as paid handler
-  const handleMarkAsPaid = (invoiceId: string) => {
-    console.log('Mark as paid:', invoiceId);
-    setInvoices(prev => prev.map(invoice => 
-      invoice.id === invoiceId 
-        ? { ...invoice, status: 'Paid' as const, paidAmount: invoice.amount }
-        : invoice
-    ));
-  };
+  // Effects
+  useEffect(() => {
+    loadInvoices(true);
+  }, [fpoId , dateRange]);
 
-  // Send invoice handler
-  const handleSendInvoice = (invoiceId: string) => {
-    console.log('Send invoice:', invoiceId);
-    setInvoices(prev => prev.map(invoice => 
-      invoice.id === invoiceId 
-        ? { ...invoice, status: 'Sent' as const }
-        : invoice
-    ));
-  };
+  // Effect for applying client-side filters
+useEffect(() => {
+  applyClientSideFilters();
+}, [applyClientSideFilters]);
+
+
+
+// Effect for resetting current page when filters change
+useEffect(() => {
+  setCurrentPage(1);
+}, [statusFilter, searchTerm, customerFilter]);
 
   useEffect(() => {
-    loadInvoices();
-  }, [loadInvoices]);
+    loadStatistics();
+  }, [loadStatistics]);
 
+ 
+
+  // Return statement will be in the next chunk...
   return (
-    <div className="space-y-4 md:space-y-6 p-4 md:p-6 ">
+    <div className="space-y-4 md:space-y-6 p-4 md:p-6">
       {/* Breadcrumb */}
       <Breadcrumb>
         <BreadcrumbList>
@@ -349,149 +660,441 @@ export default function InvoicePage() {
       </Breadcrumb>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 ">
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">Total Invoices</p>
-                <p className="text-2xl font-bold">{invoices.length}</p>
+      <div className="space-y-4">
+        {/* Financial Year Header */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+          <div>
+            <h2 className="text-lg font-semibold text-foreground">Financial Year Summary</h2>
+            <p className="text-sm text-muted-foreground">
+              {getCurrentFinancialYear().label}
+              <span className="mx-2">•</span>
+              {format(getCurrentFinancialYear().start, 'MMM dd, yyyy')} - {format(getCurrentFinancialYear().end, 'MMM dd, yyyy')}
+            </p>
+          </div>
+          {statistics && (
+            <div className="flex items-center gap-4 text-sm">
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 rounded-full bg-green-500"></div>
+                <span className="text-muted-foreground">
+                  Monthly Growth: {statistics.monthlyGrowth > 0 ? '+' : ''}{statistics.monthlyGrowth.toFixed(1)}%
+                </span>
               </div>
-              <div className="h-12 w-12 bg-blue-100 rounded-lg flex items-center justify-center">
-                <FileDown className="h-6 w-6 text-blue-600" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">Paid Invoices</p>
-                <p className="text-2xl font-bold text-green-600">
-                  {invoices.filter(i => i.status === 'Paid').length}
-                </p>
-              </div>
-              <div className="h-12 w-12 bg-green-100 rounded-lg flex items-center justify-center">
-                <CreditCard className="h-6 w-6 text-green-600" />
+              <div className="text-muted-foreground">
+                Avg Invoice: ₹{statistics.averageInvoiceValue?.toFixed(0).toLocaleString('en-IN') || 0}
               </div>
             </div>
-          </CardContent>
-        </Card>
-        
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">Overdue</p>
-                <p className="text-2xl font-bold text-red-600">
-                  {invoices.filter(i => i.status === 'Overdue' || isOverdue(i.dueDate, i.status)).length}
-                </p>
-              </div>
-              <div className="h-12 w-12 bg-red-100 rounded-lg flex items-center justify-center">
-                <AlertTriangle className="h-6 w-6 text-red-600" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">Total Amount</p>
-                <p className="text-2xl font-bold">
-                  ₹{invoices.reduce((sum, i) => sum + i.amount, 0).toLocaleString('en-IN')}
-                </p>
-              </div>
-              <div className="h-12 w-12 bg-purple-100 rounded-lg flex items-center justify-center">
-                <Download className="h-6 w-6 text-purple-600" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+          )}
+        </div>
+
+        {/* Enhanced Summary Cards Grid */}
+        <EnhancedSummaryCards
+          statistics={statistics}
+          isLoading={isLoading}
+        />
+
       </div>
 
-      {/* Header Actions - Mobile First */}
-      <div className="flex flex-col gap-4 sm:items-center sm:justify-between">
-        <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
-          <Select value={itemsPerPage} onValueChange={setItemsPerPage}>
-            <SelectTrigger className="w-full sm:w-32">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="25">25</SelectItem>
-              <SelectItem value="50">50</SelectItem>
-              <SelectItem value="100">100</SelectItem>
-            </SelectContent>
-          </Select>
-          <span className="text-sm text-muted-foreground hidden sm:inline">items/page</span>
-        </div>
-        
-        <div className="flex flex-col sm:flex-row gap-2">
-          <div className="flex gap-2">
-            <Select value={statusFilter} onValueChange={handleStatusFilter}>
-              <SelectTrigger className="w-full sm:w-32">
-                <SelectValue placeholder="Status" />
+      {/* Enhanced Header Actions - Mobile First with Better Organization */}
+      <div className="space-y-4">
+        {/* Top Row - Main Actions */}
+        <div className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
+          <div className="flex items-center gap-2">
+            <Select value={itemsPerPage} onValueChange={setItemsPerPage}>
+              <SelectTrigger className="w-20 h-9">
+                <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Status</SelectItem>
-                <SelectItem value="draft">Draft</SelectItem>
-                <SelectItem value="sent">Sent</SelectItem>
-                <SelectItem value="paid">Paid</SelectItem>
-                <SelectItem value="overdue">Overdue</SelectItem>
-                <SelectItem value="cancelled">Cancelled</SelectItem>
+                <SelectItem value="25">25</SelectItem>
+                <SelectItem value="50">50</SelectItem>
+                <SelectItem value="100">100</SelectItem>
               </SelectContent>
             </Select>
-            
-            <Select value={dateFilter} onValueChange={handleDateFilter}>
-              <SelectTrigger className="w-full sm:w-40">
-                <SelectValue placeholder="Date Range" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Dates</SelectItem>
-                <SelectItem value="today">Today</SelectItem>
-                <SelectItem value="yesterday">Yesterday</SelectItem>
-                <SelectItem value="last7days">Last 7 Days</SelectItem>
-                <SelectItem value="last30days">Last 30 Days</SelectItem>
-                <SelectItem value="thismonth">This Month</SelectItem>
-                <SelectItem value="lastmonth">Last Month</SelectItem>
-                <SelectItem value="thisyear">This Year</SelectItem>
-              </SelectContent>
-            </Select>
+            <span className="text-sm text-muted-foreground whitespace-nowrap">per page</span>
           </div>
-          
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
-            <Input 
-              className="pl-10 w-full sm:w-80" 
-              placeholder="Search invoices..." 
-              value={searchTerm}
-              onChange={(e) => handleSearch(e.target.value)}
-            />
-          </div>
+
           <div className="flex gap-2">
-            <Button 
+            <Button
               onClick={handleAddNewInvoice}
-              className="flex-1 sm:flex-none"
+              className="flex-1 sm:flex-none h-9"
+              disabled={isLoading}
             >
               <Plus className="h-4 w-4 mr-2" />
-              <span className="hidden sm:inline">Add New</span>
-              <span className="sm:hidden">Add</span>
+              <span className="sm:hidden">Add Invoice</span>
+              <span className="hidden sm:inline">Add New Invoice</span>
             </Button>
-            <Button 
-              variant="outline" 
+            <Button
+              variant="outline"
               onClick={handleExportExcel}
               disabled={isLoading}
-              className="flex-1 sm:flex-none"
+              className="flex-1 sm:flex-none h-9"
             >
               <FileDown className="h-4 w-4 mr-2" />
-              <span className="hidden sm:inline">{isLoading ? "Exporting..." : "Export"}</span>
-              <span className="sm:hidden">Export</span>
+              <span>{isLoading ? "Exporting..." : "Export"}</span>
             </Button>
           </div>
         </div>
+
+        {/* Filters Section */}
+        <Card className="p-4">
+          <div className="space-y-4">
+            {/* Search Row */}
+            <div className="flex flex-col lg:flex-row gap-3">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
+                <Input
+                  className="pl-10 h-9"
+                  placeholder="Search invoices by number,customer or amount..."
+                  value={searchTerm}
+                  onChange={(e) => handleSearch(e.target.value)}
+                />
+              </div>
+
+             
+            </div>
+
+            {/* Filters Row */}
+            <div className="flex flex-col sm:flex-row gap-3">
+              {/* Status Filter */}
+              <div className="flex-1 min-w-0">
+                <Select value={statusFilter} onValueChange={handleStatusFilter}>
+                  <SelectTrigger className="h-9">
+                    <SelectValue placeholder="All Status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Status</SelectItem>
+                    <SelectItem value="draft">
+                      <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 rounded-full bg-gray-400"></div>
+                        Draft
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="sent">
+                      <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 rounded-full bg-blue-400"></div>
+                        Sent
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="paid">
+                      <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 rounded-full bg-green-400"></div>
+                        Paid
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="cancelled">
+                      <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 rounded-full bg-orange-400"></div>
+                        Cancelled
+                      </div>
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Customer Dropdown */}
+               <div className="flex-1 min-w-0">
+        <Select value={customerFilter} onValueChange={handleCustomerFilter}>
+          <SelectTrigger className="h-9">
+            <SelectValue placeholder="All Customers" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Customers</SelectItem>
+            {/* FIXED: Get unique customers from all loaded invoices */}
+            {Array.from(new Set(allInvoices
+              .map(invoice => invoice.customer?.name)
+              .filter(name => name && name.trim() !== "")
+            ))
+              .sort()
+              .map(customerName => (
+                <SelectItem key={customerName} value={customerName}>
+                  {customerName}
+                </SelectItem>
+              ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+              {/* Date Range Picker */}
+
+              <div className="flex-1 min-w-0">
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      id="date"
+                      variant="outline"
+                      className={cn(
+                        "h-9 w-full justify-start text-left font-normal",
+                        !dateRange.from && !dateRange.to && "text-muted-foreground"
+                      )}
+                    >
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {dateRange.from ? (
+                        dateRange.to ? (
+                          <span className="truncate">
+                            {format(dateRange.from, "MMM dd")} - {format(dateRange.to, "MMM dd, yyyy")}
+                          </span>
+                        ) : (
+                          format(dateRange.from, "MMM dd, yyyy")
+                        )
+                      ) : (
+                        <span>Pick date range</span>
+                      )}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <div className="p-3 space-y-3">
+                      {/* Enhanced Quick Date Filters with Financial Years */}
+                      <div className="space-y-2">
+                        {/* Standard Quick Filters */}
+                        <div className="grid grid-cols-2 gap-1">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              const today = new Date();
+                              handleDateRangeChange({ from: today, to: today });
+                            }}
+                            className="h-7 text-xs"
+                          >
+                            Today
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              const today = new Date();
+                              const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
+                              handleDateRangeChange({ from: weekAgo, to: today });
+                            }}
+                            className="h-7 text-xs"
+                          >
+                            Last 7 days
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              const today = new Date();
+                              const monthAgo = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
+                              handleDateRangeChange({ from: monthAgo, to: today });
+                            }}
+                            className="h-7 text-xs"
+                          >
+                            Last 30 days
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              const today = new Date();
+                              const start = new Date(today.getFullYear(), today.getMonth(), 1);
+                              const end = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+                              handleDateRangeChange({ from: start, to: end });
+                            }}
+                            className="h-7 text-xs"
+                          >
+                            This month
+                          </Button>
+                        </div>
+
+                        {/* Financial Year Filters */}
+                        <div className="border-t pt-2">
+                          <p className="text-xs font-medium mb-1 text-muted-foreground">Financial Years</p>
+                          <div className="grid grid-cols-2 gap-1">
+                            {getFinancialYearRanges().map((fy) => (
+                              <Button
+                                key={fy.key}
+                                variant="outline"
+                                size="sm"
+                                onClick={() => {
+                                  handleDateRangeChange({ from: fy.start, to: fy.end });
+                                }}
+                                className="h-7 text-xs justify-start"
+                              >
+                                {fy.displayLabel} ({fy.label})
+                              </Button>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Additional Quick Filters */}
+                        <div className="border-t pt-2">
+                          <div className="grid grid-cols-2 gap-1">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                const today = new Date();
+                                const startOfYear = new Date(today.getFullYear(), 0, 1);
+                                handleDateRangeChange({ from: startOfYear, to: today });
+                              }}
+                              className="h-7 text-xs"
+                            >
+                              Calendar Year
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                const today = new Date();
+                                const lastYear = new Date(today.getFullYear() - 1, 0, 1);
+                                const lastYearEnd = new Date(today.getFullYear() - 1, 11, 31);
+                                handleDateRangeChange({ from: lastYear, to: lastYearEnd });
+                              }}
+                              className="h-7 text-xs"
+                            >
+                              Last Cal Year
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+
+                      <Calendar
+                        initialFocus
+                        mode="range"
+                        defaultMonth={dateRange.from}
+                        selected={{
+                          from: dateRange.from,
+                          to: dateRange.to
+                        }}
+                        onSelect={(range) => {
+                          if (range) {
+                            handleDateRangeChange({
+                              from: range.from,
+                              to: range.to
+                            });
+                          }
+                        }}
+                        numberOfMonths={2}
+                        className="rounded-md border"
+                        // Allow selection of dates up to 5 years back and 1 year forward (to accommodate FY ranges)
+                        disabled={(date) => {
+                          const today = new Date();
+                          const fiveYearsAgo = new Date(today.getFullYear() - 5, today.getMonth(), today.getDate());
+                          const oneYearAhead = new Date(today.getFullYear() + 1, today.getMonth(), today.getDate());
+                          return date < fiveYearsAgo || date > oneYearAhead;
+                        }}
+                      />
+
+                      {(dateRange.from || dateRange.to) && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            // Reset to current month instead of clearing completely
+                            const now = new Date();
+                            const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+                            const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+                            handleDateRangeChange({ from: startOfMonth, to: endOfMonth });
+                          }}
+                          className="w-full h-7"
+                        >
+                          Reset to current month
+                        </Button>
+                      )}
+                    </div>
+                  </PopoverContent>
+                </Popover>
+              </div>
+            </div>
+
+            {/* Active Filters Display */}
+           {(searchTerm || (customerFilter && customerFilter !== "all") || statusFilter !== "all" || dateRange.from || dateRange.to) && (
+      <div className="flex flex-wrap items-center gap-2 pt-2 border-t">
+        <span className="text-sm text-muted-foreground">Active filters:</span>
+
+        {searchTerm && (
+          <Badge variant="secondary" className="gap-1">
+            Search: {searchTerm}
+            <button
+              onClick={() => handleSearch("")}
+              className="ml-1 hover:bg-secondary-foreground/20 rounded-full p-0.5"
+            >
+              ×
+            </button>
+          </Badge>
+        )}
+
+        {customerFilter && customerFilter !== "all" && (
+          <Badge variant="secondary" className="gap-1">
+            Customer: {customerFilter}
+            <button
+              onClick={() => handleCustomerFilter("all")}
+              className="ml-1 hover:bg-secondary-foreground/20 rounded-full p-0.5"
+            >
+              ×
+            </button>
+          </Badge>
+        )}
+
+        {statusFilter !== "all" && (
+          <Badge variant="secondary" className="gap-1">
+            Status: {statusFilter.charAt(0).toUpperCase() + statusFilter.slice(1)}
+            <button
+              onClick={() => handleStatusFilter("all")}
+              className="ml-1 hover:bg-secondary-foreground/20 rounded-full p-0.5"
+            >
+              ×
+            </button>
+          </Badge>
+        )}
+
+        {(dateRange.from || dateRange.to) && (
+          <Badge variant="secondary" className="gap-1">
+            Date: {dateRange.from ? format(dateRange.from, "MMM dd") : "Start"} - {dateRange.to ? format(dateRange.to, "MMM dd, yyyy") : "End"}
+            <button
+              onClick={clearDateRange}
+              className="ml-1 hover:bg-secondary-foreground/20 rounded-full p-0.5"
+            >
+              ×
+            </button>
+          </Badge>
+        )}
+
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => {
+            handleSearch("");
+            handleCustomerFilter("all");
+            handleStatusFilter("all");
+            clearDateRange();
+          }}
+          className="h-6 px-2 text-xs text-muted-foreground hover:text-foreground"
+        >
+          Clear all
+        </Button>
+      </div>
+    )}
+          </div>
+        </Card>
+
+        {/* Results Summary */}
+      
+{!isLoading && (
+  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-sm text-muted-foreground">
+    <div>
+      {totalFilteredCount > 0 ? (
+        <>
+          Showing {startIndex + 1} to {Math.min(endIndex, totalFilteredCount)} of {totalFilteredCount} invoices
+          {(searchTerm || customerFilter !== "all" || statusFilter !== "all") && (
+            <span className="ml-1">(filtered from {totalCount} total)</span>
+          )}
+        </>
+      ) : (
+        "No invoices found"
+      )}
+    </div>
+
+    {totalFilteredCount > 0 && (
+      <div className="flex items-center gap-4">
+        <span>Total Value: ₹{filteredInvoices.reduce((sum, inv) => sum + (inv.summary?.grandTotal || 0), 0).toLocaleString('en-IN')}</span>
+        {statusFilter === "all" && (
+          <span>Paid: {filteredInvoices.filter(inv => inv.status?.toLowerCase() === 'paid').length}/{totalFilteredCount}</span>
+        )}
+      </div>
+    )}
+  </div>
+)}
       </div>
 
       {/* Table Card */}
@@ -502,10 +1105,10 @@ export default function InvoicePage() {
               <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
               <p className="mt-2 text-muted-foreground">Loading invoices...</p>
             </div>
-          ) : currentInvoices.length > 0 ? (
+          ) : filteredInvoices.length > 0 ? (
             <>
               {/* Desktop Table */}
-              <div className="hidden md:block overflow-x-scroll">
+              <div className="hidden md:block overflow-x-auto">
                 <Table className="w-full">
                   <TableHeader>
                     <TableRow>
@@ -513,26 +1116,33 @@ export default function InvoicePage() {
                       <TableHead>Customer Name</TableHead>
                       <TableHead>Amount</TableHead>
                       <TableHead>Issue Date</TableHead>
-                      <TableHead>Due Date</TableHead>
                       <TableHead>Status</TableHead>
-                      <TableHead>Payment Method</TableHead>
+                      <TableHead>CGST</TableHead>
+                      <TableHead>SGST</TableHead>
+                      <TableHead>IGST</TableHead>
                       <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {currentInvoices.map((invoice) => (
+                    {paginatedInvoices.map((invoice) => (
                       <TableRow key={invoice.id}>
-                        <TableCell>{invoice.invoiceNumber}</TableCell>
-                        <TableCell>{invoice.customerName}</TableCell>
-                        <TableCell>₹{invoice.amount.toLocaleString("en-IN")}</TableCell>
-                        <TableCell>{invoice.issueDate}</TableCell>
-                        <TableCell>{invoice.dueDate}</TableCell>
+                        <TableCell className="font-medium">
+                          {invoice.invoiceNumber}
+                        </TableCell>
+                        <TableCell>{invoice.customer.name}</TableCell>
+                        <TableCell>₹{invoice.summary.grandTotal?.toLocaleString("en-IN") || 0}</TableCell>
+                        <TableCell>
+                          {new Date(invoice.invoiceDate).toLocaleDateString('en-IN')}
+                        </TableCell>
                         <TableCell>
                           <Badge className={getStatusColor(invoice.status)}>
-                            {invoice.status}
+                            {invoice.status ? (invoice.status.charAt(0).toUpperCase() + invoice.status.slice(1)) : 'Unknown'}
                           </Badge>
                         </TableCell>
-                        <TableCell>{invoice.paymentMethod || "-"}</TableCell>
+                        <TableCell>₹{(invoice.summary.totalCGST || invoice.cgst || 0).toLocaleString('en-IN')}</TableCell>
+                        <TableCell>₹{(invoice.summary.totalSGST || invoice.sgst || 0).toLocaleString('en-IN')}</TableCell>
+                        <TableCell>₹{(invoice.summary.totalGST || invoice.igst || 0).toLocaleString('en-IN')}</TableCell>
+
                         <TableCell className="text-right">
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
@@ -542,31 +1152,31 @@ export default function InvoicePage() {
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
                               <DropdownMenuItem
-                                onClick={() => router.push(`/dashboard/invoices/${invoice.id}`)}
+                                onClick={() => router.push(`/Sales/Invoice/${invoice.id}/view`)}
                               >
                                 <Eye className="mr-2 h-4 w-4" />
                                 View
                               </DropdownMenuItem>
                               <DropdownMenuItem
-                                onClick={() => router.push(`/dashboard/invoices/${invoice.id}/edit`)}
+                                onClick={() => router.push(`/Sales/Invoice/${invoice.id}/edit`)}
                               >
                                 <Edit className="mr-2 h-4 w-4" />
                                 Edit
                               </DropdownMenuItem>
-                              {invoice.status === 'Draft' && (
-                                <DropdownMenuItem onClick={() => handleSendInvoice(invoice.id)}>
+                              {invoice.status === 'draft' && (
+                                <DropdownMenuItem onClick={() => invoice.id && handleSendInvoice(invoice.id)}>
                                   <Send className="mr-2 h-4 w-4" />
                                   Send Invoice
                                 </DropdownMenuItem>
                               )}
-                              {(invoice.status === 'Sent' || invoice.status === 'Overdue') && (
-                                <DropdownMenuItem onClick={() => handleMarkAsPaid(invoice.id)}>
+                              {(invoice.status === 'sent' || isOverdue(invoice.status)) && (
+                                <DropdownMenuItem onClick={() => invoice.id && handleMarkAsPaid(invoice.id)}>
                                   <CreditCard className="mr-2 h-4 w-4" />
                                   Mark as Paid
                                 </DropdownMenuItem>
                               )}
                               <DropdownMenuItem
-                                onClick={() => window.open(`/dashboard/invoices/${invoice.id}/download`, '_blank')}
+                                onClick={() => invoice.id && handleDownloadPDF(invoice.id)}
                               >
                                 <Download className="mr-2 h-4 w-4" />
                                 Download PDF
@@ -587,7 +1197,7 @@ export default function InvoicePage() {
                                   </AlertDialogHeader>
                                   <AlertDialogFooter>
                                     <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                    <AlertDialogAction onClick={() => handleDeleteInvoice(invoice.id)}>
+                                    <AlertDialogAction onClick={() => invoice.id && handleDeleteInvoice(invoice.id)}>
                                       Delete
                                     </AlertDialogAction>
                                   </AlertDialogFooter>
@@ -604,46 +1214,49 @@ export default function InvoicePage() {
 
               {/* Mobile Cards */}
               <div className="md:hidden space-y-4 p-4">
-                {currentInvoices.map((invoice) => (
+                {paginatedInvoices.map((invoice) => (
                   <Card key={invoice.id} className="p-4">
                     <div className="space-y-3">
                       <div className="flex justify-between items-start">
                         <div>
                           <p className="font-medium text-primary">{invoice.invoiceNumber}</p>
-                          <p className="text-sm text-muted-foreground">{invoice.customerName}</p>
+                          <p className="text-sm text-muted-foreground">{invoice.customer.name}</p>
                         </div>
                         <Badge className={getStatusColor(invoice.status)}>
-                          {invoice.status}
+                          {invoice.status ? (invoice.status.charAt(0).toUpperCase() + invoice.status.slice(1)) : 'Unknown'}
                         </Badge>
                       </div>
-                      
+
                       <div className="grid grid-cols-2 gap-4 text-sm">
                         <div>
                           <span className="text-muted-foreground">Amount:</span>
-                          <p className="font-medium">₹{invoice.amount.toLocaleString('en-IN')}</p>
+                          <p className="font-medium">₹{invoice.summary.grandTotal?.toLocaleString('en-IN') || 0}</p>
                         </div>
                         <div>
                           <span className="text-muted-foreground">Issue Date:</span>
-                          <p>{new Date(invoice.issueDate).toLocaleDateString('en-IN')}</p>
+                          <p>{new Date(invoice.invoiceDate).toLocaleDateString('en-IN')}</p>
                         </div>
                         <div>
-                          <span className="text-muted-foreground">Due Date:</span>
-                          <p className={isOverdue(invoice.dueDate, invoice.status) ? "text-red-600 font-medium" : ""}>
-                            {new Date(invoice.dueDate).toLocaleDateString('en-IN')}
-                          </p>
+                          <span className="text-muted-foreground">CGST:</span>
+                          <p>₹{(invoice.summary.totalCGST || invoice.cgst || 0).toLocaleString('en-IN')}</p>
                         </div>
                         <div>
-                          <span className="text-muted-foreground">Payment:</span>
-                          <p>{invoice.paymentMethod || '-'}</p>
+                          <span className="text-muted-foreground">SGST:</span>
+                          <p>₹{(invoice.summary.totalSGST || invoice.sgst || 0).toLocaleString('en-IN')}</p>
+                        </div>
+                        <div className="col-span-2">
+                          <span className="text-muted-foreground">IGST:</span>
+                          <p>₹{(invoice.summary.totalIGST || invoice.igst || 0).toLocaleString('en-IN')}</p>
                         </div>
                       </div>
-                      
+
                       <div className="flex gap-2 pt-2">
                         <Button
                           size="sm"
                           variant="outline"
-                          onClick={() => router.push(`/dashboard/invoices/${invoice.id}`)}
+                          onClick={() => router.push(`/Sales/Invoice/${invoice.id}/view`)}
                           className="flex-1"
+                          disabled={isLoading}
                         >
                           <Eye className="h-4 w-4 mr-1" />
                           View
@@ -651,26 +1264,40 @@ export default function InvoicePage() {
                         <Button
                           size="sm"
                           variant="outline"
-                          onClick={() => router.push(`/dashboard/invoices/${invoice.id}/edit`)}
+                          onClick={() => router.push(`/Sales/Invoice/${invoice.id}/edit`)}
                           className="flex-1"
+                          disabled={isLoading}
                         >
                           <Edit className="h-4 w-4 mr-1" />
                           Edit
                         </Button>
-                        {(invoice.status === 'Sent' || invoice.status === 'Overdue') && (
+                        {(invoice.status === 'sent') && (
                           <Button
                             size="sm"
                             variant="outline"
-                            onClick={() => handleMarkAsPaid(invoice.id)}
+                            onClick={() => invoice.id && handleMarkAsPaid(invoice.id)}
                             className="flex-1"
+                            disabled={isLoading}
                           >
                             <CreditCard className="h-4 w-4 mr-1" />
                             Pay
                           </Button>
                         )}
+                        {invoice.status === 'draft' && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => invoice.id && handleSendInvoice(invoice.id)}
+                            className="flex-1"
+                            disabled={isLoading}
+                          >
+                            <Send className="h-4 w-4 mr-1" />
+                            Send
+                          </Button>
+                        )}
                         <AlertDialog>
                           <AlertDialogTrigger asChild>
-                            <Button size="sm" variant="outline">
+                            <Button size="sm" variant="outline" disabled={isLoading}>
                               <Trash2 className="h-4 w-4" />
                             </Button>
                           </AlertDialogTrigger>
@@ -683,7 +1310,7 @@ export default function InvoicePage() {
                             </AlertDialogHeader>
                             <AlertDialogFooter>
                               <AlertDialogCancel>Cancel</AlertDialogCancel>
-                              <AlertDialogAction onClick={() => handleDeleteInvoice(invoice.id)}>
+                              <AlertDialogAction onClick={() => invoice.id && handleDeleteInvoice(invoice.id)}>
                                 Delete
                               </AlertDialogAction>
                             </AlertDialogFooter>
@@ -700,56 +1327,73 @@ export default function InvoicePage() {
               <div className="text-6xl text-gray-300 mb-4">🧾</div>
               <h3 className="text-xl font-medium text-gray-500 mb-2">No Record Found!!</h3>
               <p className="text-gray-400 mb-6">
-                {searchTerm || statusFilter !== "all" || dateFilter !== "all" ? 
-                  `No invoices found matching the selected filters` : 
+                {searchTerm || statusFilter !== "all" || customerFilter !== "all" ||
+                  (dateRange.from && !isCurrentMonth(dateRange.from, dateRange.to)) ?
+                  `No invoices found matching the selected filters` :
                   "No invoices available. Create your first invoice to get started."
                 }
               </p>
-              {!searchTerm && statusFilter === "all" && dateFilter === "all" && (
-                <Button onClick={handleAddNewInvoice}>
-                  <Plus className="h-4 w-4 mr-2" />
-                  Add New Invoice
-                </Button>
-              )}
+              {!searchTerm && statusFilter === "all" && customerFilter === "all" &&
+                (!dateRange.from || isCurrentMonth(dateRange.from, dateRange.to)) && (
+                  <Button onClick={handleAddNewInvoice} disabled={isLoading}>
+                    <Plus className="h-4 w-4 mr-2" />
+                    Add New Invoice
+                  </Button>
+                )}
             </div>
           )}
         </CardContent>
       </Card>
 
       {/* Pagination */}
-      {invoices.length > itemsPerPageNum && (
+      {totalFilteredCount > itemsPerPageNum && (
         <Card>
           <CardContent className="p-4">
             <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
               <div className="text-sm text-muted-foreground">
-                Showing {startIndex + 1} to {Math.min(endIndex, invoices.length)} of {invoices.length} results
+                Showing {((currentPage - 1) * itemsPerPageNum) + 1} to {Math.min(currentPage * itemsPerPageNum, totalCount)} of {totalCount} results
               </div>
               <div className="flex gap-2">
-                <Button 
-                  variant="outline" 
+                <Button
+                  variant="outline"
                   size="sm"
                   onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                  disabled={currentPage === 1}
+                  disabled={currentPage === 1 || isLoading}
                 >
                   Previous
                 </Button>
                 <div className="flex gap-1">
-                  {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
-                    <Button
-                      key={page}
-                      variant={currentPage === page ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => setCurrentPage(page)}
-                    >
-                      {page}
-                    </Button>
-                  ))}
+                  {/* Show page numbers with ellipsis for large page counts */}
+                  {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
+                    let pageNum;
+                    if (totalPages <= 5) {
+                      pageNum = i + 1;
+                    } else if (currentPage <= 3) {
+                      pageNum = i + 1;
+                    } else if (currentPage >= totalPages - 2) {
+                      pageNum = totalPages - 4 + i;
+                    } else {
+                      pageNum = currentPage - 2 + i;
+                    }
+
+                    return (
+                      <Button
+                        key={pageNum}
+                        variant={currentPage === pageNum ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => setCurrentPage(pageNum)}
+                        disabled={isLoading}
+                      >
+                        {pageNum}
+                      </Button>
+                    );
+                  })}
                 </div>
-                <Button 
-                  variant="outline" 
+                <Button
+                  variant="outline"
                   size="sm"
                   onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                  disabled={currentPage === totalPages}
+                  disabled={currentPage === totalPages || isLoading}
                 >
                   Next
                 </Button>
