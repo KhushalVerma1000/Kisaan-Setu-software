@@ -476,7 +476,7 @@ export class InvoicePDFService extends BasePDFService {
     this.doc.setFontSize(8);
     this.doc.setTextColor(128, 128, 128);
     
-    const footerText = 'www.kisaankhata.com | +91-9057999771 | support@kisaankhata.com';
+    const footerText = 'www.sukrshinfotech.com | +91-7820038781 | kisaansetu@sukrshinfotech.com';
     this.doc.text(footerText, this.pageWidth / 2, footerY, { align: 'center' });
     
     // Reset text color
