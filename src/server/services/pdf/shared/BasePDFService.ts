@@ -6,7 +6,32 @@ import autoTable from 'jspdf-autotable';
 import { FpoProfile } from '../../../features/fpo/core/entities/FpoProfile';
 import { BankDetail } from '../../../features/fpo/core/entities/BankDetail';
 
-// Extend jsPDF interface to include autoTable
+export interface HeaderLayoutOptions {
+  layout: 'side-by-side' | 'logo-top' | 'company-only';
+  logoSettings?: {
+    width?: number;
+    height?: number;
+    spacing?: number; // Gap between logo and company info
+  };
+  companySettings?: {
+    nameSize?: number;
+    detailsSize?: number;
+    lineSpacing?: number;
+    showAddress?: boolean;
+    showContact?: boolean;
+    showGSTIN?: boolean;
+  };
+  rightContent?: {
+    title?: string;
+    titleSize?: number;
+    titleColor?: [number, number, number];
+    details?: string[];
+    detailsSize?: number;
+  };
+  spacing?: {
+    afterHeader?: number;
+  };
+}
 
 export abstract class BasePDFService {
   protected doc: jsPDF;
@@ -18,24 +43,299 @@ export abstract class BasePDFService {
     this.doc = new jsPDF();
     this.pageWidth = this.doc.internal.pageSize.width;
     this.pageHeight = this.doc.internal.pageSize.height;
-    this.margin = 20;
+    this.margin = 10;
   }
 
+  /**
+   * Universal header method that can handle different layouts
+   */
+  protected async addUniversalHeader(
+    fpoProfile: FpoProfile, 
+    currentY: number,
+    options: HeaderLayoutOptions
+  ): Promise<number> {
+    const startY = currentY;
+    let headerEndY = currentY;
 
+    switch (options.layout) {
+      case 'side-by-side':
+        headerEndY = await this.addSideBySideHeader(fpoProfile, currentY, options);
+        break;
+      case 'logo-top':
+        headerEndY = await this.addLogoTopHeader(fpoProfile, currentY, options);
+        break;
+      case 'company-only':
+        headerEndY = await this.addCompanyOnlyHeader(fpoProfile, currentY, options);
+        break;
+    }
+
+    return headerEndY + (options.spacing?.afterHeader || 8);
+  }
+
+  /**
+   * Side-by-side layout: Logo + Company Info | Right Content
+   */
+  private async addSideBySideHeader(
+    fpoProfile: FpoProfile, 
+    currentY: number, 
+    options: HeaderLayoutOptions
+  ): Promise<number> {
+    const logoSettings = {
+      width: 32,
+      height: 24,
+      spacing: 38,
+      ...options.logoSettings
+    };
+
+    const companySettings = {
+      nameSize: 14,
+      detailsSize: 8,
+      lineSpacing: 3.5,
+      showAddress: true,
+      showContact: true,
+      showGSTIN: true,
+      ...options.companySettings
+    };
+
+    let logoHeight = 0;
+    let companyInfoY = currentY;
+    
+    // Company info X position (next to logo or from margin)
+    const companyInfoX = fpoProfile.logoUrl ? this.margin + logoSettings.spacing : this.margin;
+
+    // Add logo if available
+    if (fpoProfile.logoUrl) {
+      try {
+        const { imageData, format } = await this.loadImage(fpoProfile.logoUrl);
+        logoHeight = logoSettings.height;
+        this.doc.addImage(imageData, format, this.margin, companyInfoY, logoSettings.width, logoSettings.height);
+      } catch (error) {
+        console.error('❌ Failed to load logo:', error);
+        logoHeight = 0;
+      }
+    }
+
+    // Add company information
+    companyInfoY = this.addCompanyInfo(fpoProfile, companyInfoX, companyInfoY, companySettings);
+
+    // Add right content if provided
+    let rightContentEndY = currentY;
+    if (options.rightContent) {
+      rightContentEndY = this.addRightContent(options.rightContent, currentY);
+    }
+
+    return Math.max(currentY + logoHeight, companyInfoY, rightContentEndY);
+  }
+
+  /**
+   * Logo-top layout: Logo on top, then company info below
+   */
+  private async addLogoTopHeader(
+    fpoProfile: FpoProfile, 
+    currentY: number, 
+    options: HeaderLayoutOptions
+  ): Promise<number> {
+    const logoSettings = {
+      width: 40,
+      height: 30,
+      spacing: 10,
+      ...options.logoSettings
+    };
+
+    const companySettings = {
+      nameSize: 16,
+      detailsSize: 10,
+      lineSpacing: 5,
+      showAddress: true,
+      showContact: true,
+      showGSTIN: true,
+      ...options.companySettings
+    };
+
+    let headerY = currentY;
+
+    // Add logo if available
+    if (fpoProfile.logoUrl) {
+      try {
+        const { imageData, format } = await this.loadImage(fpoProfile.logoUrl);
+        this.doc.addImage(imageData, format, this.margin, headerY, logoSettings.width, logoSettings.height);
+        headerY += logoSettings.height + logoSettings.spacing;
+      } catch (error) {
+        console.error('❌ Failed to load logo:', error);
+      }
+    }
+
+    // Add company information below logo
+    headerY = this.addCompanyInfo(fpoProfile, this.margin, headerY, companySettings);
+
+    // Add right content if provided
+    let rightContentEndY = currentY;
+    if (options.rightContent) {
+      rightContentEndY = this.addRightContent(options.rightContent, currentY);
+    }
+
+    return Math.max(headerY, rightContentEndY);
+  }
+
+  /**
+   * Company-only layout: Just company information, no logo
+   */
+  private addCompanyOnlyHeader(
+    fpoProfile: FpoProfile, 
+    currentY: number, 
+    options: HeaderLayoutOptions
+  ): Promise<number> {
+    const companySettings = {
+      nameSize: 18,
+      detailsSize: 10,
+      lineSpacing: 5,
+      showAddress: true,
+      showContact: true,
+      showGSTIN: true,
+      ...options.companySettings
+    };
+
+    // Add company information
+    const companyInfoEndY = this.addCompanyInfo(fpoProfile, this.margin, currentY, companySettings);
+
+    // Add right content if provided
+    let rightContentEndY = currentY;
+    if (options.rightContent) {
+      rightContentEndY = this.addRightContent(options.rightContent, currentY);
+    }
+
+    return Promise.resolve(Math.max(companyInfoEndY, rightContentEndY));
+  }
+
+  /**
+   * Add company information with flexible settings
+   */
+  private addCompanyInfo(
+    fpoProfile: FpoProfile, 
+    startX: number, 
+    startY: number, 
+    settings: Required<Exclude<HeaderLayoutOptions['companySettings'], undefined>>
+  ): number {
+    let currentY = startY;
+
+    // Company name
+  
+  // Company name with text wrapping
+  this.doc.setFont('helvetica', 'bold');
+  this.doc.setFontSize(settings.nameSize);
+  
+  // Calculate max width for company name (leaving space for right content)
+  const maxWidth = this.pageWidth - startX - 70;
+  
+  // Split company name into lines if it's too long
+  const companyNameLines = this.doc.splitTextToSize(
+    fpoProfile.companyName || 'COMPANY NAME',
+    maxWidth
+  );
+
+  // Add each line of company name
+  companyNameLines.forEach((line: string, index: number) => {
+    this.doc.text(line, startX, currentY + (index * (settings.nameSize / 2)));
+  });
+
+  // Update Y position based on number of lines
+  currentY += (companyNameLines.length * (settings.nameSize / 2)) ;
+
+    // Company details
+    this.doc.setFont('helvetica', 'normal');
+    this.doc.setFontSize(settings.detailsSize);
+    
+    // Address
+    if (settings.showAddress && (fpoProfile.addressLine1 || fpoProfile.city || fpoProfile.state)) {
+      const addressParts = [
+        fpoProfile.addressLine1,
+        fpoProfile.city,
+        fpoProfile.state,
+        fpoProfile.pincode
+      ].filter(Boolean);
+      
+      const addressText = addressParts.join(', ');
+      const maxWidth = this.pageWidth - startX - 90;
+      const addressLines = this.doc.splitTextToSize(addressText, maxWidth);
+      
+      addressLines.forEach((line: string, index: number) => {
+        this.doc.text(line, startX, currentY + (index * settings.lineSpacing));
+      });
+      currentY += addressLines.length * settings.lineSpacing;
+    }
+
+    // Contact info
+    if (settings.showContact) {
+      const contactParts = [];
+      if (fpoProfile.invoiceEmail) contactParts.push(`Email: ${fpoProfile.invoiceEmail}`);
+      if (fpoProfile.phoneNumber) contactParts.push(`Phone: ${fpoProfile.phoneNumber}`);
+      
+      if (contactParts.length > 0) {
+        this.doc.text(contactParts.join(' | '), startX, currentY);
+        currentY += settings.lineSpacing;
+      }
+    }
+
+    // GST Number
+    if (settings.showGSTIN && fpoProfile.gstNumber) {
+      this.doc.text(`GSTN: ${fpoProfile.gstNumber}`, startX, currentY);
+      currentY += settings.lineSpacing;
+    }
+
+    return currentY;
+  }
+
+  /**
+   * Add right-aligned content (like invoice details)
+   */
+  private addRightContent(
+    rightContent: HeaderLayoutOptions['rightContent'], 
+    startY: number
+  ): number {
+    if (!rightContent) return startY;
+
+    const rightX = this.pageWidth - this.margin;
+    let currentY = startY;
+
+    // Title (like "INVOICE")
+    if (rightContent.title) {
+      this.doc.setFont('helvetica', 'bold');
+      this.doc.setFontSize(rightContent.titleSize || 18);
+      
+      if (rightContent.titleColor) {
+        this.doc.setTextColor(...rightContent.titleColor);
+      }
+      
+      this.doc.text(rightContent.title, rightX, currentY, { align: 'right' });
+      this.doc.setTextColor(0, 0, 0); // Reset to black
+      currentY += (rightContent.titleSize || 18) > 16 ? 8 : 6;
+    }
+
+    // Details
+    if (rightContent.details && rightContent.details.length > 0) {
+      this.doc.setFont('helvetica', 'normal');
+      this.doc.setFontSize(rightContent.detailsSize || 9);
+
+      rightContent.details.forEach(detail => {
+        this.doc.text(detail, rightX, currentY, { align: 'right' });
+        currentY += 4;
+      });
+    }
+
+    return currentY;
+  }
 
   /**
    * Add company logo - COMMON across all documents
    */
-  protected async addCompanyLogo(logoUrl: string, currentY: number): Promise<number> {
+  protected async addCompanyLogo(logoUrl: string, currentY: number, width: number = 40, height: number = 30): Promise<number> {
     try {
       console.log('🔍 Loading logo from URL:', logoUrl);
       const { imageData, format } = await this.loadImage(logoUrl);
-      const logoWidth = 40;
-      const logoHeight = 30;
       
       console.log('✅ Logo loaded successfully, format:', format);
-      this.doc.addImage(imageData, format, this.margin, currentY, logoWidth, logoHeight);
-      return currentY + logoHeight + 10;
+      this.doc.addImage(imageData, format, this.margin, currentY, width, height);
+      return currentY + height;
     } catch (error) {
       console.error('❌ Failed to load logo:', error);
       console.log('📝 Continuing without logo...');
@@ -88,24 +388,14 @@ export abstract class BasePDFService {
     if (showAddress && (fpoProfile.addressLine1 || fpoProfile.city || fpoProfile.state || fpoProfile.pincode)) {
       const addressParts = [
         fpoProfile.addressLine1,
-       
         fpoProfile.city,
         fpoProfile.state,
-    
         fpoProfile.pincode
       ].filter(Boolean);
       
       // Format address properly
       let addressLine = addressParts.join(', ');
-      if (fpoProfile.city && fpoProfile.state) {
-        addressLine = addressParts.join(', ');
-      }
       companyDetails.push(addressLine);
-      
-      // Add separate line for city, state, pincode if needed
-      if (fpoProfile.city && fpoProfile.state) {
-        companyDetails.push(`${fpoProfile.city}, ${fpoProfile.state}`);
-      }
     }
 
     // Contact info
@@ -371,7 +661,8 @@ export abstract class BasePDFService {
   }
 
   protected formatCurrency(amount: number): string {
-    return `₹${amount.toFixed(2)}`;
+    // Use "Rs" prefix for better PDF compatibility instead of rupee symbol
+    return `Rs ${amount.toFixed(2)}`;
   }
 
   /**

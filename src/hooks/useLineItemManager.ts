@@ -37,7 +37,7 @@ export const useLineItemManager = (
   initialItems?: any[], 
   documentType: 'invoice' | 'purchase_voucher' | 'quotation' = 'invoice'
 ): ILineItemHook => {
-  const [lineItemManager] = useState(() => new LineItemManager());
+  const [lineItemManager] = useState(() => new LineItemManager(documentType));
   const [items, setItems] = useState<SelectedItem[]>([]);
   const [summary, setSummary] = useState<ILineItemSummary>({
     subTotal: 0,

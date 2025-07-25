@@ -174,8 +174,9 @@ invoiceDate: formatDateForInput(invoice.invoiceDate),
       });
 
       // Find and set selected customer
-      const customer = ledgerAccounts.find(account => account.id === invoice.customer.id);
+      const customer = invoice?.customer || ledgerAccounts.find(account => account?.id === invoice.customer?.id)  ;
       if (customer) {
+        console.log(customer)
         setSelectedCustomer(customer);
       }
 
@@ -190,7 +191,7 @@ invoiceDate: formatDateForInput(invoice.invoiceDate),
         lineNumber: item.lineNumber || index + 1
         
       }));
-      console.log("the converted item is this",convertedItems)
+      // console.log("the converted item is this",convertedItems)
 
       setCurrentItems(convertedItems);
       

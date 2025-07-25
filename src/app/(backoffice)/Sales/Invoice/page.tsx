@@ -510,8 +510,14 @@ const handleCustomerFilter = useCallback((value: string) => {
 
  const handleDownloadPDF = useCallback(
   async (invoiceId: string)=> {
-     const invoicePDF = new InvoicePDFService();
-await invoicePDF.generatePDF(invoiceId);
+
+    try {
+        const invoicePDF = new InvoicePDFService();
+        toast.info('generating PDF')
+ await invoicePDF.generatePDF(invoiceId);
+    } catch (error) {
+    toast.warn('something went wrong')
+    }
 
    },
    [loadInvoices , loadStatistics],
