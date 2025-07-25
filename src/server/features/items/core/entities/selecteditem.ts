@@ -59,13 +59,27 @@ export class SelectedItem {
     unitPrice?: number,
     discount?: IDiscountConfig,
     gstConfig?: IGSTConfig,
-    lineNumber: number = 0
+    lineNumber: number = 0,
+        documentType: 'invoice' | 'purchase_voucher' | 'quotation' = 'invoice' // Add this parameter
+
   ) {
     this.id = `line_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     this.item = item;
     this.quantity = quantity;
-    this.unitPrice = unitPrice || item.salePrice;
-    this.discount = discount || { value: 0, type: "fixed" };
+
+    
+    // Use appropriate price based on document type
+    if (unitPrice !== undefined) {
+      this.unitPrice = unitPrice;
+    } else {
+      // Determine default price based on document type
+      if (documentType === 'purchase_voucher' && item instanceof Product) {
+        this.unitPrice = (item as Product).purchasePrice || item.salePrice;
+      } else {
+        this.unitPrice = item.salePrice;
+      }
+    }
+        this.discount = discount || { value: 0, type: "fixed" };
     this.gstConfig = gstConfig || { 
       rate: item.gstTaxPercent, 
       type: item.salePriceInclusive ? "including" : "excluding" 
@@ -206,17 +220,29 @@ export class LineItemManager {
   private items: SelectedItem[] = [];
   private shipmentAmount: number = 0;
   private roundOff: number = 0;
+  private documentType: 'invoice' | 'purchase_voucher' | 'quotation' = 'invoice'; // Add this
 
-  constructor() {}
+  constructor(documentType: 'invoice' | 'purchase_voucher' | 'quotation' = 'invoice') {
+    this.documentType = documentType;
+  }
 
   // Add item to the list
   addItem(item: Item, quantity: number = 1, unitPrice?: number): SelectedItem {
     const lineNumber = this.items.length + 1;
-    const selectedItem = new SelectedItem(item, quantity, unitPrice, undefined, undefined, lineNumber);
+    const selectedItem = new SelectedItem(
+      item, 
+      quantity, 
+      unitPrice, 
+      undefined, 
+      undefined, 
+      lineNumber,
+      this.documentType // Pass document type
+    );
     this.items.push(selectedItem);
     this.recalculateLineNumbers();
     return selectedItem;
   }
+
 
   // Remove item by ID
   removeItem(itemId: string): boolean {
@@ -425,7 +451,7 @@ export class LineItemManager {
   }
 
   // Import data from external source
-  importItems(data: any[]): void {
+ importItems(data: any[]): void {
     this.clearAllItems();
     data.forEach(itemData => {
       const selectedItem = new SelectedItem(
@@ -433,7 +459,9 @@ export class LineItemManager {
         itemData.quantity,
         itemData.unitPrice,
         itemData.discount,
-        itemData.gstConfig
+        itemData.gstConfig,
+        0,
+        this.documentType // Pass document type
       );
       this.items.push(selectedItem);
     });

@@ -118,7 +118,7 @@ export class InvoiceAPI {
     }
 
     // Update invoice with optional ledger entry update
-    static async update(data: InvoiceInterface, updateLedger: boolean = false) {
+    static async update(data: InvoiceInterface, updateLedger: boolean = true) {
         console.log('=== InvoiceAPI: Updating invoice ===');
         console.log('Invoice data:', data);
         console.log('Update ledger:', updateLedger);
@@ -146,7 +146,7 @@ export class InvoiceAPI {
                 try {
                     // Note: You might need to store ledger entry ID with invoice to update it
                     // For now, we'll create a new entry or implement a lookup mechanism
-                    console.log('Ledger update requested but implementation depends on your business logic');
+                    console.log('Ledger update requested but implementation is under work ');
                     
                     // Option 1: If you have ledgerEntryId stored with invoice
                     // const ledgerResult = await LedgerEntryAPI.update(data.ledgerEntryId, updatedLedgerData);

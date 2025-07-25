@@ -15,22 +15,21 @@ import { useLineItemManager, useLineItemValidation } from '@/hooks/useLineItemMa
 import { Item, Product, Service } from '@/server/features/items/core/entities/Item';
 import { Category } from '@/server/features/items/core/entities/Category';
 import { Unit } from '@/server/features/items/core/entities/Unit';
-import  { SelectedItem, ILineItemSummary } from '@/server/features/items/core/entities/selecteditem';
+import { SelectedItem, ILineItemSummary } from '@/server/features/items/core/entities/selecteditem';
 
-import { 
-  fetchItemsAsync, 
-  selectAllItems, 
-  selectItemsLoading, 
+import {
+  fetchItemsAsync,
+  selectAllItems,
+  selectItemsLoading,
   selectItemsError,
-  clearError 
+  clearError
 } from '@/store/slices/itemsSlice';
-import { RootState } from '@/store/store';
 import { useAppSelector, useAppDispatch } from '@/store/hooks';
 
 interface AddItemComponentProps {
   documentType: 'invoice' | 'purchase_voucher' | 'quotation';
   initialItems?: any[];
-  onSummaryChange?: (summary:ILineItemSummary ) => void;
+  onSummaryChange?: (summary: ILineItemSummary) => void;
   onItemsChange?: (items: SelectedItem[]) => void;
   onValidationChange?: (isValid: boolean, errors: string[]) => void;
   onExportData?: (data: any) => void;
@@ -53,7 +52,7 @@ export interface LineItem {
   isProduct(): boolean;
 }
 
-const GST_RATES = [0,2 , 3, 5, 12, 18, 28];
+const GST_RATES = [0, 2, 3, 5, 12, 18, 28];
 
 const AddItemComponent: React.FC<AddItemComponentProps> = ({
   documentType,
@@ -71,11 +70,35 @@ const AddItemComponent: React.FC<AddItemComponentProps> = ({
   const itemsData = useAppSelector(selectAllItems);
   const itemsLoading = useAppSelector(selectItemsLoading);
   const itemsError = useAppSelector(selectItemsError);
-  
+
   const [selectedItemId, setSelectedItemId] = useState<string>('');
   const [quantity, setQuantity] = useState<number>(1);
   const [selectedGSTRate, setSelectedGSTRate] = useState<number>(18);
-  
+
+
+
+  // Add this helper function at the top of the component
+  const getPriceForDisplay = (item: Item, documentType: 'invoice' | 'purchase_voucher' | 'quotation'): number => {
+    if (documentType === 'purchase_voucher' && item instanceof Product) {
+      return (item as Product).purchasePrice || item.salePrice;
+    }
+    return item.salePrice;
+  };
+
+  // Add this helper function to get price label
+  const getPriceLabel = (documentType: 'invoice' | 'purchase_voucher' | 'quotation'): string => {
+    switch (documentType) {
+      case 'purchase_voucher':
+        return 'Cost Price';
+      case 'invoice':
+        return 'Sale Price';
+      case 'quotation':
+        return 'Price';
+      default:
+        return 'Price';
+    }
+  };
+
   const createItemInstance = useCallback((item: any): Item => {
     const category = new Category(
       item.category?.id || 'default',
@@ -116,45 +139,45 @@ const AddItemComponent: React.FC<AddItemComponentProps> = ({
       );
     }
   }, []);
-  
+
   const items = useMemo(() => {
     if (!itemsData || !Array.isArray(itemsData)) return [];
     return itemsData.map(createItemInstance);
   }, [itemsData, createItemInstance]);
 
   // Add this new useMemo after the existing items useMemo
-const processedInitialItems = useMemo(() => {
-  if (!initialItems || !Array.isArray(initialItems)) return undefined;
-  
-  return initialItems.map(initialItem => {
-    // If the initialItem already has an item property with raw data, use that
-    if (initialItem.item && typeof initialItem.item === 'object') {
-      return {
-        ...initialItem,
-        item: createItemInstance(initialItem.item)
-      };
-    }
-    
-    // If the initialItem itself is the raw item data, create instance directly
-    if (initialItem.id && initialItem.name) {
-      return {
-        id: initialItem.id,
-        item: createItemInstance(initialItem),
-        quantity: initialItem.quantity || 1,
-        unitPrice: initialItem.unitPrice || initialItem.salePrice || 0,
-        discount: initialItem.discount || { value: 0, type: 'fixed' as const },
-        gstConfig: initialItem.gstConfig || { 
-          rate: initialItem.gstTaxPercent || 18, 
-          type: 'excluding' as const 
-        }
-      };
-    }
-    
-    // Return as-is if it's already processed
-    return initialItem;
-  });
-}, [initialItems, createItemInstance]);
-  
+  const processedInitialItems = useMemo(() => {
+    if (!initialItems || !Array.isArray(initialItems)) return undefined;
+
+    return initialItems.map(initialItem => {
+      // If the initialItem already has an item property with raw data, use that
+      if (initialItem.item && typeof initialItem.item === 'object') {
+        return {
+          ...initialItem,
+          item: createItemInstance(initialItem.item)
+        };
+      }
+
+      // If the initialItem itself is the raw item data, create instance directly
+      if (initialItem.id && initialItem.name) {
+        return {
+          id: initialItem.id,
+          item: createItemInstance(initialItem),
+          quantity: initialItem.quantity || 1,
+          unitPrice: initialItem.unitPrice || initialItem.salePrice || 0,
+          discount: initialItem.discount || { value: 0, type: 'fixed' as const },
+          gstConfig: initialItem.gstConfig || {
+            rate: initialItem.gstTaxPercent || 18,
+            type: 'excluding' as const
+          }
+        };
+      }
+
+      // Return as-is if it's already processed
+      return initialItem;
+    });
+  }, [initialItems, createItemInstance]);
+
   const lineItemHook = useLineItemManager(processedInitialItems, documentType);
   const { errors, isValid } = useLineItemValidation(lineItemHook, documentType);
 
@@ -178,21 +201,21 @@ const processedInitialItems = useMemo(() => {
     }
   }, [lineItemHook.summary, lineItemHook.itemCount, onSummaryChange]);
 
-const prevItemsRef = useRef<string>('');
-const onItemsChangeRef = useRef(onItemsChange);
+  const prevItemsRef = useRef<string>('');
+  const onItemsChangeRef = useRef(onItemsChange);
 
-// Update the ref when the callback changes
-useEffect(() => {
-  onItemsChangeRef.current = onItemsChange;
-}, [onItemsChange]);
+  // Update the ref when the callback changes
+  useEffect(() => {
+    onItemsChangeRef.current = onItemsChange;
+  }, [onItemsChange]);
 
-useEffect(() => {
-  const currentItems = JSON.stringify(lineItemHook.items);
-  if (prevItemsRef.current !== currentItems && onItemsChangeRef.current) {
-    onItemsChangeRef.current(lineItemHook.items);
-    prevItemsRef.current = currentItems;
-  }
-}, [lineItemHook.items]); // Remove onItemsChange from dependencies
+  useEffect(() => {
+    const currentItems = JSON.stringify(lineItemHook.items);
+    if (prevItemsRef.current !== currentItems && onItemsChangeRef.current) {
+      onItemsChangeRef.current(lineItemHook.items);
+      prevItemsRef.current = currentItems;
+    }
+  }, [lineItemHook.items]); // Remove onItemsChange from dependencies
 
   useEffect(() => {
     if (onValidationChange) {
@@ -248,11 +271,11 @@ useEffect(() => {
 
   const handleExportData = useCallback(() => {
     const exportData = lineItemHook.exportForDocument(documentType);
-    
+
     if (onExportData) {
       onExportData(exportData);
     }
-    
+
     console.log(`Export data for ${documentType}:`, exportData);
   }, [lineItemHook, documentType, onExportData]);
 
@@ -280,9 +303,9 @@ useEffect(() => {
           <Alert variant="destructive">
             <AlertDescription>
               Error loading items: {itemsError}
-              <Button 
-                variant="outline" 
-                size="sm" 
+              <Button
+                variant="outline"
+                size="sm"
                 className="ml-2"
                 onClick={handleRetry}
               >
@@ -302,9 +325,9 @@ useEffect(() => {
           <Alert>
             <AlertDescription>
               No items data available. Please try refreshing the page.
-              <Button 
-                variant="outline" 
-                size="sm" 
+              <Button
+                variant="outline"
+                size="sm"
                 className="ml-2"
                 onClick={handleRetry}
               >
@@ -328,7 +351,7 @@ useEffect(() => {
               Add Items
             </CardTitle>
           </CardHeader>
-          
+
           <CardContent className="space-y-4 p-4 sm:p-6">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-3 sm:gap-4">
               {/* Item Selection */}
@@ -351,8 +374,13 @@ useEffect(() => {
                               )}
                             </div>
                           </div>
-                          <div className="text-right mt-1 sm:mt-0 sm:ml-4 flex-shrink-0">
-                            <div className="font-medium text-sm">₹{item.salePrice.toFixed(2)}</div>
+                          <div className="text-right mt-1 sm:mt-0 sm:ml-4 flex  flex-shrink-0">
+                            <div className="font-medium text-sm">
+                              ₹{getPriceForDisplay(item, documentType).toFixed(2)}
+                              <div className="text-xs text-gray-400">
+                                {getPriceLabel(documentType)}
+                              </div>
+                            </div>
                             <Badge variant="secondary" className="text-xs mt-1">
                               {item instanceof Product ? 'Product' : 'Service'}
                             </Badge>
@@ -466,7 +494,7 @@ useEffect(() => {
                           </Button>
                         )}
                       </div>
-                      
+
                       <div className="grid grid-cols-2 gap-2">
                         <div>
                           <Label className="text-xs text-gray-500">Quantity</Label>
@@ -480,7 +508,7 @@ useEffect(() => {
                           />
                         </div>
                         <div>
-                          <Label className="text-xs text-gray-500">Unit Price</Label>
+                          <Label className="text-xs text-gray-500">{getPriceLabel(documentType)}</Label>
                           <Input
                             type="number"
                             value={item.unitPrice}
@@ -492,7 +520,7 @@ useEffect(() => {
                           />
                         </div>
                       </div>
-                      
+
                       <div className="grid grid-cols-2 gap-2">
                         <div>
                           <Label className="text-xs text-gray-500">Discount</Label>
@@ -511,7 +539,7 @@ useEffect(() => {
                             />
                             <Select
                               value={item.discount.type}
-                              onValueChange={(value: 'fixed' | 'percent') => 
+                              onValueChange={(value: 'fixed' | 'percent') =>
                                 handleDiscountChange(item.id, {
                                   ...item.discount,
                                   type: value
@@ -553,7 +581,7 @@ useEffect(() => {
                             </Select>
                             <Select
                               value={item.gstConfig.type}
-                              onValueChange={(value: 'exempt' | 'excluding' | 'including') => 
+                              onValueChange={(value: 'exempt' | 'excluding' | 'including') =>
                                 handleGSTConfigChange(item.id, {
                                   ...item.gstConfig,
                                   type: value
@@ -573,7 +601,7 @@ useEffect(() => {
                           </div>
                         </div>
                       </div>
-                      
+
                       <div className="flex justify-between items-center pt-2 border-t">
                         <span className="text-xs text-gray-500">Total:</span>
                         <span className="font-medium text-sm">₹{item.getLineTotal().toFixed(2)}</span>
@@ -592,7 +620,7 @@ useEffect(() => {
                       <th className="text-left p-2 sm:p-3 font-medium text-sm">HSN/SAC</th>
                       <th className="text-left p-2 sm:p-3 font-medium text-sm">Qty</th>
                       <th className="text-left p-2 sm:p-3 font-medium text-sm">Unit</th>
-                      <th className="text-left p-2 sm:p-3 font-medium text-sm">Price</th>
+                      <th className="text-left p-2 sm:p-3 font-medium text-sm">{getPriceLabel(documentType)}</th>             
                       <th className="text-left p-2 sm:p-3 font-medium text-sm">Discount</th>
                       <th className="text-left p-2 sm:p-3 font-medium text-sm">GST</th>
                       <th className="text-left p-2 sm:p-3 font-medium text-sm">Total</th>
@@ -649,7 +677,7 @@ useEffect(() => {
                             />
                             <Select
                               value={item.discount.type}
-                              onValueChange={(value: 'fixed' | 'percent') => 
+                              onValueChange={(value: 'fixed' | 'percent') =>
                                 handleDiscountChange(item.id, {
                                   ...item.discount,
                                   type: value
@@ -690,7 +718,7 @@ useEffect(() => {
                             </Select>
                             <Select
                               value={item.gstConfig.type}
-                              onValueChange={(value: 'exempt' | 'excluding' | 'including') => 
+                              onValueChange={(value: 'exempt' | 'excluding' | 'including') =>
                                 handleGSTConfigChange(item.id, {
                                   ...item.gstConfig,
                                   type: value
@@ -789,7 +817,7 @@ useEffect(() => {
                   </span>
                 </div>
               </div>
-              
+
               <div>
                 <h4 className="font-medium mb-3 text-sm sm:text-base">GST Breakdown:</h4>
                 <div className="space-y-2">
@@ -819,7 +847,7 @@ useEffect(() => {
             </Button>
           )}
         </div>
-        
+
         <div className="flex flex-col sm:flex-row gap-2">
           {!lineItemHook.isEmpty && onExportData && (
             <Button

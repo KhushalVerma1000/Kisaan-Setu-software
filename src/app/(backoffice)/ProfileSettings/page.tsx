@@ -16,6 +16,7 @@ import { getCurrentUserDetails } from "@/contexts/GetUserDetails";
 import { FpoProfile } from "@/server/features/fpo/core/entities/FpoProfile";
 import { BankDetail } from "@/server/features/fpo/core/entities/BankDetail";
 import { InvoiceSettings } from "@/server/features/fpo/core/entities/InvoiceSettings";
+import { toast } from "react-toastify";
 
 export default function SettingsPage() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -97,16 +98,17 @@ export default function SettingsPage() {
 
       const data = await response.json();
       console.log("Profile updated successfully:", data);
-      
+      toast.success('changes saved successfully')
       // Update the profile with the response data (direct assignment)
       setProfile(data);
       
       // Clear the logo file after successful upload
-      setLogoFile(null);
+      setLogoFile(data.logoUrl);
       
-      
+      fetchProfile()
     } catch (error) {
       console.error("Error updating profile:", error);
+      toast.error(error instanceof Error ? error.message : "server busy try later")
     }
   }, [profile, logoFile]);
 
@@ -154,22 +156,22 @@ export default function SettingsPage() {
     });
   };
   
-  useEffect(() => {
-    const fetchProfile = async () => {
-      const data = await getfpoprofiles();
-      if (data && Object.keys(data).length > 0) {
-        // Direct assignment of backend entity
-        setProfile(data);
-      } else {
-        // Create default profile using backend entities
-        const userDetails = await currentUserDetails;
-        if (!userDetails?.id) {
-          setProfile(null);
-          return;
-        }
-        setProfile(createDefaultProfile(userDetails));
+  const fetchProfile = async () => {
+    const data = await getfpoprofiles();
+    if (data && Object.keys(data).length > 0) {
+      // Direct assignment of backend entity
+      setProfile(data);
+    } else {
+      // Create default profile using backend entities
+      const userDetails = await currentUserDetails;
+      if (!userDetails?.id) {
+        setProfile(null);
+        return;
       }
-    };
+      setProfile(createDefaultProfile(userDetails));
+    }
+  };
+  useEffect(() => {
     fetchProfile();
   }, []);
 
