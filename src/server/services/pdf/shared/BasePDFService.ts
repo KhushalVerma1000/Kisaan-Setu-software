@@ -394,7 +394,7 @@ export abstract class BasePDFService {
       ].filter(Boolean);
       
       // Format address properly
-      let addressLine = addressParts.join(', ');
+      const addressLine = addressParts.join(', ');
       companyDetails.push(addressLine);
     }
 
