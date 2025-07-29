@@ -1,8 +1,37 @@
 import { Shareholder } from '@/server/features/ShareHolder/core/entities/ShareHolder'
 import { ShareholderProps } from '@/server/features/ShareHolder/core/entities/ShareHolder'
 import { createClient } from '@/utils/supabase/server'
+// Helper function to safely parse JSON strings
+const safeJsonParse = (jsonString: any): any[] => {
+  // Handle null, undefined, or empty values
+  if (!jsonString || jsonString === null || jsonString === undefined) {
+    return [];
+  }
+  
+  // If it's already an array, return it
+  if (Array.isArray(jsonString)) {
+    return jsonString;
+  }
+  
+  // Convert to string and trim whitespace
+  const str = String(jsonString).trim();
+  
+  // Handle empty string or string "null"
+  if (str === '' || str === 'null' || str === 'undefined') {
+    return [];
+  }
+  
+  try {
+    const parsed = JSON.parse(str);
+    // Ensure the result is an array
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    console.warn('Failed to parse JSON:', str, error);
+    return [];
+  }
+};
 
-// Helper function to convert database row to ShareholderProps
+// Updated dbRowToShareholderProps function
 function dbRowToShareholderProps(data: any): ShareholderProps {
   return {
     id: data.id,
@@ -19,6 +48,8 @@ function dbRowToShareholderProps(data: any): ShareholderProps {
     faceValue: data.face_value,
     totalPaid: data.total_paid,
     isDirector: data.is_director,
+    pondDetails: safeJsonParse(data.pond_details),
+    cattleDetails: safeJsonParse(data.cattle_details),
     createdAt: data.created_at ? new Date(data.created_at) : undefined,
     updatedAt: data.updated_at ? new Date(data.updated_at) : undefined,
   };
@@ -65,6 +96,8 @@ export async function updateShareholder(id: string, shareholder: Partial<Shareho
   if (shareholder.faceValue !== undefined) updateData.face_value = shareholder.faceValue
   if (shareholder.totalPaid !== undefined) updateData.total_paid = shareholder.totalPaid
   if (shareholder.isDirector !== undefined) updateData.is_director = shareholder.isDirector
+  if (shareholder.pondDetails !== undefined) updateData.pond_details = JSON.stringify(shareholder.pondDetails)
+  if (shareholder.cattleDetails !== undefined) updateData.cattle_details = JSON.stringify(shareholder.cattleDetails)
   
   try {
     const { data, error } = await supabase
@@ -160,7 +193,7 @@ export async function getShareholderById(id: string): Promise<Shareholder | null
     if (error) {
       throw new Error(error.message)
     }
-
+console.log(data ? new Shareholder(dbRowToShareholderProps(data)):null)
     return data ? new Shareholder(dbRowToShareholderProps(data)) : null
   } catch (error) {
     console.error('Error fetching shareholder by ID:', error)
@@ -328,6 +361,61 @@ export async function getExistingShareholders(aadhaarNumbers: string[], fpoId?: 
     return data ? data.map(row => new Shareholder(dbRowToShareholderProps(row))) : []
   } catch (error) {
     console.error('Error fetching existing shareholders:', error)
+    return []
+  }
+}
+
+// Additional utility functions for pond and cattle analysis
+export async function getShareholdersWithPonds(fpoId?: string): Promise<Shareholder[]> {
+  const supabase = await createClient()
+  
+  try {
+    let query = supabase
+      .from('shareholders')
+      .select('*')
+      .not('pond_details', 'eq', '[]')
+      .not('pond_details', 'is', null)
+
+    if (fpoId) {
+      query = query.eq('fpo_id', fpoId)
+    }
+
+    const { data, error } = await query
+
+    if (error) {
+      throw new Error(error.message)
+    }
+
+    return data ? data.map(row => new Shareholder(dbRowToShareholderProps(row))) : []
+  } catch (error) {
+    console.error('Error fetching shareholders with ponds:', error)
+    return []
+  }
+}
+
+export async function getShareholdersWithCattle(fpoId?: string): Promise<Shareholder[]> {
+  const supabase = await createClient()
+  
+  try {
+    let query = supabase
+      .from('shareholders')
+      .select('*')
+      .not('cattle_details', 'eq', '[]')
+      .not('cattle_details', 'is', null)
+
+    if (fpoId) {
+      query = query.eq('fpo_id', fpoId)
+    }
+
+    const { data, error } = await query
+
+    if (error) {
+      throw new Error(error.message)
+    }
+
+    return data ? data.map(row => new Shareholder(dbRowToShareholderProps(row))) : []
+  } catch (error) {
+    console.error('Error fetching shareholders with cattle:', error)
     return []
   }
 }

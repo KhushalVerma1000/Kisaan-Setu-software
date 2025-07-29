@@ -13,6 +13,9 @@ import {
   DollarSign,
   MapPin,
   IndianRupee,
+  Waves,
+  Beef,
+  Fish,
 } from "lucide-react";
 import {
   Card,
@@ -62,8 +65,24 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 import { toast } from 'react-toastify';
+
+interface PondDetail {
+  size: number; // in hectares
+  count: number; // number of ponds of this size
+}
+
+interface CattleDetail {
+  type: string; // e.g., "Cow", "Buffalo", "Goat", "Sheep", etc.
+  count: number; // number of cattle of this type
+}
 
 interface Shareholder {
   id: string;
@@ -80,7 +99,11 @@ interface Shareholder {
   faceValue: number;
   totalPaid: number;
   isDirector: boolean;
+  pondDetails: PondDetail[];
+  cattleDetails: CattleDetail[];
   avatar?: string;
+  createdAt?: Date;
+  updatedAt?: Date;
 }
 
 // Helper function to safely format currency
@@ -92,6 +115,30 @@ const formatCurrency = (amount: number | null | undefined): string => {
 // Helper function to safely get number value
 const getSafeNumber = (value: number | null | undefined): number => {
   return value ?? 0;
+};
+
+// Helper function to calculate total pond area
+const getTotalPondArea = (pondDetails: PondDetail[]): number => {
+  return pondDetails.reduce((total, pond) => total + (pond.size * pond.count), 0);
+};
+
+// Helper function to calculate total pond count
+const getTotalPondCount = (pondDetails: PondDetail[]): number => {
+  return pondDetails.reduce((total, pond) => total + pond.count, 0);
+};
+
+// Helper function to calculate total cattle count
+const getTotalCattleCount = (cattleDetails: CattleDetail[]): number => {
+  return cattleDetails.reduce((total, cattle) => total + cattle.count, 0);
+};
+
+// Helper function to get cattle by type
+const getCattleByType = (cattleDetails: CattleDetail[]): Record<string, number> => {
+  const cattleByType: Record<string, number> = {};
+  cattleDetails.forEach(cattle => {
+    cattleByType[cattle.type] = (cattleByType[cattle.type] || 0) + cattle.count;
+  });
+  return cattleByType;
 };
 
 const getShareHolders = async (): Promise<Shareholder[] | null> => {
@@ -116,6 +163,8 @@ const getShareHolders = async (): Promise<Shareholder[] | null> => {
       faceValue: item.face_value,
       totalPaid: item.total_paid,
       isDirector: item.is_director,
+      pondDetails: item.pond_details ? JSON.parse(item.pond_details) : [],
+      cattleDetails: item.cattle_details ? JSON.parse(item.cattle_details) : [],
       createdAt: item.created_at,
       updatedAt: item.updated_at,
     }));
@@ -161,6 +210,70 @@ const getInitials = (name: string) =>
     .join("")
     .toUpperCase();
 
+// Component to display pond details
+const PondDetailsDisplay = ({ pondDetails }: { pondDetails: PondDetail[] }) => {
+  if (!pondDetails || pondDetails.length === 0) {
+    return <span className="text-muted-foreground text-xs">No ponds</span>;
+  }
+
+  const totalArea = getTotalPondArea(pondDetails);
+  const totalCount = getTotalPondCount(pondDetails);
+
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <div className="flex items-center gap-1 text-xs">
+            <Waves className="w-3 h-3 text-blue-500" />
+            <span>{totalCount} ponds ({totalArea.toFixed(1)}ha)</span>
+          </div>
+        </TooltipTrigger>
+        <TooltipContent>
+          <div className="space-y-1">
+            {pondDetails.map((pond, idx) => (
+              <div key={idx} className="text-xs">
+                {pond.count} × {pond.size}ha ponds
+              </div>
+            ))}
+          </div>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+};
+
+// Component to display cattle details
+const CattleDetailsDisplay = ({ cattleDetails }: { cattleDetails: CattleDetail[] }) => {
+  if (!cattleDetails || cattleDetails.length === 0) {
+    return <span className="text-muted-foreground text-xs">No cattle</span>;
+  }
+
+  const totalCount = getTotalCattleCount(cattleDetails);
+  const cattleByType = getCattleByType(cattleDetails);
+
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <div className="flex items-center gap-1 text-xs">
+            <Beef className="w-3 h-3 text-amber-600" />
+            <span>{totalCount} animals</span>
+          </div>
+        </TooltipTrigger>
+        <TooltipContent>
+          <div className="space-y-1">
+            {Object.entries(cattleByType).map(([type, count]) => (
+              <div key={type} className="text-xs">
+                {count} {type}
+              </div>
+            ))}
+          </div>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+};
+
 export default function ShareholderPage() {
   const [shareholders, setShareholders] = useState<Shareholder[]>([]);
   const [loading, setLoading] = useState(true);
@@ -204,17 +317,21 @@ export default function ShareholderPage() {
     s.aadhaar?.includes(search)
   );
 
+  // Calculate statistics
   const totalShares = shareholders.reduce((acc, s) => acc + getSafeNumber(s.shareAlloted), 0);
   const totalPaid = shareholders.reduce((acc, s) => acc + getSafeNumber(s.totalPaid), 0);
   const directorCount = shareholders.filter((s) => s.isDirector).length;
+  const totalPonds = shareholders.reduce((acc, s) => acc + getTotalPondCount(s.pondDetails || []), 0);
+  const totalPondArea = shareholders.reduce((acc, s) => acc + getTotalPondArea(s.pondDetails || []), 0);
+  const totalCattle = shareholders.reduce((acc, s) => acc + getTotalCattleCount(s.cattleDetails || []), 0);
 
   const handleEdit = (id: string) => {
     router.push(`/Shareholders/edit/${id}`);
   };
+
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [itemToDelete, setItemToDelete] = useState({ id: '', name: '' });
 
-  // Replace your existing handleDelete function with this:
   const handleDelete = async (id: string, name: string) => {
     setItemToDelete({ id, name });
     setIsDeleteDialogOpen(true);
@@ -225,6 +342,7 @@ export default function ShareholderPage() {
     await performDelete(itemToDelete.id, itemToDelete.name);
     setItemToDelete({ id: '', name: '' });
   };
+
   const performDelete = async (id: string, name: string) => {
     try {
       setDeletingId(id);
@@ -300,7 +418,8 @@ export default function ShareholderPage() {
           </Button>
         </div>
       </div>
-   <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+
+      <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Confirm Deletion</AlertDialogTitle>
@@ -321,7 +440,9 @@ export default function ShareholderPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+
+      {/* Statistics Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4">
         <Card>
           <CardContent className="p-4">
             <div className="flex items-center gap-3">
@@ -364,6 +485,29 @@ export default function ShareholderPage() {
                 <p className="text-xl font-semibold">
                   {formatCurrency(totalPaid)}
                 </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3">
+              <Waves className="text-blue-500" />
+              <div>
+                <p className="text-sm text-muted-foreground">Ponds</p>
+                <p className="text-xl font-semibold">{totalPonds}</p>
+                <p className="text-xs text-muted-foreground">{totalPondArea.toFixed(1)}ha</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3">
+              <Beef className="text-amber-600" />
+              <div>
+                <p className="text-sm text-muted-foreground">Cattle</p>
+                <p className="text-xl font-semibold">{totalCattle}</p>
               </div>
             </div>
           </CardContent>
@@ -420,8 +564,8 @@ export default function ShareholderPage() {
                           <AvatarFallback>{getInitials(s.name || "")}</AvatarFallback>
                         </Avatar>
                         <div>
-                          <CardTitle>{s.name || "Unknown"}</CardTitle>
-                          <CardDescription>{s.fatherName || ""}</CardDescription>
+                          <CardTitle className="text-base">{s.name || "Unknown"}</CardTitle>
+                          <CardDescription className="text-sm">{s.fatherName || ""}</CardDescription>
                         </div>
                       </div>
                       <DropdownMenu>
@@ -447,9 +591,10 @@ export default function ShareholderPage() {
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </div>
-                    <div className="mt-3 flex gap-2">
+                    <div className="mt-3 flex gap-2 flex-wrap">
                       {s.isDirector && <Badge>Director</Badge>}
                       <Badge variant="outline">{s.gender || "Unknown"}</Badge>
+                      <Badge variant="outline">{s.socialCategory}</Badge>
                     </div>
                   </CardHeader>
                   <CardContent className="space-y-3 text-sm">
@@ -459,9 +604,15 @@ export default function ShareholderPage() {
                     <div className="flex items-center gap-2 text-muted-foreground">
                       <MapPin className="w-4 h-4" /> {s.landDetails || "Not provided"}
                     </div>
-                    <p>Khasra No: {s.khasraNo || "Not provided"}</p>
-                    <p>Shares: {getSafeNumber(s.shareAlloted)}</p>
-                    <p>Total Paid: {formatCurrency(s.totalPaid)}</p>
+                    <div className="space-y-2">
+                      <p>Khasra No: {s.khasraNo || "Not provided"}</p>
+                      <p>Shares: {getSafeNumber(s.shareAlloted)}</p>
+                      <p>Total Paid: {formatCurrency(s.totalPaid)}</p>
+                    </div>
+                    <div className="space-y-2 pt-2 border-t">
+                      <PondDetailsDisplay pondDetails={s.pondDetails || []} />
+                      <CattleDetailsDisplay cattleDetails={s.cattleDetails || []} />
+                    </div>
                   </CardContent>
                 </Card>
               ))}
@@ -478,6 +629,8 @@ export default function ShareholderPage() {
                     <TableHead>Gender</TableHead>
                     <TableHead>Shares</TableHead>
                     <TableHead>Paid</TableHead>
+                    <TableHead>Ponds</TableHead>
+                    <TableHead>Cattle</TableHead>
                     <TableHead>Director</TableHead>
                     <TableHead>Actions</TableHead>
                   </TableRow>
@@ -485,11 +638,22 @@ export default function ShareholderPage() {
                 <TableBody>
                   {filtered.map((s) => (
                     <TableRow key={s.id}>
-                      <TableCell>{s.name || "Unknown"}</TableCell>
+                      <TableCell>
+                        <div>
+                          <div className="font-medium">{s.name || "Unknown"}</div>
+                          <div className="text-sm text-muted-foreground">{s.fatherName}</div>
+                        </div>
+                      </TableCell>
                       <TableCell>{s.mobile || "Not provided"}</TableCell>
                       <TableCell className="capitalize">{s.gender || "Unknown"}</TableCell>
                       <TableCell>{getSafeNumber(s.shareAlloted)}</TableCell>
                       <TableCell>{formatCurrency(s.totalPaid)}</TableCell>
+                      <TableCell>
+                        <PondDetailsDisplay pondDetails={s.pondDetails || []} />
+                      </TableCell>
+                      <TableCell>
+                        <CattleDetailsDisplay cattleDetails={s.cattleDetails || []} />
+                      </TableCell>
                       <TableCell>
                         {s.isDirector && <Badge variant="default">✔</Badge>}
                       </TableCell>
