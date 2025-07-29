@@ -1,3 +1,39 @@
+// Types for pond and cattle details
+export interface PondDetail {
+  size: number; // in hectares
+  count: number; // number of ponds of this size
+}
+
+export interface CattleDetail {
+  type: string; // e.g., "Cow", "Buffalo", "Goat", "Sheep", etc.
+  count: number; // number of cattle of this type
+}
+
+// Constants for dropdown options
+export const CATTLE_TYPES = [
+  "Cow", 
+  "Buffalo", 
+  "Goat", 
+  "Sheep", 
+  "Ox", 
+  "Bull", 
+  "Calf", 
+  "Other"
+] as const;
+
+export const GENDER_OPTIONS = [
+  { value: "male", label: "Male" },
+  { value: "female", label: "Female" },
+  { value: "other", label: "Other" }
+] as const;
+
+export const SOCIAL_CATEGORIES = [
+  { value: "General", label: "General" },
+  { value: "SC", label: "SC" },
+  { value: "ST", label: "ST" },
+  { value: "OBC", label: "OBC" }
+] as const;
+
 export interface ShareholderProps {
   id?: string;
   fpoId?: string;
@@ -13,6 +49,8 @@ export interface ShareholderProps {
   faceValue: number;
   totalPaid: number;
   isDirector: boolean;
+  pondDetails: PondDetail[]; // Array of pond details
+  cattleDetails: CattleDetail[]; // Array of cattle details
   createdAt?: Date;
   updatedAt?: Date;
 }
@@ -32,34 +70,54 @@ export class Shareholder {
   faceValue: number;
   totalPaid: number;
   isDirector: boolean;
+  pondDetails: PondDetail[];
+  cattleDetails: CattleDetail[];
   createdAt?: Date;
   updatedAt?: Date;
-// Add this to your Shareholder entity constructor
-constructor(props: ShareholderProps) {
-  // Helper function to safely convert to string
-  const toString = (value: any): string => {
-    if (value === null || value === undefined) return '';
-    return String(value).trim();
-  };
 
-  this.id = props.id;
-  this.fpoId = props.fpoId;
-  this.name = toString(props.name);
-  this.fatherName = toString(props.fatherName);
-  this.mobile = toString(props.mobile);
-  this.aadhaar = toString(props.aadhaar);
-  this.gender = props.gender || 'male';
-  this.socialCategory = props.socialCategory || 'General';
-  this.landDetails = toString(props.landDetails);
-  this.khasraNo = toString(props.khasraNo);
-  this.shareAlloted = props.shareAlloted || 0;
-  this.faceValue = props.faceValue || 100;
-  this.totalPaid = props.totalPaid || 0;
-  this.isDirector = props.isDirector || false;
-  this.createdAt = props.createdAt;
-  this.updatedAt = props.updatedAt;
-}
-  // Validation methods
+  constructor(props: ShareholderProps) {
+    // Helper function to safely convert to string
+    const toString = (value: any): string => {
+      if (value === null || value === undefined) return '';
+      return String(value).trim();
+    };
+
+    // Helper function to safely convert arrays
+    const toArray = (value: any): any[] => {
+      if (Array.isArray(value)) return value;
+      if (value === null || value === undefined) return [];
+      // If it's a string that looks like JSON, try to parse it
+      if (typeof value === 'string' && value.trim().startsWith('[')) {
+        try {
+          return JSON.parse(value);
+        } catch {
+          return [];
+        }
+      }
+      return [];
+    };
+
+    this.id = props.id;
+    this.fpoId = props.fpoId;
+    this.name = toString(props.name);
+    this.fatherName = toString(props.fatherName);
+    this.mobile = toString(props.mobile);
+    this.aadhaar = toString(props.aadhaar);
+    this.gender = props.gender || 'male';
+    this.socialCategory = props.socialCategory || 'General';
+    this.landDetails = toString(props.landDetails);
+    this.khasraNo = toString(props.khasraNo);
+    this.shareAlloted = props.shareAlloted || 0;
+    this.faceValue = props.faceValue || 100;
+    this.totalPaid = props.totalPaid || 0;
+    this.isDirector = props.isDirector || false;
+    this.pondDetails = toArray(props.pondDetails);
+    this.cattleDetails = toArray(props.cattleDetails);
+    this.createdAt = props.createdAt;
+    this.updatedAt = props.updatedAt;
+  }
+
+  // Validation methods (existing ones remain the same)
   isValidMobile(): boolean {
     const mobileRegex = /^[6-9]\d{9}$/;
     return mobileRegex.test(this.mobile);
@@ -78,7 +136,31 @@ constructor(props: ShareholderProps) {
     return this.fatherName.length >= 2 && this.fatherName.length <= 100;
   }
 
-  // Business logic methods
+  // New validation methods for pond and cattle details
+  isValidPondDetails(): boolean {
+    if (!Array.isArray(this.pondDetails)) return false;
+    return this.pondDetails.every(pond => 
+      typeof pond.size === 'number' && 
+      typeof pond.count === 'number' && 
+      pond.size > 0 && 
+      pond.count > 0 &&
+      Number.isFinite(pond.size) &&
+      Number.isInteger(pond.count)
+    );
+  }
+
+  isValidCattleDetails(): boolean {
+    if (!Array.isArray(this.cattleDetails)) return false;
+    return this.cattleDetails.every(cattle => 
+      typeof cattle.type === 'string' && 
+      typeof cattle.count === 'number' && 
+      cattle.type.trim().length > 0 && 
+      cattle.count > 0 &&
+      Number.isInteger(cattle.count)
+    );
+  }
+
+  // Business logic methods (existing ones remain the same)
   getTotalInvestment(): number {
     return this.shareAlloted * this.faceValue;
   }
@@ -103,6 +185,27 @@ constructor(props: ShareholderProps) {
     return 'Unpaid';
   }
 
+  // New business logic methods
+  getTotalPondArea(): number {
+    return this.pondDetails.reduce((total, pond) => total + (pond.size * pond.count), 0);
+  }
+
+  getTotalPondCount(): number {
+    return this.pondDetails.reduce((total, pond) => total + pond.count, 0);
+  }
+
+  getTotalCattleCount(): number {
+    return this.cattleDetails.reduce((total, cattle) => total + cattle.count, 0);
+  }
+
+  getCattleByType(): Record<string, number> {
+    const cattleByType: Record<string, number> = {};
+    this.cattleDetails.forEach(cattle => {
+      cattleByType[cattle.type] = (cattleByType[cattle.type] || 0) + cattle.count;
+    });
+    return cattleByType;
+  }
+
   // Utility methods
   toJSON(): Record<string, any> {
     const obj: Record<string, any> = {
@@ -119,6 +222,8 @@ constructor(props: ShareholderProps) {
       face_value: this.faceValue,
       total_paid: this.totalPaid,
       is_director: this.isDirector,
+      pond_details: JSON.stringify(this.pondDetails),
+      cattle_details: JSON.stringify(this.cattleDetails),
     };
     
     // Only include id if it is set (for updates)
@@ -147,6 +252,12 @@ constructor(props: ShareholderProps) {
       paymentPercentage: this.getPaymentPercentage(),
       paymentStatus: this.getPaymentStatus(),
       isDirector: this.isDirector,
+      pondDetails: this.pondDetails,
+      cattleDetails: this.cattleDetails,
+      totalPondArea: this.getTotalPondArea(),
+      totalPondCount: this.getTotalPondCount(),
+      totalCattleCount: this.getTotalCattleCount(),
+      cattleByType: this.getCattleByType(),
       createdAt: this.createdAt,
       updatedAt: this.updatedAt,
     };
@@ -229,6 +340,16 @@ constructor(props: ShareholderProps) {
       errors.push('Social category must be General, SC, ST, or OBC');
     }
 
+    // Pond details validation
+    if (!this.isValidPondDetails()) {
+      errors.push('Pond details must be valid - each pond must have positive size (hectares) and count');
+    }
+
+    // Cattle details validation
+    if (!this.isValidCattleDetails()) {
+      errors.push('Cattle details must be valid - each cattle entry must have a valid type and positive count');
+    }
+
     return {
       isValid: errors.length === 0,
       errors
@@ -252,6 +373,8 @@ constructor(props: ShareholderProps) {
       faceValue: row.face_value,
       totalPaid: row.total_paid,
       isDirector: row.is_director,
+      pondDetails: row.pond_details ? JSON.parse(row.pond_details) : [],
+      cattleDetails: row.cattle_details ? JSON.parse(row.cattle_details) : [],
       createdAt: row.created_at ? new Date(row.created_at) : undefined,
       updatedAt: row.updated_at ? new Date(row.updated_at) : undefined,
     });
