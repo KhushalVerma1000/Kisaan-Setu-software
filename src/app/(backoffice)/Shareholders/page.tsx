@@ -14,8 +14,9 @@ import {
   MapPin,
   IndianRupee,
   Waves,
-  Beef,
+  HeartPulse,
   Fish,
+  TreePine,
 } from "lucide-react";
 import {
   Card,
@@ -84,6 +85,11 @@ interface CattleDetail {
   count: number; // number of cattle of this type
 }
 
+interface LandDetails {
+  area: number; // in hectares
+  khasraNumber: string;
+}
+
 interface Shareholder {
   id: string;
   fpoId: string;
@@ -93,14 +99,23 @@ interface Shareholder {
   aadhaar: string;
   gender: "male" | "female" | "other";
   socialCategory: "General" | "SC" | "ST" | "OBC";
-  landDetails: string;
-  khasraNo: string;
+  landDetails?: LandDetails;
   shareAlloted: number;
   faceValue: number;
   totalPaid: number;
+  totalInvestment: number;
+  remainingAmount: number;
+  paymentPercentage: number;
+  paymentStatus: string;
   isDirector: boolean;
   pondDetails: PondDetail[];
   cattleDetails: CattleDetail[];
+  landArea: number;
+  totalPondArea: number;
+  totalPondCount: number;
+  totalCattleCount: number;
+  cattleByType: Record<string, number>;
+  shareholderType: 'land' | 'pond' | 'cattle';
   avatar?: string;
   createdAt?: Date;
   updatedAt?: Date;
@@ -117,30 +132,6 @@ const getSafeNumber = (value: number | null | undefined): number => {
   return value ?? 0;
 };
 
-// Helper function to calculate total pond area
-const getTotalPondArea = (pondDetails: PondDetail[]): number => {
-  return pondDetails.reduce((total, pond) => total + (pond.size * pond.count), 0);
-};
-
-// Helper function to calculate total pond count
-const getTotalPondCount = (pondDetails: PondDetail[]): number => {
-  return pondDetails.reduce((total, pond) => total + pond.count, 0);
-};
-
-// Helper function to calculate total cattle count
-const getTotalCattleCount = (cattleDetails: CattleDetail[]): number => {
-  return cattleDetails.reduce((total, cattle) => total + cattle.count, 0);
-};
-
-// Helper function to get cattle by type
-const getCattleByType = (cattleDetails: CattleDetail[]): Record<string, number> => {
-  const cattleByType: Record<string, number> = {};
-  cattleDetails.forEach(cattle => {
-    cattleByType[cattle.type] = (cattleByType[cattle.type] || 0) + cattle.count;
-  });
-  return cattleByType;
-};
-
 const getShareHolders = async (): Promise<Shareholder[] | null> => {
   try {
     const res = await fetch('/api/shareholder');
@@ -150,23 +141,32 @@ const getShareHolders = async (): Promise<Shareholder[] | null> => {
 
     const result: Shareholder[] = raw.map((item: any) => ({
       id: item.id,
-      fpoId: item.fpo_id,
+      fpoId: item.fpoId || item.fpo_id,
       name: item.name,
-      fatherName: item.father_name,
+      fatherName: item.fatherName || item.father_name,
       mobile: item.mobile,
       aadhaar: item.aadhaar,
       gender: item.gender,
-      socialCategory: item.social_category,
-      landDetails: item.land_details,
-      khasraNo: item.khasra_no,
-      shareAlloted: item.share_alloted,
-      faceValue: item.face_value,
-      totalPaid: item.total_paid,
-      isDirector: item.is_director,
-      pondDetails: item.pond_details ? JSON.parse(item.pond_details) : [],
-      cattleDetails: item.cattle_details ? JSON.parse(item.cattle_details) : [],
-      createdAt: item.created_at,
-      updatedAt: item.updated_at,
+      socialCategory: item.socialCategory || item.social_category,
+      landDetails: item.landDetails,
+      shareAlloted: item.shareAlloted || item.share_alloted,
+      faceValue: item.faceValue || item.face_value,
+      totalPaid: item.totalPaid || item.total_paid,
+      totalInvestment: item.totalInvestment || item.total_investment,
+      remainingAmount: item.remainingAmount || item.remaining_amount,
+      paymentPercentage: item.paymentPercentage || item.payment_percentage,
+      paymentStatus: item.paymentStatus || item.payment_status,
+      isDirector: item.isDirector || item.is_director,
+      pondDetails: item.pondDetails || [],
+      cattleDetails: item.cattleDetails || [],
+      landArea: item.landArea || item.land_area || 0,
+      totalPondArea: item.totalPondArea || item.total_pond_area || 0,
+      totalPondCount: item.totalPondCount || item.total_pond_count || 0,
+      totalCattleCount: item.totalCattleCount || item.total_cattle_count || 0,
+      cattleByType: item.cattleByType || item.cattle_by_type || {},
+      shareholderType: item.shareholderType || item.shareholder_type,
+      createdAt: item.createdAt || item.created_at,
+      updatedAt: item.updatedAt || item.updated_at,
     }));
 
     return result;
@@ -210,67 +210,100 @@ const getInitials = (name: string) =>
     .join("")
     .toUpperCase();
 
-// Component to display pond details
-const PondDetailsDisplay = ({ pondDetails }: { pondDetails: PondDetail[] }) => {
-  if (!pondDetails || pondDetails.length === 0) {
-    return <span className="text-muted-foreground text-xs">No ponds</span>;
-  }
+// Component to display holding details based on type
+const HoldingDetailsDisplay = ({ shareholder }: { shareholder: Shareholder }) => {
+  const { shareholderType, landArea, landDetails, totalPondArea, totalPondCount, totalCattleCount, cattleByType } = shareholder;
 
-  const totalArea = getTotalPondArea(pondDetails);
-  const totalCount = getTotalPondCount(pondDetails);
-
-  return (
-    <TooltipProvider>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <div className="flex items-center gap-1 text-xs">
-            <Waves className="w-3 h-3 text-blue-500" />
-            <span>{totalCount} ponds ({totalArea.toFixed(1)}ha)</span>
-          </div>
-        </TooltipTrigger>
-        <TooltipContent>
-          <div className="space-y-1">
-            {pondDetails.map((pond, idx) => (
-              <div key={idx} className="text-xs">
-                {pond.count} × {pond.size}ha ponds
+  switch (shareholderType) {
+    case 'land':
+      return (
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <div className="flex items-center gap-1 text-xs">
+                <TreePine className="w-3 h-3 text-green-600" />
+                <span>{landArea}ha land</span>
               </div>
-            ))}
-          </div>
-        </TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
-  );
+            </TooltipTrigger>
+            <TooltipContent>
+              <div className="space-y-1">
+                <div className="text-xs">Area: {landArea}ha</div>
+                {landDetails?.khasraNumber && (
+                  <div className="text-xs">Khasra: {landDetails.khasraNumber}</div>
+                )}
+              </div>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      );
+
+    case 'pond':
+      return (
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <div className="flex items-center gap-1 text-xs">
+                <Waves className="w-3 h-3 text-blue-500" />
+                <span>{totalPondCount} ponds ({totalPondArea}ha)</span>
+              </div>
+            </TooltipTrigger>
+            <TooltipContent>
+              <div className="space-y-1">
+                <div className="text-xs">Total ponds: {totalPondCount}</div>
+                <div className="text-xs">Total area: {totalPondArea}ha</div>
+              </div>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      );
+
+    case 'cattle':
+      return (
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <div className="flex items-center gap-1 text-xs">
+                <HeartPulse className="w-3 h-3 text-amber-600" />
+                <span>{totalCattleCount} animals</span>
+              </div>
+            </TooltipTrigger>
+            <TooltipContent>
+              <div className="space-y-1">
+                {Object.entries(cattleByType).map(([type, count]) => (
+                  <div key={type} className="text-xs">
+                    {count} {type}
+                  </div>
+                ))}
+              </div>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      );
+
+    default:
+      return <span className="text-muted-foreground text-xs">No holdings</span>;
+  }
 };
 
-// Component to display cattle details
-const CattleDetailsDisplay = ({ cattleDetails }: { cattleDetails: CattleDetail[] }) => {
-  if (!cattleDetails || cattleDetails.length === 0) {
-    return <span className="text-muted-foreground text-xs">No cattle</span>;
-  }
-
-  const totalCount = getTotalCattleCount(cattleDetails);
-  const cattleByType = getCattleByType(cattleDetails);
+// Component to display payment status
+const PaymentStatusBadge = ({ paymentStatus, paymentPercentage }: { paymentStatus: string; paymentPercentage: number }) => {
+  const getStatusColor = (status: string) => {
+    switch (status.toLowerCase()) {
+      case 'paid':
+        return 'bg-green-100 text-green-800 border-green-200';
+      case 'partially paid':
+        return 'bg-yellow-100 text-yellow-800 border-yellow-200';
+      case 'unpaid':
+        return 'bg-red-100 text-red-800 border-red-200';
+      default:
+        return 'bg-gray-100 text-gray-800 border-gray-200';
+    }
+  };
 
   return (
-    <TooltipProvider>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <div className="flex items-center gap-1 text-xs">
-            <Beef className="w-3 h-3 text-amber-600" />
-            <span>{totalCount} animals</span>
-          </div>
-        </TooltipTrigger>
-        <TooltipContent>
-          <div className="space-y-1">
-            {Object.entries(cattleByType).map(([type, count]) => (
-              <div key={type} className="text-xs">
-                {count} {type}
-              </div>
-            ))}
-          </div>
-        </TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
+    <Badge variant="outline" className={getStatusColor(paymentStatus)}>
+      {paymentStatus} ({paymentPercentage}%)
+    </Badge>
   );
 };
 
@@ -320,10 +353,18 @@ export default function ShareholderPage() {
   // Calculate statistics
   const totalShares = shareholders.reduce((acc, s) => acc + getSafeNumber(s.shareAlloted), 0);
   const totalPaid = shareholders.reduce((acc, s) => acc + getSafeNumber(s.totalPaid), 0);
+  const totalInvestment = shareholders.reduce((acc, s) => acc + getSafeNumber(s.totalInvestment), 0);
   const directorCount = shareholders.filter((s) => s.isDirector).length;
-  const totalPonds = shareholders.reduce((acc, s) => acc + getTotalPondCount(s.pondDetails || []), 0);
-  const totalPondArea = shareholders.reduce((acc, s) => acc + getTotalPondArea(s.pondDetails || []), 0);
-  const totalCattle = shareholders.reduce((acc, s) => acc + getTotalCattleCount(s.cattleDetails || []), 0);
+  
+  // Statistics by holding type
+  const landHolders = shareholders.filter(s => s.shareholderType === 'land');
+  const pondHolders = shareholders.filter(s => s.shareholderType === 'pond');
+  const cattleHolders = shareholders.filter(s => s.shareholderType === 'cattle');
+  
+  const totalLandArea = landHolders.reduce((acc, s) => acc + s.landArea, 0);
+  const totalPondArea = pondHolders.reduce((acc, s) => acc + s.totalPondArea, 0);
+  const totalPonds = pondHolders.reduce((acc, s) => acc + s.totalPondCount, 0);
+  const totalCattle = cattleHolders.reduce((acc, s) => acc + s.totalCattleCount, 0);
 
   const handleEdit = (id: string) => {
     router.push(`/Shareholders/edit/${id}`);
@@ -442,72 +483,142 @@ export default function ShareholderPage() {
       </AlertDialog>
 
       {/* Statistics Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4">
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <Users className="text-blue-600" />
-              <div>
-                <p className="text-sm text-muted-foreground">Total Members</p>
-                <p className="text-xl font-semibold">{shareholders.length}</p>
+     {/* Enhanced Statistics Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+        {/* Row 1 - Main Statistics */}
+        <Card className="hover:shadow-lg transition-shadow duration-200">
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div className="p-3 bg-blue-100 rounded-full">
+                  <Users className="w-6 h-6 text-blue-600" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">Total Members</p>
+                  <p className="text-2xl font-bold text-foreground">{shareholders.length}</p>
+                </div>
               </div>
             </div>
           </CardContent>
         </Card>
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <UserCheck className="text-green-600" />
-              <div>
-                <p className="text-sm text-muted-foreground">Directors</p>
-                <p className="text-xl font-semibold">{directorCount}</p>
+
+        <Card className="hover:shadow-lg transition-shadow duration-200">
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div className="p-3 bg-green-100 rounded-full">
+                  <UserCheck className="w-6 h-6 text-green-600" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">Directors</p>
+                  <p className="text-2xl font-bold text-foreground">{directorCount}</p>
+                </div>
               </div>
             </div>
           </CardContent>
         </Card>
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <Award className="text-purple-600" />
-              <div>
-                <p className="text-sm text-muted-foreground">Total Shares</p>
-                <p className="text-xl font-semibold">{totalShares}</p>
+
+        <Card className="hover:shadow-lg transition-shadow duration-200">
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div className="p-3 bg-purple-100 rounded-full">
+                  <Award className="w-6 h-6 text-purple-600" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">Total Shares</p>
+                  <p className="text-2xl font-bold text-foreground">{totalShares}</p>
+                </div>
               </div>
             </div>
           </CardContent>
         </Card>
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <IndianRupee className="text-orange-600" />
-              <div>
-                <p className="text-sm text-muted-foreground">Total Paid</p>
-                <p className="text-xl font-semibold">
-                  {formatCurrency(totalPaid)}
-                </p>
+
+        <Card className="hover:shadow-lg transition-shadow duration-200">
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div className="p-3 bg-orange-100 rounded-full">
+                  <IndianRupee className="w-6 h-6 text-orange-600" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">Total Paid</p>
+                  <p className="text-2xl font-bold text-foreground">
+                    {formatCurrency(totalPaid)}
+                  </p>
+                </div>
               </div>
             </div>
           </CardContent>
         </Card>
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <Waves className="text-blue-500" />
-              <div>
-                <p className="text-sm text-muted-foreground">Ponds</p>
-                <p className="text-xl font-semibold">{totalPonds}</p>
-                <p className="text-xs text-muted-foreground">{totalPondArea.toFixed(1)}ha</p>
+      </div>
+
+      {/* Row 2 - Financial & Holdings Statistics */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+        <Card className="hover:shadow-lg transition-shadow duration-200">
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div className="p-3 bg-emerald-100 rounded-full">
+                  <DollarSign className="w-6 h-6 text-emerald-600" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">Total Investment</p>
+                  <p className="text-2xl font-bold text-foreground">
+                    {formatCurrency(totalInvestment)}
+                  </p>
+                </div>
               </div>
             </div>
           </CardContent>
         </Card>
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <Beef className="text-amber-600" />
-              <div>
-                <p className="text-sm text-muted-foreground">Cattle</p>
-                <p className="text-xl font-semibold">{totalCattle}</p>
+
+        <Card className="hover:shadow-lg transition-shadow duration-200">
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div className="p-3 bg-green-100 rounded-full">
+                  <TreePine className="w-6 h-6 text-green-600" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">Land Holders</p>
+                  <p className="text-2xl font-bold text-foreground">{landHolders.length}</p>
+                  <p className="text-xs text-muted-foreground mt-1">{totalLandArea} hectares</p>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="hover:shadow-lg transition-shadow duration-200">
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div className="p-3 bg-blue-100 rounded-full">
+                  <Waves className="w-6 h-6 text-blue-500" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">Pond Holders</p>
+                  <p className="text-2xl font-bold text-foreground">{pondHolders.length}</p>
+                  <p className="text-xs text-muted-foreground mt-1">{totalPonds} ponds total</p>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="hover:shadow-lg transition-shadow duration-200">
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div className="p-3 bg-amber-100 rounded-full">
+                  <HeartPulse className="w-6 h-6 text-amber-600" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">Cattle Holders</p>
+                  <p className="text-2xl font-bold text-foreground">{cattleHolders.length}</p>
+                  <p className="text-xs text-muted-foreground mt-1">{totalCattle} animals total</p>
+                </div>
               </div>
             </div>
           </CardContent>
@@ -593,6 +704,7 @@ export default function ShareholderPage() {
                     </div>
                     <div className="mt-3 flex gap-2 flex-wrap">
                       {s.isDirector && <Badge>Director</Badge>}
+                      <Badge variant="outline" className="capitalize">{s.shareholderType}</Badge>
                       <Badge variant="outline">{s.gender || "Unknown"}</Badge>
                       <Badge variant="outline">{s.socialCategory}</Badge>
                     </div>
@@ -601,17 +713,18 @@ export default function ShareholderPage() {
                     <div className="flex items-center gap-2 text-muted-foreground">
                       <Phone className="w-4 h-4" /> {s.mobile || "Not provided"}
                     </div>
-                    <div className="flex items-center gap-2 text-muted-foreground">
-                      <MapPin className="w-4 h-4" /> {s.landDetails || "Not provided"}
-                    </div>
                     <div className="space-y-2">
-                      <p>Khasra No: {s.khasraNo || "Not provided"}</p>
                       <p>Shares: {getSafeNumber(s.shareAlloted)}</p>
-                      <p>Total Paid: {formatCurrency(s.totalPaid)}</p>
+                      <p>Investment: {formatCurrency(s.totalInvestment)}</p>
+                      <p>Paid: {formatCurrency(s.totalPaid)}</p>
+                      <p>Remaining: {formatCurrency(s.remainingAmount)}</p>
                     </div>
                     <div className="space-y-2 pt-2 border-t">
-                      <PondDetailsDisplay pondDetails={s.pondDetails || []} />
-                      <CattleDetailsDisplay cattleDetails={s.cattleDetails || []} />
+                      <PaymentStatusBadge 
+                        paymentStatus={s.paymentStatus} 
+                        paymentPercentage={s.paymentPercentage} 
+                      />
+                      <HoldingDetailsDisplay shareholder={s} />
                     </div>
                   </CardContent>
                 </Card>
@@ -626,11 +739,12 @@ export default function ShareholderPage() {
                   <TableRow>
                     <TableHead>Name</TableHead>
                     <TableHead>Mobile</TableHead>
-                    <TableHead>Gender</TableHead>
+                    <TableHead>Type</TableHead>
                     <TableHead>Shares</TableHead>
+                    <TableHead>Investment</TableHead>
                     <TableHead>Paid</TableHead>
-                    <TableHead>Ponds</TableHead>
-                    <TableHead>Cattle</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Holdings</TableHead>
                     <TableHead>Director</TableHead>
                     <TableHead>Actions</TableHead>
                   </TableRow>
@@ -645,14 +759,20 @@ export default function ShareholderPage() {
                         </div>
                       </TableCell>
                       <TableCell>{s.mobile || "Not provided"}</TableCell>
-                      <TableCell className="capitalize">{s.gender || "Unknown"}</TableCell>
+                      <TableCell className="capitalize">
+                        <Badge variant="outline">{s.shareholderType}</Badge>
+                      </TableCell>
                       <TableCell>{getSafeNumber(s.shareAlloted)}</TableCell>
+                      <TableCell>{formatCurrency(s.totalInvestment)}</TableCell>
                       <TableCell>{formatCurrency(s.totalPaid)}</TableCell>
                       <TableCell>
-                        <PondDetailsDisplay pondDetails={s.pondDetails || []} />
+                        <PaymentStatusBadge 
+                          paymentStatus={s.paymentStatus} 
+                          paymentPercentage={s.paymentPercentage} 
+                        />
                       </TableCell>
                       <TableCell>
-                        <CattleDetailsDisplay cattleDetails={s.cattleDetails || []} />
+                        <HoldingDetailsDisplay shareholder={s} />
                       </TableCell>
                       <TableCell>
                         {s.isDirector && <Badge variant="default">✔</Badge>}

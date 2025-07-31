@@ -1,7 +1,12 @@
-// Types for pond and cattle details
+// Types for land and pond details
+export interface LandDetail {
+  area: number; // in hectares
+  khasraNumber?: string; // optional khasra number
+}
+
 export interface PondDetail {
-  size: number; // in hectares
-  count: number; // number of ponds of this size
+  area: number; // in hectares
+  khasraNumber?: string; // optional khasra number
 }
 
 export interface CattleDetail {
@@ -43,14 +48,13 @@ export interface ShareholderProps {
   aadhaar: string;
   gender: "male" | "female" | "other";
   socialCategory: "General" | "SC" | "ST" | "OBC";
-  landDetails: string;
-  khasraNo: string;
+  landDetails?: LandDetail; // Single land detail entry (optional)
   shareAlloted: number;
   faceValue: number;
   totalPaid: number;
   isDirector: boolean;
-  pondDetails: PondDetail[]; // Array of pond details
-  cattleDetails: CattleDetail[]; // Array of cattle details
+  pondDetails?: PondDetail[]; // Array of individual pond details (optional)
+  cattleDetails?: CattleDetail[]; // Array of cattle details (optional)
   createdAt?: Date;
   updatedAt?: Date;
 }
@@ -64,8 +68,7 @@ export class Shareholder {
   aadhaar: string;
   gender: "male" | "female" | "other";
   socialCategory: "General" | "SC" | "ST" | "OBC";
-  landDetails: string;
-  khasraNo: string;
+  landDetails?: LandDetail;
   shareAlloted: number;
   faceValue: number;
   totalPaid: number;
@@ -97,6 +100,34 @@ export class Shareholder {
       return [];
     };
 
+    // Helper function to safely parse land details
+    const parseLandDetails = (value: any): LandDetail | undefined => {
+      if (!value || value === null || value === undefined) return undefined;
+      
+      // If it's already an object with area property
+      if (typeof value === 'object' && value.area !== undefined) {
+        return {
+          area: Number(value.area) || 0,
+          khasraNumber: value.khasraNumber || value.khasra_number || undefined
+        };
+      }
+      
+      // If it's a string that looks like JSON
+      if (typeof value === 'string' && value.trim().startsWith('{')) {
+        try {
+          const parsed = JSON.parse(value);
+          return {
+            area: Number(parsed.area) || 0,
+            khasraNumber: parsed.khasraNumber || parsed.khasra_number || undefined
+          };
+        } catch {
+          return undefined;
+        }
+      }
+      
+      return undefined;
+    };
+
     this.id = props.id;
     this.fpoId = props.fpoId;
     this.name = toString(props.name);
@@ -105,8 +136,7 @@ export class Shareholder {
     this.aadhaar = toString(props.aadhaar);
     this.gender = props.gender || 'male';
     this.socialCategory = props.socialCategory || 'General';
-    this.landDetails = toString(props.landDetails);
-    this.khasraNo = toString(props.khasraNo);
+    this.landDetails = parseLandDetails(props.landDetails);
     this.shareAlloted = props.shareAlloted || 0;
     this.faceValue = props.faceValue || 100;
     this.totalPaid = props.totalPaid || 0;
@@ -136,16 +166,21 @@ export class Shareholder {
     return this.fatherName.length >= 2 && this.fatherName.length <= 100;
   }
 
-  // New validation methods for pond and cattle details
+  // Updated validation methods
+  isValidLandDetails(): boolean {
+    if (!this.landDetails) return true; // Optional field
+    return typeof this.landDetails.area === 'number' && 
+           this.landDetails.area >= 0 && 
+           Number.isFinite(this.landDetails.area);
+  }
+
   isValidPondDetails(): boolean {
     if (!Array.isArray(this.pondDetails)) return false;
     return this.pondDetails.every(pond => 
-      typeof pond.size === 'number' && 
-      typeof pond.count === 'number' && 
-      pond.size > 0 && 
-      pond.count > 0 &&
-      Number.isFinite(pond.size) &&
-      Number.isInteger(pond.count)
+      typeof pond.area === 'number' && 
+      pond.area >= 0 &&
+      Number.isFinite(pond.area) &&
+      (pond.khasraNumber === undefined || typeof pond.khasraNumber === 'string')
     );
   }
 
@@ -185,13 +220,17 @@ export class Shareholder {
     return 'Unpaid';
   }
 
-  // New business logic methods
+  // Updated business logic methods
+  getLandArea(): number {
+    return this.landDetails?.area || 0;
+  }
+
   getTotalPondArea(): number {
-    return this.pondDetails.reduce((total, pond) => total + (pond.size * pond.count), 0);
+    return this.pondDetails.reduce((total, pond) => total + pond.area, 0);
   }
 
   getTotalPondCount(): number {
-    return this.pondDetails.reduce((total, pond) => total + pond.count, 0);
+    return this.pondDetails.length;
   }
 
   getTotalCattleCount(): number {
@@ -206,6 +245,14 @@ export class Shareholder {
     return cattleByType;
   }
 
+  // New method to determine shareholder type
+  getShareholderType(): 'land' | 'pond' | 'cattle' | 'none' {
+    if (this.landDetails && this.landDetails.area > 0) return 'land';
+    if (this.pondDetails.length > 0) return 'pond';
+    if (this.cattleDetails.length > 0) return 'cattle';
+    return 'none';
+  }
+
   // Utility methods
   toJSON(): Record<string, any> {
     const obj: Record<string, any> = {
@@ -216,8 +263,7 @@ export class Shareholder {
       aadhaar: this.aadhaar,
       gender: this.gender,
       social_category: this.socialCategory,
-      land_details: this.landDetails,
-      khasra_no: this.khasraNo,
+      land_details: this.landDetails ? JSON.stringify(this.landDetails) : null,
       share_alloted: this.shareAlloted,
       face_value: this.faceValue,
       total_paid: this.totalPaid,
@@ -243,7 +289,6 @@ export class Shareholder {
       gender: this.gender,
       socialCategory: this.socialCategory,
       landDetails: this.landDetails,
-      khasraNo: this.khasraNo,
       shareAlloted: this.shareAlloted,
       faceValue: this.faceValue,
       totalPaid: this.totalPaid,
@@ -254,10 +299,12 @@ export class Shareholder {
       isDirector: this.isDirector,
       pondDetails: this.pondDetails,
       cattleDetails: this.cattleDetails,
+      landArea: this.getLandArea(),
       totalPondArea: this.getTotalPondArea(),
       totalPondCount: this.getTotalPondCount(),
       totalCattleCount: this.getTotalCattleCount(),
       cattleByType: this.getCattleByType(),
+      shareholderType: this.getShareholderType(),
       createdAt: this.createdAt,
       updatedAt: this.updatedAt,
     };
@@ -295,20 +342,6 @@ export class Shareholder {
       errors.push('Aadhaar number must be exactly 12 digits');
     }
 
-    // Land details validation
-    if (!this.landDetails.trim()) {
-      errors.push('Land details are required');
-    } else if (this.landDetails.length > 500) {
-      errors.push('Land details must not exceed 500 characters');
-    }
-
-    // Khasra number validation
-    if (!this.khasraNo.trim()) {
-      errors.push('Khasra number is required');
-    } else if (this.khasraNo.length > 50) {
-      errors.push('Khasra number must not exceed 50 characters');
-    }
-
     // Share alloted validation
     if (this.shareAlloted <= 0) {
       errors.push('Share alloted must be greater than 0');
@@ -340,9 +373,14 @@ export class Shareholder {
       errors.push('Social category must be General, SC, ST, or OBC');
     }
 
+    // Land details validation (optional)
+    if (!this.isValidLandDetails()) {
+      errors.push('Land details must be valid - area must be a non-negative number');
+    }
+
     // Pond details validation
     if (!this.isValidPondDetails()) {
-      errors.push('Pond details must be valid - each pond must have positive size (hectares) and count');
+      errors.push('Pond details must be valid - each pond must have a non-negative area');
     }
 
     // Cattle details validation
@@ -368,7 +406,6 @@ export class Shareholder {
       gender: row.gender,
       socialCategory: row.social_category,
       landDetails: row.land_details,
-      khasraNo: row.khasra_no,
       shareAlloted: row.share_alloted,
       faceValue: row.face_value,
       totalPaid: row.total_paid,

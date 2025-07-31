@@ -15,19 +15,19 @@ export async function GET(
       return NextResponse.json({ error: "ID parameter is required" }, { status: 400 });
     }
 
-    console.log('Fetching shareholder with ID:', id); // Debug log
+    console.log('Fetching shareholder with ID:', id);
 
     const result = await getShareholderById(id);
-    console.log("this is result at the api of shareholder by id ", result)
+    console.log("Fetched shareholder result:", result?.toDisplayObject());
     
     if (!result) {
       return NextResponse.json({ error: "Shareholder not found" }, { status: 404 });
     }
 
-    // Use toDisplayObject() instead of letting NextResponse.json() call toJSON()
+    // Use toDisplayObject() for consistent camelCase response with new structure
     return NextResponse.json(result.toDisplayObject());
   } catch (error) {
-    console.error('Error in GET /api/shareholder/[id]:', error); // Debug log
+    console.error('Error in GET /api/shareholder/[id]:', error);
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Unknown error" },
       { status: 500 }
@@ -42,20 +42,25 @@ export async function PUT(
   try {
     const params = await segmentData.params;
     const { id } = params;
-    const body: Shareholder = await req.json();
+    const body = await req.json();
 
     if (!id) {
       return NextResponse.json({ error: 'Missing id in URL' }, { status: 400 });
     }
 
-    console.log('Updating shareholder with ID:', id); // Debug log
+    console.log('Updating shareholder with ID:', id);
+    console.log('Update data:', body);
 
     const result = await updateShareholder(id, body);
     
+    if (!result) {
+      return NextResponse.json({ error: 'Failed to update shareholder' }, { status: 500 });
+    }
+
     // Use toDisplayObject() for consistent camelCase response
-    return NextResponse.json(result?.toDisplayObject());
+    return NextResponse.json(result.toDisplayObject());
   } catch (error) {
-    console.error('Error in PUT /api/shareholder/[id]:', error); // Debug log
+    console.error('Error in PUT /api/shareholder/[id]:', error);
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Unknown error" },
       { status: 500 }
@@ -75,19 +80,20 @@ export async function DELETE(
       return NextResponse.json({ error: 'Missing shareholder id in URL' }, { status: 400 });
     }
 
-    console.log('Deleting shareholder with ID:', id); // Debug log
+    console.log('Deleting shareholder with ID:', id);
 
     const result = await deleteShareholder(id);
     
-    // For delete, you might want to return a simple success message
-    // or use toDisplayObject() if you're returning the deleted record
+    if (!result) {
+      return NextResponse.json({ error: 'Failed to delete shareholder' }, { status: 500 });
+    }
+
     return NextResponse.json({ 
       success: true, 
-      message: 'Shareholder deleted successfully',
-      deletedRecord: result ? result : null 
+      message: 'Shareholder deleted successfully'
     });
   } catch (error) {
-    console.error('Error in DELETE /api/shareholder/[id]:', error); // Debug log
+    console.error('Error in DELETE /api/shareholder/[id]:', error);
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Unknown error" },
       { status: 500 }

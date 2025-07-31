@@ -1,6 +1,7 @@
 import { Shareholder } from '@/server/features/ShareHolder/core/entities/ShareHolder'
-import { ShareholderProps } from '@/server/features/ShareHolder/core/entities/ShareHolder'
+import { ShareholderProps, LandDetail } from '@/server/features/ShareHolder/core/entities/ShareHolder'
 import { createClient } from '@/utils/supabase/server'
+
 // Helper function to safely parse JSON strings
 const safeJsonParse = (jsonString: any): any[] => {
   // Handle null, undefined, or empty values
@@ -31,7 +32,42 @@ const safeJsonParse = (jsonString: any): any[] => {
   }
 };
 
-// Updated dbRowToShareholderProps function
+// Helper function to safely parse land details JSON
+const safeLandDetailsParse = (jsonString: any): LandDetail | undefined => {
+  // Handle null, undefined, or empty values
+  if (!jsonString || jsonString === null || jsonString === undefined) {
+    return undefined;
+  }
+  
+  // If it's already an object with area property
+  if (typeof jsonString === 'object' && jsonString.area !== undefined) {
+    return {
+      area: Number(jsonString.area) || 0,
+      khasraNumber: jsonString.khasraNumber || undefined
+    };
+  }
+  
+  // Convert to string and trim whitespace
+  const str = String(jsonString).trim();
+  
+  // Handle empty string or string "null"
+  if (str === '' || str === 'null' || str === 'undefined') {
+    return undefined;
+  }
+  
+  try {
+    const parsed = JSON.parse(str);
+    return {
+      area: Number(parsed.area) || 0,
+      khasraNumber: parsed.khasraNumber || undefined
+    };
+  } catch (error) {
+    console.warn('Failed to parse land details JSON:', str, error);
+    return undefined;
+  }
+};
+
+// Convert database row to ShareholderProps
 function dbRowToShareholderProps(data: any): ShareholderProps {
   return {
     id: data.id,
@@ -42,8 +78,7 @@ function dbRowToShareholderProps(data: any): ShareholderProps {
     aadhaar: data.aadhaar,
     gender: data.gender,
     socialCategory: data.social_category,
-    landDetails: data.land_details,
-    khasraNo: data.khasra_no,
+    landDetails: safeLandDetailsParse(data.land_details),
     shareAlloted: data.share_alloted,
     faceValue: data.face_value,
     totalPaid: data.total_paid,
@@ -58,6 +93,7 @@ function dbRowToShareholderProps(data: any): ShareholderProps {
 export async function createShareholder(shareholder: ShareholderProps): Promise<Shareholder | null> {
   const supabase = await createClient()
   const shareholderData = new Shareholder(shareholder)
+  console.log("share holder data giving to tojson format ",shareholderData)
   const shareholderDataParsed = shareholderData.toJSON()
   
   try {
@@ -90,8 +126,7 @@ export async function updateShareholder(id: string, shareholder: Partial<Shareho
   if (shareholder.aadhaar !== undefined) updateData.aadhaar = shareholder.aadhaar
   if (shareholder.gender !== undefined) updateData.gender = shareholder.gender
   if (shareholder.socialCategory !== undefined) updateData.social_category = shareholder.socialCategory
-  if (shareholder.landDetails !== undefined) updateData.land_details = shareholder.landDetails
-  if (shareholder.khasraNo !== undefined) updateData.khasra_no = shareholder.khasraNo
+  if (shareholder.landDetails !== undefined) updateData.land_details = shareholder.landDetails ? JSON.stringify(shareholder.landDetails) : null
   if (shareholder.shareAlloted !== undefined) updateData.share_alloted = shareholder.shareAlloted
   if (shareholder.faceValue !== undefined) updateData.face_value = shareholder.faceValue
   if (shareholder.totalPaid !== undefined) updateData.total_paid = shareholder.totalPaid
@@ -193,7 +228,8 @@ export async function getShareholderById(id: string): Promise<Shareholder | null
     if (error) {
       throw new Error(error.message)
     }
-console.log(data ? new Shareholder(dbRowToShareholderProps(data)):null)
+
+    console.log(data ? new Shareholder(dbRowToShareholderProps(data)):null)
     return data ? new Shareholder(dbRowToShareholderProps(data)) : null
   } catch (error) {
     console.error('Error fetching shareholder by ID:', error)
@@ -365,7 +401,35 @@ export async function getExistingShareholders(aadhaarNumbers: string[], fpoId?: 
   }
 }
 
-// Additional utility functions for pond and cattle analysis
+// Utility functions for filtering shareholders by type
+export async function getShareholdersWithLand(fpoId?: string): Promise<Shareholder[]> {
+  const supabase = await createClient()
+  
+  try {
+    let query = supabase
+      .from('shareholders')
+      .select('*')
+      .not('land_details', 'is', null)
+
+    if (fpoId) {
+      query = query.eq('fpo_id', fpoId)
+    }
+
+    const { data, error } = await query
+
+    if (error) {
+      throw new Error(error.message)
+    }
+
+    // Filter out shareholders with land area > 0
+    const shareholders = data ? data.map(row => new Shareholder(dbRowToShareholderProps(row))) : []
+    return shareholders.filter(s => s.landDetails && s.landDetails.area > 0)
+  } catch (error) {
+    console.error('Error fetching shareholders with land:', error)
+    return []
+  }
+}
+
 export async function getShareholdersWithPonds(fpoId?: string): Promise<Shareholder[]> {
   const supabase = await createClient()
   
@@ -417,5 +481,19 @@ export async function getShareholdersWithCattle(fpoId?: string): Promise<Shareho
   } catch (error) {
     console.error('Error fetching shareholders with cattle:', error)
     return []
+  }
+}
+
+// Get shareholders by type
+export async function getShareholdersByType(type: 'land' | 'pond' | 'cattle', fpoId?: string): Promise<Shareholder[]> {
+  switch (type) {
+    case 'land':
+      return getShareholdersWithLand(fpoId)
+    case 'pond':
+      return getShareholdersWithPonds(fpoId)
+    case 'cattle':
+      return getShareholdersWithCattle(fpoId)
+    default:
+      return []
   }
 }
