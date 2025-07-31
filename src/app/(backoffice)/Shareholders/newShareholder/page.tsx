@@ -5,23 +5,29 @@ import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
-import { ChevronLeft, Upload, Plus, Trash2, Fish, Heart } from "lucide-react";
+import { ChevronLeft, Upload } from "lucide-react";
 import ExcelJS from "exceljs";
-import { useUserDetails } from "@/contexts/UserDetailsContext";
 import { toast } from 'react-toastify';
-import { CATTLE_TYPES, GENDER_OPTIONS, SOCIAL_CATEGORIES } from '@/server/features/ShareHolder/core/entities/ShareHolder'; // Adjust the path as needed
+import { PersonalInfoForm } from '@/components/shareholders/forms/PersonalInfoForm';
+import { ShareDetailsForm } from '@/components/shareholders/forms/ShareDetailsForm';
+import { MemberHoldingsForm } from '@/components/shareholders/forms/MemberHoldingsForm';
+import { CATTLE_TYPES } from '@/server/features/ShareHolder/core/entities/ShareHolder';
+import { useAppDispatch, useAppSelector } from "@/store/hooks";
+
+interface LandDetail {
+  area: number;
+  khasraNumber?: string;
+}
 
 interface PondDetail {
-  size: number; // in hectares
-  count: number; // number of ponds of this size
+  area: number;
+  khasraNumber?: string;
 }
 
 interface CattleDetail {
-  type: string; // e.g., "Cow", "Buffalo", "Goat", "Sheep", etc.
-  count: number; // number of cattle of this type
+  type: string;
+  count: number;
 }
 
 interface Shareholder {
@@ -33,8 +39,7 @@ interface Shareholder {
   aadhaar: string;
   gender: "male" | "female" | "other";
   socialCategory: "General" | "SC" | "ST" | "OBC";
-  landDetails: string;
-  khasraNo: string;
+  landDetails?: LandDetail;
   shareAlloted: number;
   faceValue: number;
   totalPaid: number;
@@ -43,9 +48,14 @@ interface Shareholder {
   cattleDetails: CattleDetail[];
 }
 
-
 export default function AddNewShareholderPage() {
   const router = useRouter();
+  
+  // Redux state
+  const dispatch = useAppDispatch();
+  const user = useAppSelector((state) => state.user);
+
+  const fpoIdOfUser = user.fpoId;
 
   const [form, setForm] = useState<Shareholder>({
     name: "",
@@ -54,8 +64,6 @@ export default function AddNewShareholderPage() {
     aadhaar: "",
     gender: "male",
     socialCategory: "General",
-    landDetails: "",
-    khasraNo: "",
     shareAlloted: 0,
     faceValue: 100,
     totalPaid: 0,
@@ -64,60 +72,60 @@ export default function AddNewShareholderPage() {
     cattleDetails: []
   });
 
+  const [holdingType, setHoldingType] = useState<'land' | 'pond' | 'cattle' | null>(null);
   const [bulkData, setBulkData] = useState<Shareholder[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  
+
+  // Check if fpoId is available on component mount
+  useEffect(() => {
+    if (!fpoIdOfUser) {
+      toast.error("FPO ID not found. Please ensure you are logged in properly.");
+      router.back();
+    }
+  }, [fpoIdOfUser, router]);
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value, type } = e.target;
     const newValue = type === "number" ? Number(value) : value;
     setForm({ ...form, [name]: newValue });
   };
 
-  const handleSelectChange = (name: keyof Shareholder, value: any) => {
+  const handleSelectChange = (name: string, value: any) => {
     setForm({ ...form, [name]: value });
   };
 
-  // Pond Details Functions
-  const addPondDetail = () => {
-    setForm({
-      ...form,
-      pondDetails: [...form.pondDetails, { size: 0, count: 0 }]
-    });
+  const handleHoldingTypeChange = (type: 'land' | 'pond' | 'cattle' | null) => {
+    setHoldingType(type);
+    
+    // Clear all holding data when changing type
+    setForm(prev => ({
+      ...prev,
+      landDetails: undefined,
+      pondDetails: [],
+      cattleDetails: []
+    }));
   };
 
-  const updatePondDetail = (index: number, field: keyof PondDetail, value: number) => {
-    const updatedPondDetails = [...form.pondDetails];
-    updatedPondDetails[index] = { ...updatedPondDetails[index], [field]: value };
-    setForm({ ...form, pondDetails: updatedPondDetails });
+  const handleLandDetailsChange = (landDetails: LandDetail | undefined) => {
+    setForm(prev => ({ ...prev, landDetails }));
   };
 
-  const removePondDetail = (index: number) => {
-    const updatedPondDetails = form.pondDetails.filter((_, i) => i !== index);
-    setForm({ ...form, pondDetails: updatedPondDetails });
+  const handlePondDetailsChange = (pondDetails: PondDetail[]) => {
+    setForm(prev => ({ ...prev, pondDetails }));
   };
 
-  // Cattle Details Functions
-  const addCattleDetail = () => {
-    setForm({
-      ...form,
-      cattleDetails: [...form.cattleDetails, { type: "", count: 0 }]
-    });
-  };
-
-  const updateCattleDetail = (index: number, field: keyof CattleDetail, value: string | number) => {
-    const updatedCattleDetails = [...form.cattleDetails];
-    updatedCattleDetails[index] = { ...updatedCattleDetails[index], [field]: value };
-    setForm({ ...form, cattleDetails: updatedCattleDetails });
-  };
-
-  const removeCattleDetail = (index: number) => {
-    const updatedCattleDetails = form.cattleDetails.filter((_, i) => i !== index);
-    setForm({ ...form, cattleDetails: updatedCattleDetails });
+  const handleCattleDetailsChange = (cattleDetails: CattleDetail[]) => {
+    setForm(prev => ({ ...prev, cattleDetails }));
   };
 
   const handleExcelUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    if (!fpoIdOfUser) {
+      toast.error("FPO ID not available. Cannot process upload.");
+      return;
+    }
 
     try {
       const workbook = new ExcelJS.Workbook();
@@ -127,29 +135,20 @@ export default function AddNewShareholderPage() {
 
       // Process data rows (skip first 4 rows: main headers, sub headers, sample data, instructions)
       worksheet.eachRow((row, rowNumber) => {
-        if (rowNumber <= 4) return; // Skip header and instruction rows
+        if (rowNumber <= 4) return;
         
         const values = row.values as any[];
         
-        // Helper function to safely get cell value
-        const getCellValue = (index: number): any => {
-          return values[index] || '';
-        };
-
-        // Helper function to safely convert to string
+        const getCellValue = (index: number): any => values[index] || '';
         const toString = (value: any): string => {
           if (value === null || value === undefined) return '';
           return String(value).trim();
         };
-
-        // Helper function to safely convert to number
         const toNumber = (value: any): number => {
           if (value === null || value === undefined || value === '') return 0;
           const num = Number(value);
           return isNaN(num) ? 0 : num;
         };
-
-        // Helper function to safely convert to boolean
         const toBoolean = (value: any): boolean => {
           if (typeof value === 'boolean') return value;
           if (typeof value === 'string') {
@@ -160,39 +159,51 @@ export default function AddNewShareholderPage() {
           return false;
         };
 
-        // Extract basic information (columns A-L)
+        // Extract basic information
         const name = toString(getCellValue(1));
         const fatherName = toString(getCellValue(2));
         const mobile = toString(getCellValue(3));
         const aadhaar = toString(getCellValue(4));
         const gender = toString(getCellValue(5)) || 'male';
         const socialCategory = toString(getCellValue(6)) || 'General';
-        const landDetails = toString(getCellValue(7));
-        const khasraNo = toString(getCellValue(8));
-        const shareAlloted = toNumber(getCellValue(9));
-        const faceValue = toNumber(getCellValue(10)) || 100;
-        const totalPaid = toNumber(getCellValue(11));
-        const isDirector = toBoolean(getCellValue(12));
+        const shareAlloted = toNumber(getCellValue(7));
+        const faceValue = toNumber(getCellValue(8)) || 100;
+        const totalPaid = toNumber(getCellValue(9));
+        const isDirector = toBoolean(getCellValue(10));
 
-        // Extract pond details (columns M-R: up to 3 pond entries)
+        // Extract land details (if any)
+        const landArea = toNumber(getCellValue(11));
+        const landKhasra = toString(getCellValue(12));
+        let landDetails: LandDetail | undefined = undefined;
+        if (landArea > 0) {
+          landDetails = {
+            area: landArea,
+            khasraNumber: landKhasra || undefined
+          };
+        }
+
+        // Extract pond details
         const pondDetails: PondDetail[] = [];
         for (let i = 0; i < 3; i++) {
-          const sizeIndex = 13 + (i * 2); // M, O, Q
-          const countIndex = 14 + (i * 2); // N, P, R
+          const areaIndex = 13 + (i * 2);
+          const khasraIndex = 14 + (i * 2);
           
-          const size = toNumber(getCellValue(sizeIndex));
-          const count = toNumber(getCellValue(countIndex));
+          const area = toNumber(getCellValue(areaIndex));
+          const khasraNumber = toString(getCellValue(khasraIndex));
           
-          if (size > 0 && count > 0) {
-            pondDetails.push({ size, count });
+          if (area > 0) {
+            pondDetails.push({ 
+              area, 
+              khasraNumber: khasraNumber || undefined 
+            });
           }
         }
 
-        // Extract cattle details (columns S-Z: up to 4 cattle entries)
+        // Extract cattle details
         const cattleDetails: CattleDetail[] = [];
         for (let i = 0; i < 4; i++) {
-          const typeIndex = 19 + (i * 2); // S, U, W, Y
-          const countIndex = 20 + (i * 2); // T, V, X, Z
+          const typeIndex = 19 + (i * 2);
+          const countIndex = 20 + (i * 2);
           
           const type = toString(getCellValue(typeIndex));
           const count = toNumber(getCellValue(countIndex));
@@ -205,6 +216,7 @@ export default function AddNewShareholderPage() {
         // Only add row if it has essential data
         if (name && fatherName && mobile && aadhaar) {
           const shareholder: Shareholder = {
+            fpoId: fpoIdOfUser, // Add fpoId to each shareholder
             name,
             fatherName,
             mobile,
@@ -212,7 +224,6 @@ export default function AddNewShareholderPage() {
             gender: gender as "male" | "female" | "other",
             socialCategory: socialCategory as "General" | "SC" | "ST" | "OBC",
             landDetails,
-            khasraNo,
             shareAlloted,
             faceValue,
             totalPaid,
@@ -237,7 +248,7 @@ export default function AddNewShareholderPage() {
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet("Shareholders");
 
-    // Set column widths for better readability
+    // Set column widths
     sheet.columns = [
       { width: 15 }, // A - name
       { width: 15 }, // B - fatherName
@@ -245,18 +256,18 @@ export default function AddNewShareholderPage() {
       { width: 15 }, // D - aadhaar
       { width: 10 }, // E - gender
       { width: 12 }, // F - socialCategory
-      { width: 25 }, // G - landDetails
-      { width: 12 }, // H - khasraNo
-      { width: 12 }, // I - shareAlloted
-      { width: 10 }, // J - faceValue
-      { width: 12 }, // K - totalPaid
-      { width: 10 }, // L - isDirector
-      { width: 12 }, // M - pond_size_1
-      { width: 12 }, // N - pond_count_1
-      { width: 12 }, // O - pond_size_2
-      { width: 12 }, // P - pond_count_2
-      { width: 12 }, // Q - pond_size_3
-      { width: 12 }, // R - pond_count_3
+      { width: 12 }, // G - shareAlloted
+      { width: 10 }, // H - faceValue
+      { width: 12 }, // I - totalPaid
+      { width: 10 }, // J - isDirector
+      { width: 12 }, // K - land_area
+      { width: 12 }, // L - land_khasra
+      { width: 12 }, // M - pond_area_1
+      { width: 12 }, // N - pond_khasra_1
+      { width: 12 }, // O - pond_area_2
+      { width: 12 }, // P - pond_khasra_2
+      { width: 12 }, // Q - pond_area_3
+      { width: 12 }, // R - pond_khasra_3
       { width: 12 }, // S - cattle_type_1
       { width: 12 }, // T - cattle_count_1
       { width: 12 }, // U - cattle_type_2
@@ -267,12 +278,13 @@ export default function AddNewShareholderPage() {
       { width: 12 }, // Z - cattle_count_4
     ];
 
-    // Main headers row (Row 1)
+    // Main headers row
     const mainHeaders = [
-      "Personal Information", "", "", "", "", "", "", "",
+      "Personal Information", "", "", "", "", "",
       "Share Details", "", "", "",
-      "Pond Details", "", "", "", "", "",
-      "Cattle Details", "", "", "", "", "", "", ""
+      "Land Holdings", "",
+      "Pond Holdings", "", "", "", "", "",
+      "Cattle Holdings", "", "", "", "", "", "", ""
     ];
     
     const mainHeaderRow = sheet.addRow(mainHeaders);
@@ -295,16 +307,18 @@ export default function AddNewShareholderPage() {
     });
 
     // Merge cells for main headers
-    sheet.mergeCells('A1:H1'); // Personal Information
-    sheet.mergeCells('I1:L1'); // Share Details
-    sheet.mergeCells('M1:R1'); // Pond Details
-    sheet.mergeCells('S1:Z1'); // Cattle Details
+    sheet.mergeCells('A1:F1'); // Personal Information
+    sheet.mergeCells('G1:J1'); // Share Details
+    sheet.mergeCells('K1:L1'); // Land Holdings
+    sheet.mergeCells('M1:R1'); // Pond Holdings
+    sheet.mergeCells('S1:Z1'); // Cattle Holdings
 
-    // Sub headers row (Row 2)
+    // Sub headers row
     const subHeaders = [
       "Name*", "Father Name*", "Mobile*", "Aadhaar*", "Gender", "Social Category",
-      "Land Details*", "Khasra No*", "Shares Alloted*", "Face Value*", "Total Paid", "Is Director",
-      "Size 1 (Ha)", "Count 1", "Size 2 (Ha)", "Count 2", "Size 3 (Ha)", "Count 3",
+      "Shares*", "Face Value*", "Total Paid", "Is Director",
+      "Area (Ha)", "Khasra No",
+      "Area 1 (Ha)", "Khasra 1", "Area 2 (Ha)", "Khasra 2", "Area 3 (Ha)", "Khasra 3",
       "Type 1", "Count 1", "Type 2", "Count 2", "Type 3", "Count 3", "Type 4", "Count 4"
     ];
     
@@ -327,17 +341,18 @@ export default function AddNewShareholderPage() {
       };
     });
 
-    // Add sample data row (Row 3)
+    // Add sample data row
     const sampleData = [
       "John Doe", "Robert Doe", "9876543210", "123456789012", "male", "General",
-      "Village ABC, Plot 123", "K123", 10, 100, 500, "false",
-      0.5, 2, 1.0, 1, "", "", // Pond details: 0.5 ha with 2 ponds, 1.0 ha with 1 pond
-      "Cow", 3, "Buffalo", 2, "Goat", 5, "", "" // Cattle: 3 cows, 2 buffalos, 5 goats
+      10, 100, 500, "false",
+      2.5, "K123", // Land: 2.5 hectares, khasra K123
+      "", "", 0.5, "P1", 1.0, "P2", // Pond: 0.5 ha (P1), 1.0 ha (P2)
+      "", "", "", "", "Cow", 3, "Buffalo", 2 // Cattle: 3 cows, 2 buffalos
     ];
     
     const sampleRow = sheet.addRow(sampleData);
     
-    // Style sample data row
+    // Style sample data
     sampleRow.eachCell((cell, colNumber) => {
       cell.fill = {
         type: 'pattern',
@@ -353,17 +368,18 @@ export default function AddNewShareholderPage() {
       };
     });
 
-    // Add instructions row (Row 4)
+    // Add instructions row
     const instructionsData = [
-      "Enter farmer name", "Enter father's name", "10-digit number", "12-digit number", "male/female/other", "General/SC/ST/OBC",
-      "Land description", "Survey number", "Number of shares", "Price per share", "Amount paid", "true/false",
-      "Hectares", "Number", "Hectares", "Number", "Hectares", "Number",
+      "Enter name", "Father's name", "10-digit number", "12-digit number", "male/female/other", "General/SC/ST/OBC",
+      "Number of shares", "Price per share", "Amount paid", "true/false",
+      "Hectares", "Survey number",
+      "Hectares", "Survey number", "Hectares", "Survey number", "Hectares", "Survey number",
       "Cow/Buffalo/etc", "Number", "Cow/Buffalo/etc", "Number", "Cow/Buffalo/etc", "Number", "Cow/Buffalo/etc", "Number"
     ];
     
     const instructionRow = sheet.addRow(instructionsData);
     
-    // Style instructions row
+    // Style instructions
     instructionRow.eachCell((cell, colNumber) => {
       cell.fill = {
         type: 'pattern',
@@ -386,10 +402,12 @@ export default function AddNewShareholderPage() {
     sheet.getRow(3).height = 20;
     sheet.getRow(4).height = 30;
 
-    // Add data validation for specific columns
+    // Add data validation
+    const cattleTypes = `"${CATTLE_TYPES.join(',')}"`;
+    
     // Gender validation
     sheet.getColumn('E').eachCell((cell, rowNumber) => {
-      if (rowNumber > 4) { // Skip header rows
+      if (rowNumber > 4) {
         cell.dataValidation = {
           type: 'list',
           allowBlank: true,
@@ -410,7 +428,7 @@ export default function AddNewShareholderPage() {
     });
 
     // Is Director validation
-    sheet.getColumn('L').eachCell((cell, rowNumber) => {
+    sheet.getColumn('J').eachCell((cell, rowNumber) => {
       if (rowNumber > 4) {
         cell.dataValidation = {
           type: 'list',
@@ -420,9 +438,7 @@ export default function AddNewShareholderPage() {
       }
     });
 
-    // Cattle type validation for cattle type columns
-    // const cattleTypes = '"Cow,Buffalo,Goat,Sheep,Ox,Bull,Calf,Other"';
-const cattleTypes = `"${CATTLE_TYPES.join(',')}"`;
+    // Cattle type validation
     ['S', 'U', 'W', 'Y'].forEach(col => {
       sheet.getColumn(col).eachCell((cell, rowNumber) => {
         if (rowNumber > 4) {
@@ -444,6 +460,11 @@ const cattleTypes = `"${CATTLE_TYPES.join(',')}"`;
   };
 
   const validateForm = (): boolean => {
+    if (!fpoIdOfUser) {
+      toast.error("FPO ID not available. Cannot submit.");
+      return false;
+    }
+    
     if (!form.name.trim()) {
       toast.error("Name is required");
       return false;
@@ -460,14 +481,6 @@ const cattleTypes = `"${CATTLE_TYPES.join(',')}"`;
       toast.error("Valid 12-digit Aadhaar number is required");
       return false;
     }
-    if (!form.landDetails.trim()) {
-      toast.error("Land details are required");
-      return false;
-    }
-    if (!form.khasraNo.trim()) {
-      toast.error("Khasra number is required");
-      return false;
-    }
     if (form.shareAlloted <= 0) {
       toast.error("Share alloted must be greater than 0");
       return false;
@@ -481,29 +494,48 @@ const cattleTypes = `"${CATTLE_TYPES.join(',')}"`;
       return false;
     }
 
-    // Validate pond details
-    for (let i = 0; i < form.pondDetails.length; i++) {
-      const pond = form.pondDetails[i];
-      if (pond.size <= 0) {
-        toast.error(`Pond ${i + 1}: Size must be greater than 0`);
-        return false;
-      }
-      if (pond.count <= 0) {
-        toast.error(`Pond ${i + 1}: Count must be greater than 0`);
+    // Validate holdings based on selected type
+    if (!holdingType) {
+      toast.error("Please select a holding type (Land, Pond, or Cattle)");
+      return false;
+    }
+
+    if (holdingType === 'land') {
+      if (!form.landDetails || form.landDetails.area <= 0) {
+        toast.error("Land area is required and must be greater than 0");
         return false;
       }
     }
 
-    // Validate cattle details
-    for (let i = 0; i < form.cattleDetails.length; i++) {
-      const cattle = form.cattleDetails[i];
-      if (!cattle.type.trim()) {
-        toast.error(`Cattle ${i + 1}: Type is required`);
+    if (holdingType === 'pond') {
+      if (form.pondDetails.length === 0) {
+        toast.error("At least one pond detail is required");
         return false;
       }
-      if (cattle.count <= 0) {
-        toast.error(`Cattle ${i + 1}: Count must be greater than 0`);
+      for (let i = 0; i < form.pondDetails.length; i++) {
+        const pond = form.pondDetails[i];
+        if (pond.area <= 0) {
+          toast.error(`Pond ${i + 1}: Area must be greater than 0`);
+          return false;
+        }
+      }
+    }
+
+    if (holdingType === 'cattle') {
+      if (form.cattleDetails.length === 0) {
+        toast.error("At least one cattle detail is required");
         return false;
+      }
+      for (let i = 0; i < form.cattleDetails.length; i++) {
+        const cattle = form.cattleDetails[i];
+        if (!cattle.type.trim()) {
+          toast.error(`Cattle ${i + 1}: Type is required`);
+          return false;
+        }
+        if (cattle.count <= 0) {
+          toast.error(`Cattle ${i + 1}: Count must be greater than 0`);
+          return false;
+        }
       }
     }
 
@@ -515,12 +547,18 @@ const cattleTypes = `"${CATTLE_TYPES.join(',')}"`;
     
     setIsSubmitting(true);
     try {
+      // Include fpoId in the form data
+      const formData = {
+        ...form,
+        fpoId: fpoIdOfUser
+      };
+
       const res = await fetch("/api/shareholder", {
         method: "POST",
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(form),
+        body: JSON.stringify(formData),
       });
 
       const result = await res.json();
@@ -534,8 +572,6 @@ const cattleTypes = `"${CATTLE_TYPES.join(',')}"`;
           aadhaar: "",
           gender: "male",
           socialCategory: "General",
-          landDetails: "",
-          khasraNo: "",
           shareAlloted: 0,
           faceValue: 100,
           totalPaid: 0,
@@ -543,6 +579,7 @@ const cattleTypes = `"${CATTLE_TYPES.join(',')}"`;
           pondDetails: [],
           cattleDetails: []
         });
+        setHoldingType(null);
       } else {
         toast.error(`Error: ${result.error}`);
       }
@@ -557,6 +594,11 @@ const cattleTypes = `"${CATTLE_TYPES.join(',')}"`;
   const handleBulkSubmit = async () => {
     if (bulkData.length === 0) {
       toast.warning("No data to submit");
+      return;
+    }
+
+    if (!fpoIdOfUser) {
+      toast.error("FPO ID not available. Cannot submit bulk data.");
       return;
     }
 
@@ -592,223 +634,68 @@ const cattleTypes = `"${CATTLE_TYPES.join(',')}"`;
     }
   };
 
+  // Don't render the form if fpoId is not available
+  if (!fpoIdOfUser) {
+    return (
+      <div className="space-y-6 p-4 md:p-6">
+        <div className="text-center">
+          <p className="text-red-600">FPO ID not found. Please ensure you are logged in properly.</p>
+          <Button onClick={() => router.back()} className="mt-4">
+            Go Back
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6 p-4 md:p-6">
       <Button className="" variant={"secondary"} onClick={() => router.back()}>
         <ChevronLeft size={12}/> Back
       </Button>
 
+      {/* Personal Information */}
       <Card>
         <CardHeader>
-          <CardTitle>Add New Shareholder</CardTitle>
+          <CardTitle>Personal Information</CardTitle>
         </CardHeader>
         <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Basic Information */}
-          <div className="space-y-4">
-            <div>
-              <Label>Name *</Label>
-              <Input name="name" value={form.name} onChange={handleChange} required />
-            </div>
-            <div>
-              <Label>Father&apos;s Name *</Label>
-              <Input name="fatherName" value={form.fatherName} onChange={handleChange} required />
-            </div>
-            <div>
-              <Label>Mobile *</Label>
-              <Input name="mobile" value={form.mobile} onChange={handleChange} placeholder="10-digit mobile number" required />
-            </div>
-            <div>
-              <Label>Aadhaar *</Label>
-              <Input name="aadhaar" value={form.aadhaar} onChange={handleChange} placeholder="12-digit Aadhaar number" required />
-            </div>
-            <div>
-              <Label>Land Details *</Label>
-              <Textarea name="landDetails" value={form.landDetails} onChange={handleChange} required />
-            </div>
-            <div>
-              <Label>Khasra No *</Label>
-              <Input name="khasraNo" value={form.khasraNo} onChange={handleChange} required />
-            </div>
-          </div>
-          
-          {/* Share and Category Information */}
-          <div className="space-y-4">
-            <div>
-              <Label>Gender</Label>
-              <Select value={form.gender} onValueChange={(v) => handleSelectChange("gender", v)}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="male">Male</SelectItem>
-                  <SelectItem value="female">Female</SelectItem>
-                  <SelectItem value="other">Other</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label>Social Category</Label>
-              <Select value={form.socialCategory} onValueChange={(v) => handleSelectChange("socialCategory", v)}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="General">General</SelectItem>
-                  <SelectItem value="SC">SC</SelectItem>
-                  <SelectItem value="ST">ST</SelectItem>
-                  <SelectItem value="OBC">OBC</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label>Shares Alloted *</Label>
-              <Input name="shareAlloted" type="number" value={form.shareAlloted} onChange={handleChange} min="1" required />
-            </div>
-            <div>
-              <Label>Face Value *</Label>
-              <Input name="faceValue" type="number" value={form.faceValue} onChange={handleChange} min="1" required />
-            </div>
-            <div>
-              <Label>Total Paid</Label>
-              <Input name="totalPaid" type="number" value={form.totalPaid} onChange={handleChange} min="0" />
-            </div>
-            <div>
-              <Label>Is Director</Label>
-              <Select value={form.isDirector.toString()} onValueChange={(v) => handleSelectChange("isDirector", v === "true")}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="true">Yes</SelectItem>
-                  <SelectItem value="false">No</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
+          <PersonalInfoForm
+            form={{
+              name: form.name,
+              fatherName: form.fatherName,
+              mobile: form.mobile,
+              aadhaar: form.aadhaar,
+              gender: form.gender,
+              socialCategory: form.socialCategory
+            }}
+            onChange={handleChange}
+            onSelectChange={handleSelectChange}
+          />
+          <ShareDetailsForm
+            form={{
+              shareAlloted: form.shareAlloted,
+              faceValue: form.faceValue,
+              totalPaid: form.totalPaid,
+              isDirector: form.isDirector
+            }}
+            onChange={handleChange}
+            onSelectChange={handleSelectChange}
+          />
         </CardContent>
       </Card>
 
-      {/* Pond Details Section */}
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle className="flex items-center gap-2">
-            <Fish className="w-5 h-5" />
-            Pond Details
-          </CardTitle>
-          <Button onClick={addPondDetail} variant="outline" size="sm">
-            <Plus className="w-4 h-4 mr-2" />
-            Add Pond
-          </Button>
-        </CardHeader>
-        <CardContent>
-          {form.pondDetails.length === 0 ? (
-            <p className="text-gray-500 text-center py-4">No pond details added. Click "Add Pond" to get started.</p>
-          ) : (
-            <div className="space-y-3">
-              {form.pondDetails.map((pond, index) => (
-                <div key={index} className="flex items-center gap-4 p-3 border rounded-lg">
-                  <div className="flex-1">
-                    <Label className="text-sm">Size (Hectares)</Label>
-                    <Input
-                      type="number"
-                      step="0.01"
-                      min="0.01"
-                      value={pond.size}
-                      onChange={(e) => updatePondDetail(index, 'size', Number(e.target.value))}
-                      placeholder="e.g., 0.5"
-                    />
-                  </div>
-                  <div className="flex-1">
-                    <Label className="text-sm">Number of Ponds</Label>
-                    <Input
-                      type="number"
-                      min="1"
-                      value={pond.count}
-                      onChange={(e) => updatePondDetail(index, 'count', Number(e.target.value))}
-                      placeholder="e.g., 2"
-                    />
-                  </div>
-                  <Button
-                    onClick={() => removePondDetail(index)}
-                    variant="outline"
-                    size="sm"
-                    className="text-red-600 hover:text-red-700"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </Button>
-                </div>
-              ))}
-              {form.pondDetails.length > 0 && (
-                <div className="text-sm text-gray-600 mt-2">
-                  Total: {form.pondDetails.reduce((total, pond) => total + (pond.size * pond.count), 0).toFixed(2)} hectares 
-                  ({form.pondDetails.reduce((total, pond) => total + pond.count, 0)} ponds)
-                </div>
-              )}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Cattle Details Section */}
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle className="flex items-center gap-2">
-            <Heart className="w-5 h-5" />
-            Cattle Details
-          </CardTitle>
-          <Button onClick={addCattleDetail} variant="outline" size="sm">
-            <Plus className="w-4 h-4 mr-2" />
-            Add Cattle
-          </Button>
-        </CardHeader>
-        <CardContent>
-          {form.cattleDetails.length === 0 ? (
-            <p className="text-gray-500 text-center py-4">No cattle details added. Click "Add Cattle" to get started.</p>
-          ) : (
-            <div className="space-y-3">
-              {form.cattleDetails.map((cattle, index) => (
-                <div key={index} className="flex items-center gap-4 p-3 border rounded-lg">
-                  <div className="flex-1">
-                    <Label className="text-sm">Cattle Type</Label>
-                    <Select
-                      value={cattle.type}
-                      onValueChange={(value) => updateCattleDetail(index, 'type', value)}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select cattle type" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {CATTLE_TYPES.map((type) => (
-                          <SelectItem key={type} value={type}>
-                            {type}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="flex-1">
-                    <Label className="text-sm">Count</Label>
-                    <Input
-                      type="number"
-                      min="1"
-                      value={cattle.count}
-                      onChange={(e) => updateCattleDetail(index, 'count', Number(e.target.value))}
-                      placeholder="e.g., 3"
-                    />
-                  </div>
-                  <Button
-                    onClick={() => removeCattleDetail(index)}
-                    variant="outline"
-                    size="sm"
-                    className="text-red-600 hover:text-red-700"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </Button>
-                </div>
-              ))}
-              {form.cattleDetails.length > 0 && (
-                <div className="text-sm text-gray-600 mt-2">
-                  Total cattle: {form.cattleDetails.reduce((total, cattle) => total + cattle.count, 0)}
-                </div>
-              )}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      {/* Member Holdings */}
+      <MemberHoldingsForm
+        holdingType={holdingType}
+        onHoldingTypeChange={handleHoldingTypeChange}
+        landDetails={form.landDetails}
+        pondDetails={form.pondDetails}
+        cattleDetails={form.cattleDetails}
+        onLandDetailsChange={handleLandDetailsChange}
+        onPondDetailsChange={handlePondDetailsChange}
+        onCattleDetailsChange={handleCattleDetailsChange}
+      />
 
       {/* Submit and Bulk Upload Section */}
       <div className="flex flex-wrap items-center gap-4">

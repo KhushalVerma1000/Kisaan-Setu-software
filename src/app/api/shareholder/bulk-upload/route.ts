@@ -33,8 +33,11 @@ export async function POST(req: NextRequest) {
 
     const result = await bulkUpsertShareholders(validation.valid);
 
+    // Convert successful results to display objects
+    const successfulResults = result.success.map(shareholder => shareholder.toDisplayObject());
+
     return NextResponse.json({
-      success: result.success,
+      success: successfulResults,
       failed: [...result.failed, ...validation.invalid.map(inv => ({
         data: inv.data,
         error: inv.errors.join(', ')
