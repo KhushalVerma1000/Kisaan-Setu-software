@@ -365,3 +365,26 @@ export function updateFpoProfileWithLogo(profile: FpoProfile, logoFile?: File) {
     }
   };
 }
+
+// Helper function to get FPO state
+export async function getFpoState(fpoId: string): Promise<string | null> {
+  try {
+    const supabase = await createClient();
+    
+    const { data, error } = await supabase
+      .from('fpo_profiles')
+      .select('state')
+      .eq('id', fpoId)
+      .single();
+
+    if (error) {
+      console.error("Error fetching FPO state:", error);
+      return null;
+    }
+
+    return data?.state || null;
+  } catch (error) {
+    console.error("Unexpected error fetching FPO state:", error);
+    return null;
+  }
+}

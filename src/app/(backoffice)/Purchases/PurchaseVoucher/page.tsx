@@ -16,6 +16,7 @@ import { Search, FileDown, Plus, Eye, Edit, Trash2, MoreHorizontal, Calendar, Sh
 import { PurchaseVoucherAPI } from "@/server/features/purchase/infrastructure/apihelpers/purchaseVoucher/purchaseVoucherApi";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { fetchLedgerAccountsAsync, selectAllLedgerAccounts, selectLedgerAccountsError, selectLedgerAccountsLoading } from "@/store/slices/ledgerAccountSlice";
+import { PurchaseVoucherPDFService } from "@/server/services/pdf/PurchaseVoucherPDFService";
 
 // Purchase Voucher interface matching your API structure
 interface PurchaseVoucher {
@@ -230,6 +231,18 @@ export default function PurchaseVoucherPage() {
       setError("Failed to delete voucher");
     }
   }, [loadStats]);
+
+   const handleDownloadPDF = useCallback(async (voucherId: string) => {
+    try {
+  const pdfService = new PurchaseVoucherPDFService();
+await pdfService.generatePDF(voucherId);
+    } catch (error) {
+      console.error('Error geerating pdf', error);
+      setError("Failed to generate pdf");
+    }
+  }, [loadStats]);
+
+
 
   // Header buttons configuration
   const headerButtons = useMemo(() => [
@@ -601,7 +614,7 @@ export default function PurchaseVoucherPage() {
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
                               <DropdownMenuItem
- onSelect={(e) => e.preventDefault()}                              >
+ onSelect={(e) => handleDownloadPDF(voucher.id)}                              >
                                 <FileText className="mr-2 h-4 w-4" />
                                 Pdf
                               </DropdownMenuItem>

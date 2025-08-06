@@ -496,7 +496,7 @@ export abstract class BasePDFService {
   ): void {
     const signatureY = this.pageHeight - 40;
     
-    this.doc.setFont('helvetica', 'normal');
+    this.doc.setFont('helvetica', 'bold');
     this.doc.setFontSize(10);
     
     this.doc.text(leftLabel, this.margin, signatureY);

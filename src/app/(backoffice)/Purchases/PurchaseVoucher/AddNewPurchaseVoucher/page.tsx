@@ -20,13 +20,13 @@ import AddItemComponent from '@/components/items/AddItemComponent';
 import { PurchaseVoucherAPI } from '@/server/features/purchase/infrastructure/apihelpers/purchaseVoucher/purchaseVoucherApi';
 import { toast } from 'react-toastify';
 import { ILineItemSummary } from '@/server/features/items/core/entities/selecteditem';
-import { GSTBreakdownInterface, PurchaseVoucherInterface, PurchaseVoucherItemInterface, PurchaseVoucherSummaryInterface } from '@/server/features/purchase/core/entities/PurchaseVoucher';
+import { PurchaseVoucherInterface, PurchaseVoucherItemInterface, PurchaseVoucherSummaryInterface } from '@/server/features/purchase/core/entities/PurchaseVoucher';
 import { useAppSelector, useAppDispatch } from '@/store/hooks';
-import { 
-  fetchLedgerAccountsAsync, 
-  selectAllLedgerAccounts, 
-  selectLedgerAccountsLoading, 
-  selectLedgerAccountsError 
+import {
+  fetchLedgerAccountsAsync,
+  selectAllLedgerAccounts,
+  selectLedgerAccountsLoading,
+  selectLedgerAccountsError
 } from '@/store/slices/ledgerAccountSlice';
 
 // Use the correct LineItemSummary from SelectedItem
@@ -45,17 +45,18 @@ interface LineItem {
   amount: number;
 }
 
+// Simplified form data interface
 interface PurchaseVoucherFormData {
   poNumber: string;
   supplierId: string;
   supplierName: string;
+  supplierState: string;
   partyInvoiceNo: string;
   partyInvoiceDate: Date | null;
   billingAddress: string;
   gstin: string;
   items: LineItem[];
   summary: LineItemSummary;
-  shipmentAmount: number;
   notes: string;
   status: 'draft' | 'approved' | 'rejected';
 }
@@ -66,22 +67,25 @@ const AddPurchaseVoucherPage: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
   const [isFormValid, setIsFormValid] = useState(false);
-  
+
+const [hasExportedData, setHasExportedData] = useState(false);
   // New state to store the exported data from AddItemComponent
   const [exportedItemsData, setExportedItemsData] = useState<any>(null);
-  
+
   // Redux state
   const user = useAppSelector((state) => state.user);
   const ledgerAccounts = useAppSelector(selectAllLedgerAccounts);
   const ledgerAccountsLoading = useAppSelector(selectLedgerAccountsLoading);
   const ledgerAccountsError = useAppSelector(selectLedgerAccountsError);
-  
+
   const fpoIdOfUser = user.fpoId;
 
+  // Simplified initial form data
   const [formData, setFormData] = useState<PurchaseVoucherFormData>({
     poNumber: '',
     supplierId: '',
     supplierName: '',
+    supplierState: '',
     partyInvoiceNo: '',
     partyInvoiceDate: null,
     billingAddress: '',
@@ -95,7 +99,6 @@ const AddPurchaseVoucherPage: React.FC = () => {
       shipmentAmount: 0,
       roundOff: 0
     },
-    shipmentAmount: 0,
     notes: '',
     status: 'draft'
   });
@@ -128,10 +131,11 @@ const AddPurchaseVoucherPage: React.FC = () => {
         ...prev,
         supplierId,
         supplierName: supplier.name,
+        supplierState: supplier.state || '',
         gstin: supplier.gstNumber || '',
         billingAddress: supplier.address || ''
       }));
-      
+
       // Show info toast when supplier is selected
       toast.info(`Supplier "${supplier.name}" selected successfully`, {
         position: "top-right",
@@ -147,10 +151,7 @@ const AddPurchaseVoucherPage: React.FC = () => {
   const handleSummaryChange = useCallback((summary: LineItemSummary) => {
     setFormData(prev => ({
       ...prev,
-      summary: {
-        ...summary,
-        shipmentAmount: prev.shipmentAmount // Preserve existing shipment amount
-      }
+      summary: summary
     }));
   }, []);
 
@@ -163,16 +164,20 @@ const AddPurchaseVoucherPage: React.FC = () => {
   const handleExportData = useCallback(async (itemsData: any) => {
     // Save the exported data to state
     setExportedItemsData(itemsData);
+
     
-    // Show success toast to indicate data has been captured
-    toast.success('Item data captured successfully!', {
-      position: "top-right",
-      autoClose: 2000,
-      hideProgressBar: false,
-      closeOnClick: true,
-      pauseOnHover: true,
-      draggable: true,
-    });
+  // Set the flag to enable action buttons
+  setHasExportedData(true);
+
+    // // Show success toast to indicate data has been captured
+    // toast.success('Item data captured successfully!', {
+    //   position: "top-right",
+    //   autoClose: 2000,
+    //   hideProgressBar: false,
+    //   closeOnClick: true,
+    //   pauseOnHover: true,
+    //   draggable: true,
+    // });
   }, []);
 
   // Function to prepare and save data to API
@@ -183,7 +188,7 @@ const AddPurchaseVoucherPage: React.FC = () => {
 
     try {
       setLoading(true);
-      
+
       // Validate form
       if (!formData.supplierId || !formData.partyInvoiceNo) {
         toast.update(toastId, {
@@ -198,7 +203,7 @@ const AddPurchaseVoucherPage: React.FC = () => {
         });
         return;
       }
-      
+
       if (!fpoIdOfUser) {
         toast.update(toastId, {
           render: 'Something went wrong. Please try refreshing the page.',
@@ -212,7 +217,7 @@ const AddPurchaseVoucherPage: React.FC = () => {
         });
         return;
       }
-      
+
       // Validate required date field
       if (!formData.partyInvoiceDate) {
         toast.update(toastId, {
@@ -257,18 +262,31 @@ const AddPurchaseVoucherPage: React.FC = () => {
         return;
       }
 
+      if (!formData.supplierState) {
+        toast.update(toastId, {
+          render: 'Please select a supplier with valid state information',
+          type: 'error',
+          isLoading: false,
+          autoClose: 5000,
+          hideProgressBar: false,
+          closeOnClick: true,
+          pauseOnHover: true,
+          draggable: true,
+        });
+        return;
+      }
+
       // Use the exported data from AddItemComponent
       const itemsToProcess = exportedItemsData.items;
 
       // Convert items from AddItemComponent format to PurchaseVoucherItemInterface format
       const convertedItems: PurchaseVoucherItemInterface[] = itemsToProcess.map((item: any, index: number) => {
         // Handle the structure from AddItemComponent export
-        const itemData = item.item || item; // item.item exists in exported data
+        const itemData = item.item || item;
         const calculations = item.calculations || {};
         const discount = item.discount || { value: 0, type: 'fixed' };
         const gstConfig = item.gstConfig || { rate: 0, type: 'including' };
-        console.log(itemData)
-        
+
         return {
           id: item.id || `item-${index}`,
           item: {
@@ -314,44 +332,28 @@ const AddPurchaseVoucherPage: React.FC = () => {
             baseAmount: calculations.baseAmount || ((item.quantity || 0) * (item.unitPrice || 0)),
             discountAmount: calculations.discountAmount || 0,
             taxableAmount: calculations.taxableAmount || 0,
-            gstAmount: calculations.gstAmount || 0,
+            cgstAmount: calculations.cgstAmount || 0,
+            sgstAmount: calculations.sgstAmount || 0,
+            igstAmount: calculations.igstAmount || 0,
+            totalGstAmount: calculations.totalGstAmount || 0,
             lineTotal: calculations.lineTotal || 0
           },
           purchasePrice: item.purchasePrice || itemData.purchasePrice || 0
         };
       });
 
-      // Calculate GST breakdown using the exported data structure
-      const gstBreakdown: GSTBreakdownInterface = {};
-      
-      // Use the gstBreakdown from exported data
-      if (exportedItemsData.gstBreakdown) {
-        Object.keys(exportedItemsData.gstBreakdown).forEach(rate => {
-          gstBreakdown[rate] = {
-            taxable: exportedItemsData.gstBreakdown[rate].taxable,
-            gst: exportedItemsData.gstBreakdown[rate].gst
-          };
-        });
-      } else {
-        // Fallback: calculate from converted items
-        convertedItems.forEach(item => {
-          const rate = item.gstConfig.rate.toString();
-          if (!gstBreakdown[rate]) {
-            gstBreakdown[rate] = { taxable: 0, gst: 0 };
-          }
-          gstBreakdown[rate].taxable += item.calculations.taxableAmount;
-          gstBreakdown[rate].gst += item.calculations.gstAmount;
-        });
-      }
-
-      // Create summary using the exported data structure
+      // Create simplified summary for API - let backend handle GST breakdown
       const voucherSummary: PurchaseVoucherSummaryInterface = {
         subTotal: exportedItemsData.summary?.subTotal || formData.summary.subTotal,
         totalDiscount: exportedItemsData.summary?.totalDiscount || formData.summary.totalDiscount,
+        totalCGST: 0, // Backend will calculate
+        totalSGST: 0, // Backend will calculate
+        totalIGST: 0, // Backend will calculate
         totalGST: exportedItemsData.summary?.totalGST || formData.summary.totalGST,
-        shipmentAmount: exportedItemsData.summary?.shipmentAmount || formData.shipmentAmount,
+        shipmentAmount: exportedItemsData.summary?.shipmentAmount || formData.summary.shipmentAmount,
         roundOff: exportedItemsData.summary?.roundOff || formData.summary.roundOff,
-        grandTotal: exportedItemsData.summary?.grandTotal || (formData.summary.grandTotal + formData.shipmentAmount)
+        grandTotal: exportedItemsData.summary?.grandTotal || formData.summary.grandTotal,
+        gstType: 'intrastate' // Backend will determine correct type
       };
 
       // Prepare data for API - match PurchaseVoucherInterface structure 
@@ -359,13 +361,14 @@ const AddPurchaseVoucherPage: React.FC = () => {
         poNumber: formData.poNumber,
         supplierVendorName: formData.supplierName,
         supplierVendorId: formData.supplierId,
+        supplierState: formData.supplierState,
         partyInvoiceNumber: formData.partyInvoiceNo,
         partyInvoiceDate: formData.partyInvoiceDate,
         supplierVendorBillingAddress: formData.billingAddress,
         gstin: formData.gstin,
         items: convertedItems,
         summary: voucherSummary,
-        gstBreakdown: gstBreakdown,
+        gstBreakdown: {}, // Backend will calculate
         documentType: exportedItemsData.documentType || 'purchase_voucher',
         fpoId: fpoIdOfUser,
         createdAt: new Date(),
@@ -375,7 +378,7 @@ const AddPurchaseVoucherPage: React.FC = () => {
       };
 
       const response = await PurchaseVoucherAPI.create(voucherData);
-      
+
       // Update the loading toast to success
       toast.update(toastId, {
         render: `Purchase voucher ${status === 'draft' ? 'saved as draft' : 'submitted for approval'} successfully!`,
@@ -397,15 +400,15 @@ const AddPurchaseVoucherPage: React.FC = () => {
         pauseOnHover: true,
         draggable: true,
       });
-      
+
       // Optional: Redirect after a short delay
       setTimeout(() => {
         router.push('/Purchases/PurchaseVoucher');
       }, 1500);
-      
+
     } catch (error) {
       console.error('Error creating purchase voucher:', error);
-      
+
       // Update the loading toast to error
       toast.update(toastId, {
         render: 'Failed to create purchase voucher. Please try again.',
@@ -432,7 +435,7 @@ const AddPurchaseVoucherPage: React.FC = () => {
       pauseOnHover: true,
       draggable: true,
     });
-    
+
     await saveToAPI('draft');
   };
 
@@ -446,12 +449,8 @@ const AddPurchaseVoucherPage: React.FC = () => {
       pauseOnHover: true,
       draggable: true,
     });
-    
-    await saveToAPI('approved');
-  };
 
-  const calculateFinalTotal = () => {
-    return formData.summary.grandTotal + formData.shipmentAmount;
+    await saveToAPI('approved');
   };
 
   // Show warning toast when ledger accounts fail to load
@@ -520,130 +519,126 @@ const AddPurchaseVoucherPage: React.FC = () => {
           </Alert>
         )}
 
-        {/* Updated Layout Structure */}
+        {/* Layout Structure */}
         <div className="space-y-6">
-          {/* Two-column layout for basic info and summary */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Basic Information - Takes 2/3 width */}
-            <div className="lg:col-span-2">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <div className="w-2 h-2 bg-blue-500 rounded-full" />
-                    Basic Information
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="poNumber">
-                        PO Number
-                        {/* <span className="text-red-500">*</span> */}
-                      </Label>
-                      <Select value={formData.poNumber} onValueChange={(value) => handleInputChange('poNumber', value)}>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select PO" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {mockPOs.map(po => (
-                            <SelectItem key={po.id} value={po.number}>
-                              {po.number} - {po.date}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
+          {/* Basic Information */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <div className="w-2 h-2 bg-blue-500 rounded-full" />
+                Basic Information
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="poNumber">PO Number</Label>
+                  <Select value={formData.poNumber} onValueChange={(value) => handleInputChange('poNumber', value)}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select PO" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {mockPOs.map(po => (
+                        <SelectItem key={po.id} value={po.number}>
+                          {po.number} - {po.date}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
 
-                    <div className="space-y-2">
-                      <Label htmlFor="supplier">
-                        Supplier/Vendor <span className="text-red-500">*</span>
-                      </Label>
-                      <Select 
-                        value={formData.supplierId} 
-                        onValueChange={handleSupplierChange}
-                        disabled={ledgerAccountsLoading}
+                <div className="space-y-2">
+                  <Label htmlFor="supplier">
+                    Supplier/Vendor <span className="text-red-500">*</span>
+                  </Label>
+                  <Select
+                    value={formData.supplierId}
+                    onValueChange={handleSupplierChange}
+                    disabled={ledgerAccountsLoading}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder={
+                        ledgerAccountsLoading ? "Loading accounts..." : "Select Supplier"
+                      } />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {ledgerAccountsLoading ? (
+                        <SelectItem value="loading" disabled>
+                          <div className="flex items-center gap-2">
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                            Loading accounts...
+                          </div>
+                        </SelectItem>
+                      ) : ledgerAccounts.length === 0 ? (
+                        <SelectItem value="no-accounts" disabled>
+                          No ledger accounts found
+                        </SelectItem>
+                      ) : (
+                        ledgerAccounts.map(account => (
+                          <SelectItem key={account.id} value={account.id || ''}>
+                            <div className="flex flex-col">
+                              <span className="font-medium">{account.name}</span>
+                              <span className="text-xs text-gray-500">{account.groupName}</span>
+                              {account.gstNumber && (
+                                <span className="text-xs text-gray-400">GST: {account.gstNumber}</span>
+                              )}
+                            </div>
+                          </SelectItem>
+                        ))
+                      )}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="partyInvoiceNo">
+                    Party Invoice No <span className="text-red-500">*</span>
+                  </Label>
+                  <Input
+                    id="partyInvoiceNo"
+                    value={formData.partyInvoiceNo}
+                    onChange={(e) => handleInputChange('partyInvoiceNo', e.target.value)}
+                    placeholder="Enter invoice number"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="partyInvoiceDate">
+                    Party Invoice Date <span className="text-red-500">*</span>
+                  </Label>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        className={cn(
+                          "w-full justify-start text-left font-normal",
+                          !formData.partyInvoiceDate && "text-muted-foreground"
+                        )}
                       >
-                        <SelectTrigger>
-                          <SelectValue placeholder={
-                            ledgerAccountsLoading ? "Loading accounts..." : "Select Supplier"
-                          } />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {ledgerAccountsLoading ? (
-                            <SelectItem value="loading" disabled>
-                              <div className="flex items-center gap-2">
-                                <Loader2 className="h-4 w-4 animate-spin" />
-                                Loading accounts...
-                              </div>
-                            </SelectItem>
-                          ) : ledgerAccounts.length === 0 ? (
-                            <SelectItem value="no-accounts" disabled>
-                              No ledger accounts found
-                            </SelectItem>
-                          ) : (
-                            ledgerAccounts.map(account => (
-                              <SelectItem key={account.id} value={account.id || ''}>
-                                <div className="flex flex-col">
-                                  <span className="font-medium">{account.name}</span>
-                                  <span className="text-xs text-gray-500">{account.groupName}</span>
-                                  {account.gstNumber && (
-                                    <span className="text-xs text-gray-400">GST: {account.gstNumber}</span>
-                                  )}
-                                </div>
-                              </SelectItem>
-                            ))
-                          )}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="partyInvoiceNo">
-                        Party Invoice No <span className="text-red-500">*</span>
-                      </Label>
-                      <Input
-                        id="partyInvoiceNo"
-                        value={formData.partyInvoiceNo}
-                        onChange={(e) => handleInputChange('partyInvoiceNo', e.target.value)}
-                        placeholder="Enter invoice number"
+                        <CalendarIcon className="mr-2 h-4 w-4" />
+                        {formData.partyInvoiceDate ? (
+                          format(formData.partyInvoiceDate, "PPP")
+                        ) : (
+                          <span>Pick a date</span>
+                        )}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0">
+                      <Calendar
+                        mode="single"
+                        selected={formData.partyInvoiceDate || undefined}
+                        onSelect={(date) => handleInputChange('partyInvoiceDate', date)}
+                        initialFocus
                       />
-                    </div>
+                    </PopoverContent>
+                  </Popover>
+                </div>
+              </div>
 
-                    <div className="space-y-2">
-                      <Label htmlFor="partyInvoiceDate">
-                        Party Invoice Date <span className="text-red-500">*</span>
-                      </Label>
-                      <Popover>
-                        <PopoverTrigger asChild>
-                          <Button
-                            variant="outline"
-                            className={cn(
-                              "w-full justify-start text-left font-normal",
-                              !formData.partyInvoiceDate && "text-muted-foreground"
-                            )}
-                          >
-                            <CalendarIcon className="mr-2 h-4 w-4" />
-                            {formData.partyInvoiceDate ? (
-                              format(formData.partyInvoiceDate, "PPP")
-                            ) : (
-                              <span>Pick a date</span>
-                            )}
-                          </Button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-auto p-0">
-                          <Calendar
-                            mode="single"
-                            selected={formData.partyInvoiceDate || undefined}
-                            onSelect={(date) => handleInputChange('partyInvoiceDate', date)}
-                            initialFocus
-                          />
-                        </PopoverContent>
-                      </Popover>
-                    </div>
-                  </div>
-
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="billingAddress">Supplier/Vendor Billing Address</Label>
                     <Textarea
@@ -656,18 +651,36 @@ const AddPurchaseVoucherPage: React.FC = () => {
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="gstin">GSTIN</Label>
+                    <Label htmlFor="supplierState">
+                      Supplier State <span className="text-red-500">*</span>
+                    </Label>
                     <Input
-                      id="gstin"
-                      value={formData.gstin}
-                      onChange={(e) => handleInputChange('gstin', e.target.value)}
-                      placeholder="Enter GSTIN"
+                      id="supplierState"
+                      value={formData.supplierState}
+                      placeholder="State will be auto-filled from supplier selection"
+                      readOnly
+                      className="bg-gray-50 cursor-not-allowed"
                     />
+                    <p className="text-xs text-gray-500">
+                      State is automatically set based on supplier selection
+                    </p>
                   </div>
-                </CardContent>
-              </Card>
+                </div>
 
-                 {/* Full Width Additional Information */}
+                <div className="space-y-2">
+                  <Label htmlFor="gstin">GSTIN</Label>
+                  <Input
+                    id="gstin"
+                    value={formData.gstin}
+                    onChange={(e) => handleInputChange('gstin', e.target.value)}
+                    placeholder="Enter GSTIN"
+                  />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Additional Information */}
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -688,116 +701,59 @@ const AddPurchaseVoucherPage: React.FC = () => {
               </div>
             </CardContent>
           </Card>
-            </div>
 
-            {/* Summary Sidebar - Takes 1/3 width */}
-            <div className="space-y-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <div className="w-2 h-2 bg-orange-500 rounded-full" />
-                    Summary
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="space-y-3">
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-600">Subtotal:</span>
-                      <span className="font-medium">₹{formData.summary.subTotal.toFixed(2)}</span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-600">Total Discount:</span>
-                      <span className="font-medium text-green-600">-₹{formData.summary.totalDiscount.toFixed(2)}</span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-600">Total GST:</span>
-                      <span className="font-medium">₹{formData.summary.totalGST.toFixed(2)}</span>
-                    </div>
-
-                    <Separator />
-
-                    <div className="space-y-2">
-                      <Label htmlFor="shipmentAmount">Shipment Amount</Label>
-                      <Input
-                        id="shipmentAmount"
-                        type="number"
-                        value={formData.shipmentAmount}
-                        onChange={(e) => handleInputChange('shipmentAmount', parseFloat(e.target.value) || 0)}
-                        placeholder="0.00"
-                        step="0.01"
-                      />
-                    </div>
-
-                    <Separator />
-
-                    <div className="flex justify-between font-semibold text-lg">
-                      <span>Grand Total:</span>
-                      <span className="text-blue-600">₹{calculateFinalTotal().toFixed(2)}</span>
-                    </div>
-                  </div>
-
-                  <div className="space-y-2 pt-4">
-                    <Badge variant="outline" className="w-full justify-center py-2">
-                      <CheckCircle className="h-4 w-4 mr-2 text-green-500" />
-                      {formData.items.length} Items Added
-                    </Badge>
-                    <Badge variant="outline" className="w-full justify-center py-2">
-                      Total Items: {formData.items.reduce((sum, item) => sum + item.quantity, 0)}
-                    </Badge>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Actions */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-sm">Actions</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <Button
-                    onClick={handleSaveAsDraft}
-                    variant="outline"
-                    className="w-full"
-                    disabled={loading}
-                  >
-                    <Save className="h-4 w-4 mr-2" />
-                    Save as Draft
-                  </Button>
-                  <Button
-                    onClick={handleSubmitForApproval}
-                    className="w-full"
-                    disabled={loading || !isFormValid}
-                  >
-                    <CheckCircle className="h-4 w-4 mr-2" />
-                    {loading ? 'Saving...' : 'Save & Submit'}
-                  </Button>
-                </CardContent>
-              </Card>
-            </div>
-          </div>
-
-          {/* Full Width Items Section */}
+          {/* Items Section with AddItemComponent */}
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <div className="w-2 h-2 bg-green-500 rounded-full" />
-                Items
+                Items & Summary
               </CardTitle>
             </CardHeader>
             <CardContent>
               <AddItemComponent
                 documentType="purchase_voucher"
                 onSummaryChange={handleSummaryChange}
-              
                 onValidationChange={handleValidationChange}
                 onExportData={handleExportData}
                 readOnly={false}
-                showSummary={false}
+                showSummary={true}
               />
             </CardContent>
           </Card>
 
-       
+          {/* Actions */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm">Actions</CardTitle>
+            </CardHeader>
+            <CardContent className="flex gap-4">
+              <Button
+                onClick={handleSaveAsDraft}
+                variant="outline"
+                className="flex-1"
+                disabled={loading || !isFormValid || !hasExportedData}
+              >
+                <Save className="h-4 w-4 mr-2" />
+                Save as Draft
+              </Button>
+              <Button
+                onClick={handleSubmitForApproval}
+                className="flex-1"
+                disabled={loading || !isFormValid || !hasExportedData}
+              >
+                <CheckCircle className="h-4 w-4 mr-2" />
+                {loading ? 'Saving...' : 'Save & Submit'}
+              </Button>
+            </CardContent>
+            {!hasExportedData && (
+  <div className="px-6 py-4 bg-purple-50 ">
+    <p className="text-sm text-purple-800 text-center">
+    ➕ Please add items and click save to proceed 
+    </p>
+  </div>
+)}
+          </Card>
         </div>
       </div>
     </div>

@@ -2,7 +2,11 @@
 // @/server/features/purchase/infrastructure/purchaseVoucher/purchaseVoucherApi.ts
 import { PurchaseVoucherInterface } from '@/server/features/purchase/core/entities/PurchaseVoucher';
 import { LedgerEntryAPI } from '@/server/features/ledger/infrastructure/apiHelper/ledgerEntry/ledgerEntryApi';
-
+import { 
+  processDocumentStock, 
+  logStockOperationSummary,
+  BulkStockOperationResult 
+} from '@/server/features/items/infrastructure/itemApi/stockManagementHelper';
 const API_BASE_URL = '/api/purchase/purchase-vouchers';
 
 export class PurchaseVoucherAPI {
@@ -46,83 +50,123 @@ export class PurchaseVoucherAPI {
     }
 
     // Create purchase voucher with mandatory ledger entry
-    static async create(data: PurchaseVoucherInterface) {
-        console.log('=== PurchaseVoucherAPI: Creating purchase voucher with ledger entry ===');
-        console.log('Purchase voucher data:', data);
+   // Create purchase voucher with mandatory ledger entry and stock updates
+  static async create(data: PurchaseVoucherInterface) {
+    console.log('=== PurchaseVoucherAPI: Creating purchase voucher with ledger entry and stock updates ===');
+    console.log('Purchase voucher data:', data);
 
-        // Validation: Check if supplier ID exists for ledger entry
-        if (!data.supplierVendorId) {
-            throw new Error('Supplier ID is required for ledger entry creation');
-        }
-
-        if (!data.summary?.grandTotal || data.summary.grandTotal <= 0) {
-            throw new Error('Valid grand total is required for ledger entry');
-        }
-
-        if (!data.poNumber && !data.partyInvoiceNumber) {
-            throw new Error('Either PO number or party invoice number is required');
-        }
-
-        try {
-            // Step 1: Create the purchase voucher
-            const response = await fetch(API_BASE_URL, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(data),
-            });
-
-            if (!response.ok) {
-                const errorText = await response.text();
-                throw new Error(`Failed to create purchase voucher: ${response.status} - ${errorText}`);
-            }
-
-            const voucherResult = await response.json();
-            console.log('Purchase voucher created successfully:', voucherResult.voucher?.id);
-
-            // Step 2: Create corresponding ledger entry
-            try {
-                const ledgerEntryData = {
-                    supplierLedgerAccountId: data.supplierVendorId,
-                    amount: data.summary.grandTotal,
-                    date: typeof data.partyInvoiceDate === 'string' ? data.partyInvoiceDate : data.partyInvoiceDate?.toISOString() || new Date().toISOString(),
-                    voucherNumber: data.poNumber || data.partyInvoiceNumber,
-                    description: `Purchase Voucher - ${data.partyInvoiceNumber || data.poNumber}${data.notes ? ' - ' + data.notes : ''}`
-                };
-
-                console.log('Creating ledger entry:', ledgerEntryData);
-
-                const ledgerResult = await LedgerEntryAPI.createPurchaseVoucherEntry(ledgerEntryData);
-                console.log('Ledger entry created successfully:', ledgerResult.entry?.id);
-
-                return {
-                    success: true,
-                    voucher: voucherResult.voucher,
-                    ledgerEntry: ledgerResult.entry,
-                    message: 'Purchase voucher and ledger entry created successfully'
-                };
-
-            } catch (ledgerError) {
-                console.error('Ledger entry creation failed:', ledgerError);
-                
-                // Purchase voucher was created but ledger failed - this is a critical issue
-                console.warn('Purchase voucher created but ledger entry failed - consider implementing rollback');
-                
-                return {
-                    success: false,
-                    voucher: voucherResult.voucher,
-                    error: 'Purchase voucher created but ledger entry failed',
-                    ledgerError: ledgerError instanceof Error ? ledgerError.message : 'Unknown ledger error',
-                    requiresManualLedgerEntry: true
-                };
-            }
-
-        } catch (error) {
-            console.error('Purchase voucher creation failed:', error);
-            throw new Error(`Failed to create purchase voucher: ${error instanceof Error ? error.message : 'Unknown error'}`);
-        }
+    // Validation: Check if supplier ID exists for ledger entry
+    if (!data.supplierVendorId) {
+      throw new Error('Supplier ID is required for ledger entry creation');
     }
+
+    if (!data.summary?.grandTotal || data.summary.grandTotal <= 0) {
+      throw new Error('Valid grand total is required for ledger entry');
+    }
+
+    if (!data.poNumber && !data.partyInvoiceNumber) {
+      throw new Error('Either PO number or party invoice number is required');
+    }
+
+    try {
+      // Step 1: Create the purchase voucher
+      const response = await fetch(API_BASE_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(data),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Failed to create purchase voucher: ${response.status} - ${errorText}`);
+      }
+
+      const voucherResult = await response.json();
+      console.log('Purchase voucher created successfully:', voucherResult.voucher?.id);
+
+      // Step 2: Update stock for all items
+      let stockUpdateResult: BulkStockOperationResult | null = null;
+      try {
+        console.log('=== Starting stock updates ===');
+        stockUpdateResult = await processDocumentStock(data, 'purchase_voucher');
+        
+        // Log the stock update summary
+        logStockOperationSummary(
+          stockUpdateResult, 
+          'purchase_voucher', 
+          voucherResult.voucher?.id
+        );
+
+        if (stockUpdateResult.failedCount > 0) {
+          console.warn(`Stock updates partially failed: ${stockUpdateResult.failedCount}/${stockUpdateResult.totalItems} items failed`);
+        } else {
+          console.log('All stock updates completed successfully');
+        }
+
+      } catch (stockError) {
+        console.error('Stock update failed:', stockError);
+        // Continue with ledger entry creation even if stock update fails
+        stockUpdateResult = {
+          totalItems: 0,
+          successCount: 0,
+          failedCount: 0,
+          results: [],
+          errors: [stockError instanceof Error ? stockError.message : 'Unknown stock update error']
+        };
+      }
+
+      // Step 3: Create corresponding ledger entry
+      try {
+        const ledgerEntryData = {
+          supplierLedgerAccountId: data.supplierVendorId,
+          amount: data.summary.grandTotal,
+          date: typeof data.partyInvoiceDate === 'string' 
+            ? data.partyInvoiceDate 
+            : data.partyInvoiceDate?.toISOString() || new Date().toISOString(),
+          voucherNumber: data.poNumber || data.partyInvoiceNumber,
+          description: `Purchase Voucher - ${data.partyInvoiceNumber || data.poNumber}${data.notes ? ' - ' + data.notes : ''}`
+        };
+
+        console.log('Creating ledger entry:', ledgerEntryData);
+
+        const ledgerResult = await LedgerEntryAPI.createPurchaseVoucherEntry(ledgerEntryData);
+        console.log('Ledger entry created successfully:', ledgerResult.entry?.id);
+
+        // Return comprehensive result
+        return {
+          success: true,
+          voucher: voucherResult.voucher,
+          ledgerEntry: ledgerResult.entry,
+          stockUpdate: stockUpdateResult,
+          message: 'Purchase voucher, stock updates, and ledger entry completed',
+          warnings: stockUpdateResult?.failedCount > 0 
+            ? [`${stockUpdateResult.failedCount} stock updates failed`]
+            : []
+        };
+
+      } catch (ledgerError) {
+        console.error('Ledger entry creation failed:', ledgerError);
+
+        // Purchase voucher and stock updates completed but ledger failed
+        console.warn('Purchase voucher created and stock updated but ledger entry failed');
+
+        return {
+          success: false,
+          voucher: voucherResult.voucher,
+          stockUpdate: stockUpdateResult,
+          error: 'Purchase voucher created and stock updated but ledger entry failed',
+          ledgerError: ledgerError instanceof Error ? ledgerError.message : 'Unknown ledger error',
+          requiresManualLedgerEntry: true
+        };
+      }
+
+    } catch (error) {
+      console.error('Purchase voucher creation failed:', error);
+      throw new Error(`Failed to create purchase voucher: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
 
     // Update purchase voucher with optional ledger entry update
     static async update(data: PurchaseVoucherInterface, updateLedger: boolean = true) {
