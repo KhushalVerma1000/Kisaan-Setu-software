@@ -42,80 +42,260 @@ export class InvoiceAPI {
     }
 
     // Create invoice with mandatory ledger entry
-    static async create(data: InvoiceInterface) {
-        console.log('=== InvoiceAPI: Creating invoice with ledger entry ===');
-        console.log('Invoice data:', data);
+    // static async create(data: InvoiceInterface) {
+    //     console.log('=== InvoiceAPI: Creating invoice with ledger entry ===');
+    //     console.log('Invoice data:', data);
 
-        // Validation: Check if customer ID exists for ledger entry
-        if (!data.customer.id) {
-            throw new Error('Customer ID is required for ledger entry creation');
-        }
+    //     // Validation: Check if customer ID exists for ledger entry
+    //     if (!data.customer.id) {
+    //         throw new Error('Customer ID is required for ledger entry creation');
+    //     }
 
-        if (!data.summary?.grandTotal || data.summary.grandTotal <= 0) {
-            throw new Error('Valid grand total is required for ledger entry');
-        }
+    //     if (!data.summary?.grandTotal || data.summary.grandTotal <= 0) {
+    //         throw new Error('Valid grand total is required for ledger entry');
+    //     }
 
-        try {
-            // Step 1: Create the invoice
-            const response = await fetch(API_BASE_URL, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(data),
-            });
+    //     try {
+    //         // Step 1: Create the invoice
+    //         const response = await fetch(API_BASE_URL, {
+    //             method: 'POST',
+    //             headers: {
+    //                 'Content-Type': 'application/json',
+    //             },
+    //             body: JSON.stringify(data),
+    //         });
 
-            if (!response.ok) {
-                const errorText = await response.text();
-                throw new Error(`Failed to create invoice: ${response.status} - ${errorText}`);
-            }
+    //         if (!response.ok) {
+    //             const errorText = await response.text();
+    //             throw new Error(`Failed to create invoice: ${response.status} - ${errorText}`);
+    //         }
 
-            const invoiceResult = await response.json();
-            console.log('Invoice created successfully:', invoiceResult.invoice?.id);
+    //         const invoiceResult = await response.json();
+    //         console.log('Invoice created successfully:', invoiceResult.invoice?.id);
 
-            // Step 2: Create corresponding ledger entry
-            try {
-                const ledgerEntryData = {
-                    customerLedgerAccountId: data.customer.id,
-                    amount: data.summary.grandTotal,
-                    date: typeof data.invoiceDate === 'string' ? data.invoiceDate : data.invoiceDate?.toISOString() || new Date().toISOString(),
-                    invoiceNumber: data.invoiceNumber,
-                    description: `Sales Invoice - ${data.invoiceNumber}${data.notes ? ' - ' + data.notes : ''}`
-                };
+    //         // Step 2: Create corresponding ledger entry
+    //         try {
+    //             const ledgerEntryData = {
+    //                 customerLedgerAccountId: data.customer.id,
+    //                 amount: data.summary.grandTotal,
+    //                 date: typeof data.invoiceDate === 'string' ? data.invoiceDate : data.invoiceDate?.toISOString() || new Date().toISOString(),
+    //                 invoiceNumber: data.invoiceNumber,
+    //                 description: `Sales Invoice - ${data.invoiceNumber}${data.notes ? ' - ' + data.notes : ''}`
+    //             };
 
-                console.log('Creating ledger entry:', ledgerEntryData);
+    //             console.log('Creating ledger entry:', ledgerEntryData);
 
-                const ledgerResult = await LedgerEntryAPI.createSalesInvoiceEntry(ledgerEntryData);
-                console.log('Ledger entry created successfully:', ledgerResult.entry?.id);
+    //             const ledgerResult = await LedgerEntryAPI.createSalesInvoiceEntry(ledgerEntryData);
+    //             console.log('Ledger entry created successfully:', ledgerResult.entry?.id);
 
-                return {
-                    success: true,
-                    invoice: invoiceResult.invoice,
-                    ledgerEntry: ledgerResult.entry,
-                    message: 'Invoice and ledger entry created successfully'
-                };
+    //             return {
+    //                 success: true,
+    //                 invoice: invoiceResult.invoice,
+    //                 ledgerEntry: ledgerResult.entry,
+    //                 message: 'Invoice and ledger entry created successfully'
+    //             };
 
-            } catch (ledgerError) {
-                console.error('Ledger entry creation failed:', ledgerError);
+    //         } catch (ledgerError) {
+    //             console.error('Ledger entry creation failed:', ledgerError);
                 
-                // Invoice was created but ledger failed - this is a critical issue
-                // You might want to implement compensation logic here
-                console.warn('Invoice created but ledger entry failed - consider implementing rollback');
+    //             // Invoice was created but ledger failed - this is a critical issue
+    //             // You might want to implement compensation logic here
+    //             console.warn('Invoice created but ledger entry failed - consider implementing rollback');
                 
-                return {
-                    success: false,
-                    invoice: invoiceResult.invoice,
-                    error: 'Invoice created but ledger entry failed',
-                    ledgerError: ledgerError instanceof Error ? ledgerError.message : 'Unknown ledger error',
-                    requiresManualLedgerEntry: true
-                };
-            }
+    //             return {
+    //                 success: false,
+    //                 invoice: invoiceResult.invoice,
+    //                 error: 'Invoice created but ledger entry failed',
+    //                 ledgerError: ledgerError instanceof Error ? ledgerError.message : 'Unknown ledger error',
+    //                 requiresManualLedgerEntry: true
+    //             };
+    //         }
 
-        } catch (error) {
-            console.error('Invoice creation failed:', error);
-            throw new Error(`Failed to create invoice: ${error instanceof Error ? error.message : 'Unknown error'}`);
-        }
+    //     } catch (error) {
+    //         console.error('Invoice creation failed:', error);
+    //         throw new Error(`Failed to create invoice: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    //     }
+    // }
+// Enhanced create method with stock updates for invoiceApi.ts
+
+// Create invoice with mandatory ledger entry and stock updates
+static async create(data: InvoiceInterface) {
+    console.log('=== InvoiceAPI: Creating invoice with ledger entry and stock updates ===');
+    console.log('Invoice data:', data);
+
+    // Validation: Check if customer ID exists for ledger entry
+    if (!data.customer.id) {
+        throw new Error('Customer ID is required for ledger entry creation');
     }
+
+    if (!data.summary?.grandTotal || data.summary.grandTotal <= 0) {
+        throw new Error('Valid grand total is required for ledger entry');
+    }
+
+    if (!data.invoiceNumber || data.invoiceNumber.trim() === '') {
+        throw new Error('Invoice number is required');
+    }
+
+    try {
+        // Step 1: Validate stock availability before creating the invoice
+        console.log('=== Validating stock availability ===');
+        
+        const { validateStockForUpdate } = await import('@/server/features/items/infrastructure/itemApi/stockManagementHelper');
+        
+        const stockValidation = await validateStockForUpdate(data, 'invoice');
+        
+        if (!stockValidation.valid) {
+            console.error('Stock validation failed:', stockValidation.issues);
+            throw new Error(`Insufficient stock: ${stockValidation.issues.join(', ')}`);
+        }
+        
+        console.log('Stock validation passed - proceeding with invoice creation');
+
+        // Step 2: Create the invoice
+        const response = await fetch(API_BASE_URL, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(data),
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`Failed to create invoice: ${response.status} - ${errorText}`);
+        }
+
+        const invoiceResult = await response.json();
+        console.log('Invoice created successfully:', invoiceResult.invoice?.id);
+
+        // Step 3: Update stock for all items (reduce stock for sale)
+        let stockUpdateResult: any = null;
+        try {
+            console.log('=== Starting stock updates ===');
+            
+            const { 
+                processDocumentStock, 
+                logStockOperationSummary 
+            } = await import('@/server/features/items/infrastructure/itemApi/stockManagementHelper');
+
+            stockUpdateResult = await processDocumentStock(data, 'invoice');
+            
+            // Log the stock update summary
+            logStockOperationSummary(
+                stockUpdateResult, 
+                'invoice', 
+                invoiceResult.invoice?.id
+            );
+
+            if (stockUpdateResult.failedCount > 0) {
+                console.warn(`Stock updates partially failed: ${stockUpdateResult.failedCount}/${stockUpdateResult.totalItems} items failed`);
+                
+                // This is critical for invoices - if stock can't be reduced, we might need to handle this differently
+                console.error('Stock reduction failed for some items - this may indicate data inconsistency');
+            } else {
+                console.log('All stock updates completed successfully');
+            }
+
+        } catch (stockError) {
+            console.error('Stock update failed:', stockError);
+            
+            // For invoices, stock reduction failure is more critical than for purchases
+            // You might want to consider rolling back the invoice creation
+            console.error('Critical: Invoice created but stock could not be reduced');
+            
+            stockUpdateResult = {
+                totalItems: 0,
+                successCount: 0,
+                failedCount: data.items?.length || 0,
+                results: [],
+                errors: [stockError instanceof Error ? stockError.message : 'Unknown stock update error']
+            };
+        }
+
+        // Step 4: Create corresponding ledger entry
+        let ledgerResult = null;
+        try {
+            const ledgerEntryData = {
+                customerLedgerAccountId: data.customer.id,
+                amount: data.summary.grandTotal,
+                date: typeof data.invoiceDate === 'string' 
+                    ? data.invoiceDate 
+                    : data.invoiceDate?.toISOString() || new Date().toISOString(),
+                invoiceNumber: data.invoiceNumber,
+                description: `Sales Invoice - ${data.invoiceNumber}${data.notes ? ' - ' + data.notes : ''}`
+            };
+
+            console.log('Creating ledger entry:', ledgerEntryData);
+
+            ledgerResult = await LedgerEntryAPI.createSalesInvoiceEntry(ledgerEntryData);
+            console.log('Ledger entry created successfully:', ledgerResult.entry?.id);
+
+        } catch (ledgerError) {
+            console.error('Ledger entry creation failed:', ledgerError);
+            ledgerResult = {
+                success: false,
+                error: ledgerError instanceof Error ? ledgerError.message : 'Unknown ledger error'
+            };
+        }
+
+        // Step 5: Determine overall success and create response
+        const hasStockIssues = stockUpdateResult?.failedCount > 0;
+        const hasLedgerIssues = !ledgerResult?.entry;
+        
+        const warnings: string[] = [];
+        if (hasStockIssues) {
+            warnings.push(`${stockUpdateResult.failedCount} stock updates failed`);
+        }
+        if (hasLedgerIssues) {
+            warnings.push('Ledger entry creation failed');
+        }
+
+        // Determine if this is a successful creation with warnings or a failed creation
+        const overallSuccess = !hasStockIssues; // For invoices, stock issues are more critical
+        
+        if (overallSuccess) {
+            return {
+                success: true,
+                invoice: invoiceResult.invoice,
+                ledgerEntry: ledgerResult?.entry || null,
+                stockUpdate: stockUpdateResult,
+                message: 'Invoice creation completed',
+                warnings: warnings.length > 0 ? warnings : undefined,
+                summary: {
+                    invoiceCreated: true,
+                    stockItemsProcessed: stockUpdateResult?.totalItems || 0,
+                    stockUpdatesSuccessful: stockUpdateResult?.successCount || 0,
+                    stockUpdatesFailed: stockUpdateResult?.failedCount || 0,
+                    ledgerEntryCreated: !!ledgerResult?.entry,
+                    requiresAttention: warnings.length > 0
+                }
+            };
+        } else {
+            // Critical failure - stock couldn't be reduced
+            return {
+                success: false,
+                invoice: invoiceResult.invoice,
+                stockUpdate: stockUpdateResult,
+                ledgerEntry: ledgerResult?.entry || null,
+                error: 'Invoice created but critical stock updates failed',
+                warnings: warnings,
+                requiresManualIntervention: true,
+                summary: {
+                    invoiceCreated: true,
+                    stockItemsProcessed: stockUpdateResult?.totalItems || 0,
+                    stockUpdatesSuccessful: stockUpdateResult?.successCount || 0,
+                    stockUpdatesFailed: stockUpdateResult?.failedCount || 0,
+                    ledgerEntryCreated: !!ledgerResult?.entry,
+                    criticalIssue: true
+                }
+            };
+        }
+
+    } catch (error) {
+        console.error('Invoice creation failed:', error);
+        throw new Error(`Failed to create invoice: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+}
 
     // Update invoice with optional ledger entry update
     static async update(data: InvoiceInterface, updateLedger: boolean = true) {
