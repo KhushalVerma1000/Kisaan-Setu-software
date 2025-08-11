@@ -25,6 +25,7 @@ import {
   clearError
 } from '@/store/slices/itemsSlice';
 import { useAppSelector, useAppDispatch } from '@/store/hooks';
+import { toast } from 'react-toastify';
 
 interface AddItemComponentProps {
   documentType: 'invoice' | 'purchase_voucher' | 'quotation';
@@ -232,6 +233,7 @@ const AddItemComponent: React.FC<AddItemComponentProps> = ({
         setQuantity(1);
       } catch (error) {
         console.error('Error adding item:', error);
+        toast.error(error instanceof Error ? error.message :'Failed to add item')
       }
     }
   }, [selectedItemId, quantity, items, lineItemHook]);
