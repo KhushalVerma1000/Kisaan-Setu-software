@@ -1,5 +1,5 @@
 import { createClient } from "@/utils/supabase/server";
-import { LedgerEntry, LedgerEntryInterface } from "../../core/entities/Ledger";
+import { Ledger, LedgerAccount, LedgerAccountInterface, LedgerEntry, LedgerEntryInterface } from "../../core/entities/Ledger";
 
 // Basic CRUD Operations for Ledger Entries
 
@@ -46,16 +46,96 @@ export async function getLedgerEntryById(entryId: string): Promise<LedgerEntry |
     }
 }
 
+
+export async function getLedgerEntryByDocumentId(documentId: string): Promise<LedgerEntry | null> {
+    const supabase = await createClient();
+    try {
+        const { data, error } = await supabase
+            .from('ledger_entry')
+            .select('*')
+            .eq('document_id', documentId)
+            .single();
+
+        if (error) {
+            if (error.code === 'PGRST116') {
+                return null; // No entry found
+            }
+            throw new Error(error.message);
+        }
+
+        return LedgerEntry.fromDbFormat(data);
+    } catch (error) {
+        console.error('Error fetching ledger entry by document ID:', error);
+        throw error;
+    }
+}
+
+export async function getLedgerEntriesByDocumentId(documentId: string): Promise<LedgerEntry[]> {
+    const supabase = await createClient();
+    try {
+        const { data, error } = await supabase
+            .from('ledger_entry')
+            .select('*')
+            .eq('document_id', documentId)
+            .order('date', { ascending: false });
+
+        if (error) {
+            throw new Error(error.message);
+        }
+
+        return data.map(LedgerEntry.fromDbFormat);
+    } catch (error) {
+        console.error('Error fetching ledger entries by document ID:', error);
+        throw error;
+    }
+}
+
+export async function getLedgerEntriesByDocumentType(
+    documentType: string,
+    limit?: number
+): Promise<LedgerEntry[]> {
+    const supabase = await createClient();
+    try {
+        let query = supabase
+            .from('ledger_entry')
+            .select('*')
+            .eq('document_type', documentType)
+            .order('date', { ascending: false });
+
+        if (limit) {
+            query = query.limit(limit);
+        }
+
+        const { data, error } = await query;
+
+        if (error) {
+            throw new Error(error.message);
+        }
+
+        return data.map(LedgerEntry.fromDbFormat);
+    } catch (error) {
+        console.error('Error fetching ledger entries by document type:', error);
+        throw error;
+    }
+}
 export async function createLedgerEntry(entryData: LedgerEntryInterface): Promise<LedgerEntry> {
     const supabase = await createClient();
     try {
+        // Fix: Use the correct constructor parameters
         const newEntry = new LedgerEntry(
             entryData.ledgerAccountId,
             entryData.date,
             entryData.amount,
             entryData.type,
+            entryData.primaryDescription,
             entryData.id,
-            entryData.description
+            entryData.documentId,
+            entryData.documentType,
+            entryData.documentNumber,
+            entryData.secondaryDescription,
+            entryData.referenceDescription,
+            entryData.ledgerReference,
+            entryData.isOpeningBalance || false
         );
 
         const { data, error } = await supabase
@@ -79,13 +159,21 @@ export async function createLedgerEntry(entryData: LedgerEntryInterface): Promis
 export async function updateLedgerEntry(entryId: string, entryData: LedgerEntryInterface): Promise<LedgerEntry> {
     const supabase = await createClient();
     try {
+        // Fix: Use the correct constructor parameters
         const updatedEntry = new LedgerEntry(
             entryData.ledgerAccountId,
             entryData.date,
             entryData.amount,
             entryData.type,
+            entryData.primaryDescription,
             entryId,
-            entryData.description
+            entryData.documentId,
+            entryData.documentType,
+            entryData.documentNumber,
+            entryData.secondaryDescription,
+            entryData.referenceDescription,
+            entryData.ledgerReference,
+            entryData.isOpeningBalance || false
         );
 
         const updateData = updatedEntry.toDbFormat();
@@ -130,29 +218,34 @@ export async function deleteLedgerEntry(entryId: string): Promise<void> {
     }
 }
 
-// Transaction-Specific Operations
+// Simple Transaction Functions using createUniversalLedgerEntry
 
-export interface SalesInvoiceData {
-    customerLedgerAccountId: string;
-    amount: number;
-    date: Date;
-    invoiceNumber: string;
-    description?: string;
-}
-
-export async function createSalesInvoiceEntry(salesData: SalesInvoiceData): Promise<LedgerEntry> {
+import { createUniversalLedgerEntry, UniversalTransactionData } from "../../core/entities/Ledger";
+// Updated ledgerEntrySupabase.ts functions
+export async function createSalesInvoiceEntry(
+    customerLedgerAccountId: string,
+    amount: number,
+    date: Date,
+    invoiceId: string,        // Changed from invoiceNumber to invoiceId
+    invoiceNumber: string,    // Added separate parameter for display number
+    customerName: string
+): Promise<LedgerEntry> {
     const supabase = await createClient();
     try {
         // Customer Account - Debit (Amount Receivable from customer)
-        // This shows the customer owes money to the software user
-        const entry = new LedgerEntry(
-            salesData.customerLedgerAccountId,
-            salesData.date,
-            salesData.amount,
-            'Dr',
-            undefined,
-            `Sales Invoice - ${salesData.description || 'Sales'}`
-        );
+        const transactionData: UniversalTransactionData = {
+            ledgerAccountId: customerLedgerAccountId,
+            amount: amount,
+            type: 'Dr',
+            date: date,
+            transactionType: 'Invoice',
+            partyName: customerName,
+            documentNumber: `Invoice #${invoiceNumber}`,
+            documentId: invoiceId,        // Use actual invoice ID
+            documentType: 'invoice'
+        };
+
+        const entry = createUniversalLedgerEntry(transactionData);
 
         const { data, error } = await supabase
             .from('ledger_entry')
@@ -172,27 +265,30 @@ export async function createSalesInvoiceEntry(salesData: SalesInvoiceData): Prom
     }
 }
 
-export interface PurchaseVoucherData {
-    supplierLedgerAccountId: string;
-    amount: number;
-    date: Date;
-    voucherNumber: string;
-    description?: string;
-}
-
-export async function createPurchaseVoucherEntry(purchaseData: PurchaseVoucherData): Promise<LedgerEntry> {
+export async function createPurchaseVoucherEntry(
+    supplierLedgerAccountId: string,
+    amount: number,
+    date: Date,
+    voucherId: string,        // Changed from voucherNumber to voucherId
+    voucherNumber: string,    // Added separate parameter for display number
+    supplierName: string
+): Promise<LedgerEntry> {
     const supabase = await createClient();
     try {
         // Supplier Account - Credit (Amount Payable to supplier)
-        // This shows the software user owes money to the supplier
-        const entry = new LedgerEntry(
-            purchaseData.supplierLedgerAccountId,
-            purchaseData.date,
-            purchaseData.amount,
-            'Cr',
-            undefined,
-            `Purchase Voucher - ${purchaseData.description || 'Purchase'}`
-        );
+        const transactionData: UniversalTransactionData = {
+            ledgerAccountId: supplierLedgerAccountId,
+            amount: amount,
+            type: 'Cr',
+            date: date,
+            transactionType: 'Purchase Voucher',
+            partyName: supplierName,
+            documentNumber: `Voucher #${voucherNumber}`,
+            documentId: voucherId,        // Use actual voucher ID
+            documentType: 'voucher'
+        };
+
+        const entry = createUniversalLedgerEntry(transactionData);
 
         const { data, error } = await supabase
             .from('ledger_entry')
@@ -212,27 +308,30 @@ export async function createPurchaseVoucherEntry(purchaseData: PurchaseVoucherDa
     }
 }
 
-export interface PaymentInData {
-    customerLedgerAccountId: string;
-    amount: number;
-    date: Date;
-    receiptNumber: string;
-    description?: string;
-}
-
-export async function createPaymentInEntry(paymentData: PaymentInData): Promise<LedgerEntry> {
+export async function createPaymentInEntry(
+    customerLedgerAccountId: string,
+    amount: number,
+    date: Date,
+    paymentId: string,        // Changed from receiptNumber to paymentId
+    receiptNumber: string,    // Added separate parameter for display number
+    customerName: string
+): Promise<LedgerEntry> {
     const supabase = await createClient();
     try {
         // Customer Account - Credit (Reduces amount receivable from customer)
-        // This shows customer has paid, reducing what they owe
-        const entry = new LedgerEntry(
-            paymentData.customerLedgerAccountId,
-            paymentData.date,
-            paymentData.amount,
-            'Cr',
-            undefined,
-            `Payment Received ${paymentData.receiptNumber} - ${paymentData.description || 'Payment received'}`
-        );
+        const transactionData: UniversalTransactionData = {
+            ledgerAccountId: customerLedgerAccountId,
+            amount: amount,
+            type: 'Cr',
+            date: date,
+            transactionType: 'Payment In',
+            partyName: customerName,
+            documentNumber: `Receipt #${receiptNumber}`,
+            documentId: paymentId,        // Use actual payment ID
+            documentType: 'payment'
+        };
+
+        const entry = createUniversalLedgerEntry(transactionData);
 
         const { data, error } = await supabase
             .from('ledger_entry')
@@ -252,27 +351,30 @@ export async function createPaymentInEntry(paymentData: PaymentInData): Promise<
     }
 }
 
-export interface PaymentOutData {
-    supplierLedgerAccountId: string;
-    amount: number;
-    date: Date;
-    paymentNumber: string;
-    description?: string;
-}
-
-export async function createPaymentOutEntry(paymentData: PaymentOutData): Promise<LedgerEntry> {
+export async function createPaymentOutEntry(
+    supplierLedgerAccountId: string,
+    amount: number,
+    date: Date,
+    paymentId: string,        // Changed from paymentNumber to paymentId
+    paymentNumber: string,    // Added separate parameter for display number
+    supplierName: string
+): Promise<LedgerEntry> {
     const supabase = await createClient();
     try {
         // Supplier Account - Debit (Reduces amount payable to supplier)
-        // This shows software user has paid, reducing what they owe
-        const entry = new LedgerEntry(
-            paymentData.supplierLedgerAccountId,
-            paymentData.date,
-            paymentData.amount,
-            'Dr',
-            undefined,
-            `Payment Made ${paymentData.paymentNumber} - ${paymentData.description || 'Payment made'}`
-        );
+        const transactionData: UniversalTransactionData = {
+            ledgerAccountId: supplierLedgerAccountId,
+            amount: amount,
+            type: 'Dr',
+            date: date,
+            transactionType: 'Payment Out',
+            partyName: supplierName,
+            documentNumber: `Payment #${paymentNumber}`,
+            documentId: paymentId,        // Use actual payment ID
+            documentType: 'payment'
+        };
+
+        const entry = createUniversalLedgerEntry(transactionData);
 
         const { data, error } = await supabase
             .from('ledger_entry')
@@ -292,179 +394,27 @@ export async function createPaymentOutEntry(paymentData: PaymentOutData): Promis
     }
 }
 
-export interface CreditNoteData {
-    customerLedgerAccountId: string;
-    amount: number;
-    date: Date;
-    creditNoteNumber: string;
-    description?: string;
-}
+// Simple Query Functions using Ledger class methods
 
-export async function createCreditNoteEntry(creditData: CreditNoteData): Promise<LedgerEntry> {
-    const supabase = await createClient();
-    try {
-        // Customer Account - Credit (Reduces amount receivable from customer)
-        // This shows a return/discount reducing what customer owes
-        const entry = new LedgerEntry(
-            creditData.customerLedgerAccountId,
-            creditData.date,
-            creditData.amount,
-            'Cr',
-            undefined,
-            `Credit Note ${creditData.creditNoteNumber} - ${creditData.description || 'Credit note'}`
-        );
-
-        const { data, error } = await supabase
-            .from('ledger_entry')
-            .insert(entry.toDbFormat())
-            .select()
-            .single();
-
-        if (error) {
-            console.error("Error creating credit note entry:", error);
-            throw new Error(error.message);
-        }
-
-        return LedgerEntry.fromDbFormat(data);
-    } catch (error) {
-        console.error('Error in createCreditNoteEntry:', error);
-        throw error;
-    }
-}
-
-export interface DebitNoteData {
-    supplierLedgerAccountId: string;
-    amount: number;
-    date: Date;
-    debitNoteNumber: string;
-    description?: string;
-}
-
-export async function createDebitNoteEntry(debitData: DebitNoteData): Promise<LedgerEntry> {
-    const supabase = await createClient();
-    try {
-        // Supplier Account - Debit (Reduces amount payable to supplier)
-        // This shows a return/discount reducing what software user owes
-        const entry = new LedgerEntry(
-            debitData.supplierLedgerAccountId,
-            debitData.date,
-            debitData.amount,
-            'Dr',
-            undefined,
-            `Debit Note ${debitData.debitNoteNumber} - ${debitData.description || 'Debit note'}`
-        );
-
-        const { data, error } = await supabase
-            .from('ledger_entry')
-            .insert(entry.toDbFormat())
-            .select()
-            .single();
-
-        if (error) {
-            console.error("Error creating debit note entry:", error);
-            throw new Error(error.message);
-        }
-
-        return LedgerEntry.fromDbFormat(data);
-    } catch (error) {
-        console.error('Error in createDebitNoteEntry:', error);
-        throw error;
-    }
-}
-
-export interface AdjustmentEntryData {
-    ledgerAccountId: string;
-    amount: number;
-    type: 'Dr' | 'Cr';
-    date: Date;
-    adjustmentNumber: string;
-    description?: string;
-}
-
-export async function createAdjustmentEntry(adjustmentData: AdjustmentEntryData): Promise<LedgerEntry> {
-    const supabase = await createClient();
-    try {
-        // Adjustment entry - can be either Dr or Cr based on requirement
-        const entry = new LedgerEntry(
-            adjustmentData.ledgerAccountId,
-            adjustmentData.date,
-            adjustmentData.amount,
-            adjustmentData.type,
-            undefined,
-            `Adjustment ${adjustmentData.adjustmentNumber} - ${adjustmentData.description || 'Adjustment entry'}`
-        );
-
-        const { data, error } = await supabase
-            .from('ledger_entry')
-            .insert(entry.toDbFormat())
-            .select()
-            .single();
-
-        if (error) {
-            console.error("Error creating adjustment entry:", error);
-            throw new Error(error.message);
-        }
-
-        return LedgerEntry.fromDbFormat(data);
-    } catch (error) {
-        console.error('Error in createAdjustmentEntry:', error);
-        throw error;
-    }
-}
-
-// Query Functions
-
-export async function getLedgerEntriesForDateRange(
+export async function getLedgerWithStatement(
     ledgerAccountId: string,
-    startDate: Date,
-    endDate: Date
-): Promise<LedgerEntry[]> {
+    startDate?: Date,
+    endDate?: Date
+): Promise<{
+    ledgerAccount: LedgerAccountInterface;
+    statement: Array<{
+        entry: LedgerEntry;
+        runningBalance: number;
+        runningBalanceType: 'Dr' | 'Cr';
+    }>;
+    currentBalance: { balance: number; balanceType: 'Dr' | 'Cr' };
+}> {
     const supabase = await createClient();
     try {
-        const { data, error } = await supabase
-            .from('ledger_entry')
-            .select('*')
-            .eq('ledger_account_id', ledgerAccountId)
-            .gte('date', startDate.toISOString())
-            .lte('date', endDate.toISOString())
-            .order('date', { ascending: true });
-
-        if (error) {
-            throw new Error(error.message);
-        }
-
-        return data.map(LedgerEntry.fromDbFormat);
-    } catch (error) {
-        console.error('Error fetching ledger entries for date range:', error);
-        throw error;
-    }
-}
-
-export async function getLedgerBalance(
-    ledgerAccountId: string,
-    upToDate?: Date
-): Promise<{ balance: number; balanceType: 'Dr' | 'Cr' }> {
-    const supabase = await createClient();
-    try {
-        let query = supabase
-            .from('ledger_entry')
-            .select('amount, type')
-            .eq('ledger_account_id', ledgerAccountId);
-
-        if (upToDate) {
-            query = query.lte('date', upToDate.toISOString());
-        }
-
-        const { data: entries, error: entriesError } = await query;
-        
-        if (entriesError) {
-            throw new Error(entriesError.message);
-        }
-
-        // Get opening balance from ledger account
-        const { data: account, error: accountError } = await supabase
+        // Get ledger account
+        const { data: accountData, error: accountError } = await supabase
             .from('ledger_account')
-            .select('opening_balance, balance_type')
+            .select('*')
             .eq('id', ledgerAccountId)
             .single();
 
@@ -472,66 +422,115 @@ export async function getLedgerBalance(
             throw new Error(accountError.message);
         }
 
-        let balance = account.opening_balance;
-        const originalBalanceType = account.balance_type;
+        const ledgerAccount = LedgerAccount.fromDbFormat(accountData);
 
-        // Calculate balance based on entries
-        entries.forEach(entry => {
-            if (originalBalanceType === 'Dr') {
-                balance += entry.type === 'Dr' ? entry.amount : -entry.amount;
-            } else {
-                balance += entry.type === 'Cr' ? entry.amount : -entry.amount;
-            }
-        });
+        // Get ledger entries
+        let query = supabase
+            .from('ledger_entry')
+            .select('*')
+            .eq('ledger_account_id', ledgerAccountId);
 
-        // Determine current balance type
-        const balanceType = balance >= 0 ? originalBalanceType : 
-                          (originalBalanceType === 'Dr' ? 'Cr' : 'Dr');
+        if (startDate && endDate) {
+            query = query.gte('date', startDate.toISOString())
+                         .lte('date', endDate.toISOString());
+        }
 
-                     
+        const { data: entriesData, error: entriesError } = await query
+            .order('date', { ascending: true });
+
+        if (entriesError) {
+            throw new Error(entriesError.message);
+        }
+
+        const ledgerEntries = entriesData.map(LedgerEntry.fromDbFormat);
+
+        // Create Ledger instance and get statement
+        const ledger = new Ledger(ledgerAccount, ledgerEntries);
+        const statement = ledger.getStatementWithRunningBalance(startDate, endDate);
+        const currentBalance = ledger.getCurrentBalance();
+
         return {
-            balance: Math.abs(balance),
-            balanceType
+            ledgerAccount,
+            statement,
+            currentBalance
         };
+    } catch (error) {
+        console.error('Error getting ledger with statement:', error);
+        throw error;
+    }
+}
+
+export async function getLedgerBalance(ledgerAccountId: string): Promise<{ balance: number; balanceType: 'Dr' | 'Cr' }> {
+    const supabase = await createClient();
+    try {
+        // Get ledger account
+        const { data: accountData, error: accountError } = await supabase
+            .from('ledger_account')
+            .select('*')
+            .eq('id', ledgerAccountId)
+            .single();
+
+        if (accountError) {
+            throw new Error(accountError.message);
+        }
+
+        // Get ledger entries
+        const { data: entriesData, error: entriesError } = await supabase
+            .from('ledger_entry')
+            .select('*')
+            .eq('ledger_account_id', ledgerAccountId);
+
+        if (entriesError) {
+            throw new Error(entriesError.message);
+        }
+
+        const ledgerAccount = LedgerAccount.fromDbFormat(accountData);
+        const ledgerEntries = entriesData.map(LedgerEntry.fromDbFormat);
+
+        // Create Ledger instance and get current balance
+        const ledger = new Ledger(ledgerAccount, ledgerEntries);
+        return ledger.getCurrentBalance();
     } catch (error) {
         console.error('Error calculating ledger balance:', error);
         throw error;
     }
 }
 
-export async function getLedgerStatement(
-    ledgerAccountId: string,
-    startDate?: Date,
-    endDate?: Date
-): Promise<{
-    openingBalance: { balance: number; balanceType: 'Dr' | 'Cr' };
-    entries: LedgerEntry[];
-    closingBalance: { balance: number; balanceType: 'Dr' | 'Cr' };
-}> {
+// Utility function to create opening balance entry
+export async function createOpeningBalanceEntry(ledgerAccountId: string): Promise<LedgerEntry> {
     const supabase = await createClient();
     try {
-        // Get opening balance
-        const openingBalance = startDate 
-            ? await getLedgerBalance(ledgerAccountId, startDate)
-            : { balance: 0, balanceType: 'Dr' as const };
+        // Get ledger account
+        const { data: accountData, error: accountError } = await supabase
+            .from('ledger_account')
+            .select('*')
+            .eq('id', ledgerAccountId)
+            .single();
 
-        // Get entries for the period
-        const entries = startDate && endDate
-            ? await getLedgerEntriesForDateRange(ledgerAccountId, startDate, endDate)
-            : await getAllLedgerEntries(ledgerAccountId);
+        if (accountError) {
+            throw new Error(accountError.message);
+        }
 
-        // Get closing balance
-        const closingBalance = endDate
-            ? await getLedgerBalance(ledgerAccountId, endDate)
-            : await getLedgerBalance(ledgerAccountId);
+        const ledgerAccount = LedgerAccount.fromDbFormat(accountData);
+        
+        // Create opening balance entry using utility function from Ledger.ts
+        const { createOpeningBalanceEntry } = await import("../../core/entities/Ledger");
+        const openingEntry = createOpeningBalanceEntry(ledgerAccount);
 
-        return {
-            openingBalance,
-            entries,
-            closingBalance
-        };
+        const { data, error } = await supabase
+            .from('ledger_entry')
+            .insert(openingEntry.toDbFormat())
+            .select()
+            .single();
+
+        if (error) {
+            console.error("Error creating opening balance entry:", error);
+            throw new Error(error.message);
+        }
+
+        return LedgerEntry.fromDbFormat(data);
     } catch (error) {
-        console.error('Error generating ledger statement:', error);
+        console.error('Error in createOpeningBalanceEntry:', error);
         throw error;
     }
 }

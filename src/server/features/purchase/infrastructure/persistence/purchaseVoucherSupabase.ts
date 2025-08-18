@@ -1,5 +1,16 @@
 import { createClient } from "@/utils/supabase/server";
 import { PurchaseVoucher, PurchaseVoucherInterface } from "../../core/entities/PurchaseVoucher";
+import { getFpoState } from "@/server/features/fpo/infrastructure/persistence/FpoProfileSupabase";
+import { getSupplierStateById } from "@/server/features/ledger/infrastructure/persistence/ledgerAccountSupabase";
+
+/**
+ * Get supplier state by supplier ID (assuming you have a suppliers/ledger_accounts table)
+ */
+export async function getSupplierState(supplierId: string): Promise<string | null> {
+const state = await getSupplierStateById(supplierId)    
+return state
+  
+}
 
 /**
  * Get all purchase vouchers for a specific FPO
@@ -139,19 +150,45 @@ export async function getPurchaseVouchersByDateRange(
 }
 
 /**
- * Create a new purchase voucher
+ * Create a new purchase voucher with GST calculations
  */
 export async function createPurchaseVoucher(voucherData: PurchaseVoucherInterface): Promise<PurchaseVoucher> {
     const supabase = await createClient();
     
     try {
+        // If supplierState is not provided but supplierVendorId is, fetch the supplier state
+        let supplierState = voucherData.supplierState;
+        if (!supplierState && voucherData.supplierVendorId) {
+            const state = await getSupplierState(voucherData.supplierVendorId);
+            if (!state) {
+                throw new Error('Could not determine supplier state for GST calculation');
+            }
+            else{supplierState = state}
+            if (!supplierState) {
+                throw new Error('Could not determine supplier state for GST calculation');
+            }
+        }
+
+        // Create voucher with supplier state
+        const voucher = PurchaseVoucher.fromInterface({
+            ...voucherData,
+            supplierState: supplierState!
+        });
+
         // Validate the voucher data
-        const voucher = PurchaseVoucher.fromInterface(voucherData);
         const validation = voucher.validate();
-        
         if (!validation.isValid) {
             throw new Error(`Validation failed: ${validation.errors.join(', ')}`);
         }
+
+        // Get FPO state for GST calculation
+        const fpoState = await getFpoState(voucher.fpoId);
+        if (!fpoState) {
+            throw new Error('Could not determine FPO state for GST calculation');
+        }
+
+        // Calculate totals with GST
+        await voucher.calculateTotals(fpoState);
 
         // Set timestamps
         voucher.createdAt = new Date();
@@ -174,7 +211,7 @@ export async function createPurchaseVoucher(voucherData: PurchaseVoucherInterfac
             throw new Error(error.message);
         }
 
-        console.log('Purchase voucher created successfully:', data.id);
+        console.log('Purchase voucher created successfully:', data);
         return PurchaseVoucher.fromDbFormat(data);
     } catch (error) {
         console.error('Error in createPurchaseVoucher:', error);
@@ -183,7 +220,7 @@ export async function createPurchaseVoucher(voucherData: PurchaseVoucherInterfac
 }
 
 /**
- * Update an existing purchase voucher
+ * Update an existing purchase voucher with GST calculations
  */
 export async function updatePurchaseVoucher(
     voucherId: string, 
@@ -207,16 +244,36 @@ export async function updatePurchaseVoucher(
             throw new Error(`Failed to verify voucher: ${fetchError.message}`);
         }
 
-        // Validate the updated voucher data
+        // If supplierState is not provided but supplierVendorId is, fetch the supplier state
+        let supplierState = voucherData.supplierState;
+        if (!supplierState && voucherData.supplierVendorId) {
+            const state = await getSupplierState(voucherData.supplierVendorId);
+            if (!state) {
+                throw new Error('Could not determine supplier state for GST calculation');
+            }
+            supplierState = state
+        }
+
+        // Create voucher with supplier state
         const voucher = PurchaseVoucher.fromInterface({
             ...voucherData,
-            id: voucherId
+            id: voucherId,
+            supplierState: supplierState!
         });
         
         const validation = voucher.validate();
         if (!validation.isValid) {
             throw new Error(`Validation failed: ${validation.errors.join(', ')}`);
         }
+
+        // Get FPO state for GST calculation
+        const fpoState = await getFpoState(voucher.fpoId);
+        if (!fpoState) {
+            throw new Error('Could not determine FPO state for GST calculation');
+        }
+
+        // Calculate totals with GST
+        await voucher.calculateTotals(fpoState);
 
         // Set updated timestamp
         voucher.updatedAt = new Date();
@@ -429,15 +486,21 @@ export async function bulkDeletePurchaseVouchers(voucherIds: string[]): Promise<
 }
 
 /**
- * Get purchase voucher statistics for FPO
+ * Get purchase voucher statistics for FPO with GST breakdown
  */
 export async function getPurchaseVoucherStats(fpoId: string): Promise<{
     totalVouchers: number;
     totalAmount: number;
+    totalCGST: number;
+    totalSGST: number;
+    totalIGST: number;
+    totalGST: number;
     draftCount: number;
     approvedCount: number;
     rejectedCount: number;
     avgAmount: number;
+    interstateCount: number;
+    intrastateCount: number;
 }> {
     const supabase = await createClient();
     
@@ -455,15 +518,32 @@ export async function getPurchaseVoucherStats(fpoId: string): Promise<{
         const stats = {
             totalVouchers: data.length,
             totalAmount: 0,
+            totalCGST: 0,
+            totalSGST: 0,
+            totalIGST: 0,
+            totalGST: 0,
             draftCount: 0,
             approvedCount: 0,
             rejectedCount: 0,
-            avgAmount: 0
+            avgAmount: 0,
+            interstateCount: 0,
+            intrastateCount: 0
         };
 
         data.forEach(voucher => {
             const summary = JSON.parse(voucher.summary || '{}');
             stats.totalAmount += summary.grandTotal || 0;
+            stats.totalCGST += summary.totalCGST || 0;
+            stats.totalSGST += summary.totalSGST || 0;
+            stats.totalIGST += summary.totalIGST || 0;
+            stats.totalGST += summary.totalGST || 0;
+            
+            // Count GST types
+            if (summary.gstType === 'interstate') {
+                stats.interstateCount++;
+            } else if (summary.gstType === 'intrastate') {
+                stats.intrastateCount++;
+            }
             
             switch (voucher.status) {
                 case 'draft':
@@ -501,7 +581,7 @@ export async function searchPurchaseVouchers(
             .from('purchase_vouchers')
             .select('*')
             .eq('fpo_id', fpoId)
-            .or(`supplier_vendor_name.ilike.%${searchTerm}%,party_invoice_number.ilike.%${searchTerm}%,po_number.ilike.%${searchTerm}%,notes.ilike.%${searchTerm}%`)
+            .or(`supplier_vendor_name.ilike.%${searchTerm}%,party_invoice_number.ilike.%${searchTerm}%,po_number.ilike.%${searchTerm}%,notes.ilike.%${searchTerm}%,supplier_state.ilike.%${searchTerm}%`)
             .order('created_at', { ascending: false });
 
         if (error) {
@@ -512,6 +592,138 @@ export async function searchPurchaseVouchers(
         return data.map(PurchaseVoucher.fromDbFormat);
     } catch (error) {
         console.error('Error in searchPurchaseVouchers:', error);
+        throw error;
+    }
+}
+
+/**
+ * Recalculate GST for existing purchase voucher (utility function)
+ * Useful when FPO state changes or when migrating existing data
+ */
+export async function recalculatePurchaseVoucherGST(voucherId: string): Promise<PurchaseVoucher> {
+    const supabase = await createClient();
+    
+    try {
+        // Get existing voucher
+        const existingVoucher = await getPurchaseVoucherById(voucherId);
+        if (!existingVoucher) {
+            throw new Error('Purchase voucher not found');
+        }
+
+        // Get FPO state for GST calculation
+        const fpoState = await getFpoState(existingVoucher.fpoId);
+        if (!fpoState) {
+            throw new Error('Could not determine FPO state for GST calculation');
+        }
+
+        // Recalculate totals with current GST rules
+        await existingVoucher.calculateTotals(fpoState);
+        existingVoucher.updatedAt = new Date();
+
+        // Update in database
+        const dbData = existingVoucher.toDbFormat();
+        const { id, created_at, ...updateData } = dbData;
+
+        const { data, error } = await supabase
+            .from('purchase_vouchers')
+            .update(updateData)
+            .eq('id', voucherId)
+            .select()
+            .single();
+
+        if (error) {
+            console.error('Error recalculating purchase voucher GST:', error);
+            throw new Error(error.message);
+        }
+
+        console.log('Purchase voucher GST recalculated successfully:', voucherId);
+        return PurchaseVoucher.fromDbFormat(data);
+    } catch (error) {
+        console.error('Error in recalculatePurchaseVoucherGST:', error);
+        throw error;
+    }
+}
+
+/**
+ * Get GST summary report for purchase vouchers in a date range
+ */
+export async function getPurchaseVoucherGSTReport(
+    fpoId: string,
+    startDate: Date,
+    endDate: Date
+): Promise<{
+    totalTaxableAmount: number;
+    totalCGST: number;
+    totalSGST: number;
+    totalIGST: number;
+    totalGST: number;
+    gstBreakdown: { [rate: string]: { taxable: number; cgst: number; sgst: number; igst: number; totalGst: number } };
+    interstateAmount: number;
+    intrastateAmount: number;
+}> {
+    const supabase = await createClient();
+    
+    try {
+        const { data, error } = await supabase
+            .from('purchase_vouchers')
+            .select('summary, gst_breakdown')
+            .eq('fpo_id', fpoId)
+            .gte('party_invoice_date', startDate.toISOString())
+            .lte('party_invoice_date', endDate.toISOString())
+            .eq('status', 'approved'); // Only approved vouchers for GST reporting
+
+        if (error) {
+            console.error('Error fetching purchase vouchers for GST report:', error);
+            throw new Error(error.message);
+        }
+
+        const report = {
+            totalTaxableAmount: 0,
+            totalCGST: 0,
+            totalSGST: 0,
+            totalIGST: 0,
+            totalGST: 0,
+            gstBreakdown: {} as any,
+            interstateAmount: 0,
+            intrastateAmount: 0
+        };
+
+        data.forEach(voucher => {
+            const summary = JSON.parse(voucher.summary || '{}');
+            const gstBreakdown = JSON.parse(voucher.gst_breakdown || '{}');
+
+            report.totalCGST += summary.totalCGST || 0;
+            report.totalSGST += summary.totalSGST || 0;
+            report.totalIGST += summary.totalIGST || 0;
+            report.totalGST += summary.totalGST || 0;
+
+            if (summary.gstType === 'interstate') {
+                report.interstateAmount += summary.grandTotal || 0;
+            } else {
+                report.intrastateAmount += summary.grandTotal || 0;
+            }
+
+            // Merge GST breakdown
+            Object.keys(gstBreakdown).forEach(rate => {
+                if (!report.gstBreakdown[rate]) {
+                    report.gstBreakdown[rate] = { taxable: 0, cgst: 0, sgst: 0, igst: 0, totalGst: 0 };
+                }
+                report.gstBreakdown[rate].taxable += gstBreakdown[rate].taxable || 0;
+                report.gstBreakdown[rate].cgst += gstBreakdown[rate].cgst || 0;
+                report.gstBreakdown[rate].sgst += gstBreakdown[rate].sgst || 0;
+                report.gstBreakdown[rate].igst += gstBreakdown[rate].igst || 0;
+                report.gstBreakdown[rate].totalGst += gstBreakdown[rate].totalGst || 0;
+            });
+        });
+
+        // Calculate total taxable amount
+        report.totalTaxableAmount = Object.values(report.gstBreakdown).reduce(
+            (sum: number, breakdown: any) => sum + breakdown.taxable, 0
+        );
+
+        return report;
+    } catch (error) {
+        console.error('Error in getPurchaseVoucherGSTReport:', error);
         throw error;
     }
 }

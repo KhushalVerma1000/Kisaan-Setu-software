@@ -9,15 +9,77 @@ export class LedgerEntryAPI {
     static async getAll(ledgerAccountId: string) {
         const response = await fetch(`${API_BASE_URL}?ledgerAccountId=${ledgerAccountId}`);
         if (!response.ok) throw new Error('Failed to fetch ledger entries');
-        return response.json();
+        const data = await response.json();
+        return data.entries; // Return entries array directly
     }
 
     // Get ledger entry by ID
     static async getById(id: string) {
         const response = await fetch(`${API_BASE_URL}/${id}`);
         if (!response.ok) throw new Error('Failed to fetch ledger entry');
-        return response.json();
+        const data = await response.json();
+        return data.entry; // Return entry object directly
     }
+
+    
+    // Get ledger entry by document ID (single entry)
+    static async getByDocumentId(documentId: string) {
+        const response = await fetch(`${API_BASE_URL}/document/${documentId}`);
+        if (!response.ok) {
+            if (response.status === 404) {
+                return null; // No entry found
+            }
+            throw new Error('Failed to fetch ledger entry by document ID');
+        }
+        const data = await response.json();
+        return data.entry; // Return entry object directly
+    }
+
+    // Get all ledger entries by document ID (multiple entries possible)
+    static async getAllByDocumentId(documentId: string) {
+        const response = await fetch(`${API_BASE_URL}/document/${documentId}/all`);
+        if (!response.ok) throw new Error('Failed to fetch ledger entries by document ID');
+        const data = await response.json();
+        return data.entries; // Return entries array directly
+    }
+
+    // Check if document has ledger entries
+    static async hasLedgerEntries(documentId: string) {
+        try {
+            const entries = await this.getAllByDocumentId(documentId);
+            return { exists: true, count: entries.length, entries };
+        } catch (error) {
+            return { 
+                exists: false, 
+                count: 0, 
+                entries: [],
+                error: error instanceof Error ? error.message : 'Document not found' 
+            };
+        }
+    }
+
+    // Delete ledger entries by document ID (useful when deleting a document)
+    static async deleteByDocumentId(documentId: string) {
+        const response = await fetch(`${API_BASE_URL}/document/${documentId}`, {
+            method: 'DELETE',
+        });
+        if (!response.ok) throw new Error('Failed to delete ledger entries by document ID');
+        const result = await response.json();
+        return result; // Return result with count of deleted entries
+    }
+
+    // Get ledger entries by document type
+    static async getByDocumentType(documentType: string, limit?: number) {
+        const params = new URLSearchParams({ documentType });
+        if (limit) params.append('limit', limit.toString());
+        
+        const response = await fetch(`${API_BASE_URL}/by-document-type?${params.toString()}`);
+        if (!response.ok) throw new Error('Failed to fetch ledger entries by document type');
+        const data = await response.json();
+        return data.entries; // Return entries array directly
+    }
+
+
 
     // Create ledger entry
     static async create(data: LedgerEntryInterface) {
@@ -29,7 +91,8 @@ export class LedgerEntryAPI {
             body: JSON.stringify(data),
         });
         if (!response.ok) throw new Error('Failed to create ledger entry');
-        return response.json();
+        const result = await response.json();
+        return result.entry; // Return entry object directly
     }
 
     // Update ledger entry
@@ -42,7 +105,8 @@ export class LedgerEntryAPI {
             body: JSON.stringify(data),
         });
         if (!response.ok) throw new Error('Failed to update ledger entry');
-        return response.json();
+        const result = await response.json();
+        return result.entry; // Return entry object directly
     }
 
     // Delete ledger entry
@@ -51,26 +115,16 @@ export class LedgerEntryAPI {
             method: 'DELETE',
         });
         if (!response.ok) throw new Error('Failed to delete ledger entry');
-        return response.json();
-    }
-
-    // Get ledger entries by date range
-    static async getByDateRange(ledgerAccountId: string, startDate: string, endDate: string) {
-        const response = await fetch(
-            `${API_BASE_URL}?ledgerAccountId=${ledgerAccountId}&startDate=${startDate}&endDate=${endDate}`
-        );
-        if (!response.ok) throw new Error('Failed to fetch ledger entries by date range');
-        return response.json();
+        const result = await response.json();
+        return result.message; // Return success message
     }
 
     // Get ledger balance for an account
-    static async getBalance(ledgerAccountId: string, upToDate?: string) {
-        const params = new URLSearchParams({ ledgerAccountId });
-        if (upToDate) params.append('upToDate', upToDate);
-        
-        const response = await fetch(`${API_BASE_URL}/balance?${params.toString()}`);
+    static async getBalance(ledgerAccountId: string) {
+        const response = await fetch(`${API_BASE_URL}/balance?ledgerAccountId=${ledgerAccountId}`);
         if (!response.ok) throw new Error('Failed to fetch ledger balance');
-        return response.json();
+        const data = await response.json();
+        return data.balance; // Return balance directly
     }
 
     // Get ledger statement
@@ -81,7 +135,7 @@ export class LedgerEntryAPI {
         
         const response = await fetch(`${API_BASE_URL}/statement?${params.toString()}`);
         if (!response.ok) throw new Error('Failed to fetch ledger statement');
-        return response.json();
+        return response.json(); // Return full ledger with statement object
     }
 
     // Bulk delete ledger entries
@@ -94,19 +148,185 @@ export class LedgerEntryAPI {
             body: JSON.stringify({ entryIds }),
         });
         if (!response.ok) throw new Error('Failed to bulk delete ledger entries');
-        return response.json();
+        const result = await response.json();
+        return result.message; // Return success message
     }
 
-    // Search ledger entries
+    // Create opening balance entry
+    static async createOpeningBalance(ledgerAccountId: string) {
+        const response = await fetch(`${API_BASE_URL}/opening-balance`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ ledgerAccountId }),
+        });
+        if (!response.ok) throw new Error('Failed to create opening balance entry');
+        const result = await response.json();
+        return result.entry; // Return entry object directly
+    }
+
+    // === TRANSACTION-SPECIFIC METHODS ===
+
+    // Create sales invoice ledger entry
+ 
+     // Updated transaction methods
+     static async createSalesInvoiceEntry(data: {
+         customerLedgerAccountId: string;
+         amount: number;
+         date: string;
+         invoiceId: string;        // Changed from invoiceNumber
+         invoiceNumber: string;    // Added for display
+         customerName?: string;
+     }) {
+         const response = await fetch(`${API_BASE_URL}/transactions/sales`, {
+             method: 'POST',
+             headers: {
+                 'Content-Type': 'application/json',
+             },
+             body: JSON.stringify(data),
+         });
+         if (!response.ok) throw new Error('Failed to create sales invoice ledger entry');
+         const result = await response.json();
+         return result.entry;
+     }
+ 
+     static async createPurchaseVoucherEntry(data: {
+         supplierLedgerAccountId: string;
+         amount: number;
+         date: string;
+         voucherId: string;        // Changed from voucherNumber
+         voucherNumber: string;    // Added for display
+         supplierName?: string;
+     }) {
+         const response = await fetch(`${API_BASE_URL}/transactions/purchase`, {
+             method: 'POST',
+             headers: {
+                 'Content-Type': 'application/json',
+             },
+             body: JSON.stringify(data),
+         });
+         if (!response.ok) throw new Error('Failed to create purchase voucher ledger entry');
+         const result = await response.json();
+         return result.entry;
+     }
+ 
+     static async createPaymentInEntry(data: {
+         customerLedgerAccountId: string;
+         amount: number;
+         date: string;
+         paymentId: string;        // Changed from receiptNumber
+         receiptNumber: string;    // Added for display
+         customerName?: string;
+     }) {
+         const response = await fetch(`${API_BASE_URL}/transactions/payment-in`, {
+             method: 'POST',
+             headers: {
+                 'Content-Type': 'application/json',
+             },
+             body: JSON.stringify(data),
+         });
+         if (!response.ok) throw new Error('Failed to create payment in ledger entry');
+         const result = await response.json();
+         return result.entry;
+     }
+ 
+     static async createPaymentOutEntry(data: {
+         supplierLedgerAccountId: string;
+         amount: number;
+         date: string;
+         paymentId: string;        // Changed from paymentNumber
+         paymentNumber: string;    // Added for display
+         supplierName?: string;
+     }) {
+         const response = await fetch(`${API_BASE_URL}/transactions/payment-out`, {
+             method: 'POST',
+             headers: {
+                 'Content-Type': 'application/json',
+             },
+             body: JSON.stringify(data),
+         });
+         if (!response.ok) throw new Error('Failed to create payment out ledger entry');
+         const result = await response.json();
+         return result.entry;
+     }
+ 
+     // Updated helper methods
+     static async createFromInvoice(invoiceData: {
+         invoiceId: string;        // Added invoice ID
+         customerId: string;
+         customerName?: string;
+         invoiceNumber: string;
+         invoiceDate: string;
+         grandTotal: number;
+         notes?: string;
+     }) {
+         return this.createSalesInvoiceEntry({
+             customerLedgerAccountId: invoiceData.customerId,
+             customerName: invoiceData.customerName,
+             amount: invoiceData.grandTotal,
+             date: invoiceData.invoiceDate,
+             invoiceId: invoiceData.invoiceId,        // Use invoice ID
+             invoiceNumber: invoiceData.invoiceNumber  // Display number
+         });
+     }
+ 
+     static async createFromPurchaseVoucher(voucherData: {
+         voucherId: string;        // Added voucher ID
+         supplierId: string;
+         supplierName?: string;
+         voucherNumber: string;
+         voucherDate: string;
+         grandTotal: number;
+         notes?: string;
+         partyInvoiceNumber?: string;
+     }) {
+         return this.createPurchaseVoucherEntry({
+             supplierLedgerAccountId: voucherData.supplierId,
+             supplierName: voucherData.supplierName,
+             amount: voucherData.grandTotal,
+             date: voucherData.voucherDate,
+             voucherId: voucherData.voucherId,        // Use voucher ID
+             voucherNumber: voucherData.voucherNumber  // Display number
+         });
+     }
+ 
+    // === UTILITY METHODS ===
+
+    // Check if ledger account exists by trying to get its balance
+    static async checkLedgerAccount(ledgerAccountId: string) {
+        try {
+            const balance = await this.getBalance(ledgerAccountId);
+            return { exists: true, balance };
+        } catch (error) {
+            return { 
+                exists: false, 
+                error: error instanceof Error ? error.message : 'Account not found' 
+            };
+        }
+    }
+
+    // Search ledger entries (if implemented on backend)
     static async search(ledgerAccountId: string, searchTerm: string) {
         const response = await fetch(
             `${API_BASE_URL}?ledgerAccountId=${ledgerAccountId}&search=${encodeURIComponent(searchTerm)}`
         );
         if (!response.ok) throw new Error('Failed to search ledger entries');
-        return response.json();
+        const data = await response.json();
+        return data.entries; // Return entries array directly
     }
 
-    // Get ledger entries with pagination
+    // Get ledger entries by date range (if implemented on backend)
+    static async getByDateRange(ledgerAccountId: string, startDate: string, endDate: string) {
+        const response = await fetch(
+            `${API_BASE_URL}?ledgerAccountId=${ledgerAccountId}&startDate=${startDate}&endDate=${endDate}`
+        );
+        if (!response.ok) throw new Error('Failed to fetch ledger entries by date range');
+        const data = await response.json();
+        return data.entries; // Return entries array directly
+    }
+
+    // Get paginated ledger entries (if implemented on backend)
     static async getPaginated(
         ledgerAccountId: string,
         page: number = 1,
@@ -124,127 +344,12 @@ export class LedgerEntryAPI {
         
         const response = await fetch(`${API_BASE_URL}/paginated?${params.toString()}`);
         if (!response.ok) throw new Error('Failed to fetch paginated ledger entries');
-        return response.json();
-    }
-
-    // === TRANSACTION-SPECIFIC METHODS ===
-
-    // Create sales invoice ledger entry
-    static async createSalesInvoiceEntry(data: {
-        customerLedgerAccountId: string;
-        amount: number;
-        date: string;
-        invoiceNumber: string;
-        description?: string;
-    }) {
-        const response = await fetch(`${API_BASE_URL}/transactions/sales`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(data),
-        });
-        if (!response.ok) throw new Error('Failed to create sales invoice ledger entry');
-        return response.json();
-    }
-
-    // Create purchase voucher ledger entry
-    static async createPurchaseVoucherEntry(data: {
-        supplierLedgerAccountId: string;
-        amount: number;
-        date: string;
-        voucherNumber: string;
-        description?: string;
-    }) {
-        const response = await fetch(`${API_BASE_URL}/transactions/purchase`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(data),
-        });
-        if (!response.ok) throw new Error('Failed to create purchase voucher ledger entry');
-        return response.json();
-    }
-
-    // Create payment in ledger entry
-    static async createPaymentInEntry(data: {
-        customerLedgerAccountId: string;
-        amount: number;
-        date: string;
-        receiptNumber: string;
-        description?: string;
-    }) {
-        const response = await fetch(`${API_BASE_URL}/transactions/payment-in`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(data),
-        });
-        if (!response.ok) throw new Error('Failed to create payment in ledger entry');
-        return response.json();
-    }
-
-    // Create payment out ledger entry
-    static async createPaymentOutEntry(data: {
-        supplierLedgerAccountId: string;
-        amount: number;
-        date: string;
-        paymentNumber: string;
-        description?: string;
-    }) {
-        const response = await fetch(`${API_BASE_URL}/transactions/payment-out`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(data),
-        });
-        if (!response.ok) throw new Error('Failed to create payment out ledger entry');
-        return response.json();
-    }
-
-    // === HELPER METHODS FOR INVOICES AND PURCHASE VOUCHERS ===
-
-    // Helper: Create ledger entry from invoice data
-    static async createFromInvoice(invoiceData: {
-        customerId: string;
-        invoiceNumber: string;
-        invoiceDate: string;
-        grandTotal: number;
-        notes?: string;
-    }) {
-        return this.createSalesInvoiceEntry({
-            customerLedgerAccountId: invoiceData.customerId,
-            amount: invoiceData.grandTotal,
-            date: invoiceData.invoiceDate,
-            invoiceNumber: invoiceData.invoiceNumber,
-            description: `Sales Invoice - ${invoiceData.invoiceNumber}${invoiceData.notes ? ' - ' + invoiceData.notes : ''}`
-        });
-    }
-
-    // Helper: Create ledger entry from purchase voucher data
-    static async createFromPurchaseVoucher(voucherData: {
-        supplierId: string;
-        voucherNumber: string;
-        voucherDate: string;
-        grandTotal: number;
-        notes?: string;
-        partyInvoiceNumber?: string;
-    }) {
-        return this.createPurchaseVoucherEntry({
-            supplierLedgerAccountId: voucherData.supplierId,
-            amount: voucherData.grandTotal,
-            date: voucherData.voucherDate,
-            voucherNumber: voucherData.voucherNumber,
-            description: `Purchase Voucher - ${voucherData.partyInvoiceNumber || voucherData.voucherNumber}${voucherData.notes ? ' - ' + voucherData.notes : ''}`
-        });
+        return response.json(); // Return full pagination object
     }
 
     // === VALIDATION METHODS ===
 
-    // Validate ledger entry before creation
+    // Validate ledger entry before creation (if implemented on backend)
     static async validate(data: LedgerEntryInterface) {
         const response = await fetch(`${API_BASE_URL}/validate`, {
             method: 'POST',
@@ -257,19 +362,9 @@ export class LedgerEntryAPI {
         return response.json();
     }
 
-    // Check if ledger account exists
-    static async checkLedgerAccount(ledgerAccountId: string) {
-        try {
-            const response = await this.getBalance(ledgerAccountId);
-            return { exists: true, balance: response.balance };
-        } catch (error) {
-            return { exists: false, error: error instanceof Error ? error.message : 'Account not found' };
-        }
-    }
-
     // === REPORTING METHODS ===
 
-    // Get ledger entries summary/statistics
+    // Get ledger entries summary/statistics (if implemented on backend)
     static async getStats(ledgerAccountId: string, startDate?: string, endDate?: string) {
         const params = new URLSearchParams({ ledgerAccountId });
         if (startDate) params.append('startDate', startDate);
@@ -281,7 +376,7 @@ export class LedgerEntryAPI {
         return response.json();
     }
 
-    // Export ledger entries
+    // Export ledger entries (if implemented on backend)
     static async export(
         ledgerAccountId: string,
         format: 'json' | 'csv' = 'json',

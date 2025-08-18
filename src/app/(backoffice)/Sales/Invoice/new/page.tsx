@@ -122,8 +122,8 @@ const AddInvoicePage: React.FC = () => {
         toast.error('FPO ID not found');
         return;
       }
-      const result = await InvoiceAPI.getNextInvoiceNumber(fpoIdOfUser, 'INV');
-      setFormData(prev => ({ ...prev, invoiceNumber: result.nextNumber }));
+      const result = await InvoiceAPI.getNextInvoiceNumber(fpoIdOfUser);
+      setFormData(prev => ({ ...prev, invoiceNumber: result.data }));
     } catch (error) {
       toast.error('Failed to generate invoice number');
     }

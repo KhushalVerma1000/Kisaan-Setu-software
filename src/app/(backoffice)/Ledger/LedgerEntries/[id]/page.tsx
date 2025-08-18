@@ -17,19 +17,33 @@ import { toast } from "react-toastify";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 
-// Ledger Entry interface
+// Ledger Entry interface (updated to match API response)
 interface LedgerEntry {
   id: string;
   ledgerAccountId: string;
   date: string;
   amount: number;
   type: 'Dr' | 'Cr';
-  description: string;
+  primaryDescription: string;
+  documentId?: string;
+  documentType?: string;
+  documentNumber?: string;
+  secondaryDescription?: string;
+  referenceDescription?: string;
+  ledgerReference?: string;
+  isOpeningBalance: boolean;
   createdAt: string;
   updatedAt: string;
 }
 
-// Ledger Account interface
+// Statement Entry interface (matches API response structure)
+interface StatementEntry {
+  entry: LedgerEntry;
+  runningBalance: number;
+  runningBalanceType: 'Dr' | 'Cr';
+}
+
+// Ledger Account interface (updated to match API response)
 interface LedgerAccount {
   id: string;
   name: string;
@@ -39,22 +53,22 @@ interface LedgerAccount {
   phoneNumber?: string;
   address?: string;
   fpoId?: string;
+  gstNumber?: string;
+  openingDate?: string;
+  state?: string;
 }
 
-// balance interface 
+// Balance interface 
 interface BalanceObject {
   balance: number;
-  balanceType?: 'Dr' | 'Cr';
+  balanceType: 'Dr' | 'Cr';
 }
 
-// Statement interface
-interface LedgerStatement {
+// Statement interface (updated to match API response)
+interface LedgerStatementResponse {
   ledgerAccount: LedgerAccount;
-  openingBalance: BalanceObject;
-  entries: LedgerEntry[];
-  closingBalance: BalanceObject;
-  totalDebit: number;
-  totalCredit: number;
+  statement: StatementEntry[];
+  currentBalance: BalanceObject;
 }
 
 // API Error interface
@@ -71,9 +85,9 @@ export default function LedgerEntriesPage() {
 
   // State management
   const [ledgerAccount, setLedgerAccount] = useState<LedgerAccount | null>(null);
-  const [entries, setEntries] = useState<LedgerEntry[]>([]);
-  const [allEntries, setAllEntries] = useState<LedgerEntry[]>([]);
-  const [statement, setStatement] = useState<LedgerStatement | null>(null);
+  const [statementEntries, setStatementEntries] = useState<StatementEntry[]>([]);
+  const [allStatementEntries, setAllStatementEntries] = useState<StatementEntry[]>([]);
+  const [currentBalance, setCurrentBalance] = useState<BalanceObject | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [itemsPerPage, setItemsPerPage] = useState("25");
   const [isLoading, setIsLoading] = useState(true);
@@ -87,85 +101,38 @@ export default function LedgerEntriesPage() {
   const [isStartDateOpen, setIsStartDateOpen] = useState(false);
   const [isEndDateOpen, setIsEndDateOpen] = useState(false);
 
-  // Calculate running balance
-  const entriesWithBalance = useMemo(() => {
-    let runningBalance = statement?.openingBalance.balance || 0;
-    
-    return entries.map((entry) => {
-      if (entry.type === 'Dr') {
-        runningBalance += entry.amount;
-      } else {
-        runningBalance -= entry.amount;
-      }
-      
+  // Calculate statement summary from entries
+  const statementSummary = useMemo(() => {
+    if (!ledgerAccount || statementEntries.length === 0) {
       return {
-        ...entry,
-        runningBalance: runningBalance
+        openingBalance: ledgerAccount?.openingBalance || 0,
+        totalCredit: 0,
+        totalDebit: 0,
+        closingBalance: currentBalance?.balance || 0
       };
-    });
-  }, [entries, statement?.openingBalance]);
-
-  // Fetch ledger account details
-  const fetchLedgerAccount = useCallback(async () => {
-    try {
-      const response = await fetch(`/api/ledger/ledgerAccount/${ledgerId}`);
-      
-      if (!response.ok) {
-        const errorData: APIError = await response.json();
-        throw new Error(errorData.details || errorData.error || 'Failed to fetch ledger account');
-      }
-      
-      const data: LedgerAccount = await response.json();
-      setLedgerAccount(data);
-      
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to fetch ledger account';
-      setError(errorMessage);
-      console.error('Error fetching ledger account:', err);
-      toast.error(`Failed to fetch ledger account: ${errorMessage}`);
     }
-  }, [ledgerId]);
 
-  // Fetch ledger entries
-  const fetchLedgerEntries = useCallback(async (start?: Date, end?: Date) => {
+    const totalCredit = statementEntries.reduce((sum, item) => 
+      item.entry.type === 'Cr' ? sum + item.entry.amount : sum, 0
+    );
+    
+    const totalDebit = statementEntries.reduce((sum, item) => 
+      item.entry.type === 'Dr' ? sum + item.entry.amount : sum, 0
+    );
+
+    return {
+      openingBalance: ledgerAccount.openingBalance,
+      totalCredit,
+      totalDebit,
+      closingBalance: currentBalance?.balance || 0
+    };
+  }, [ledgerAccount, statementEntries, currentBalance]);
+
+  // Fetch ledger statement (this will get both account and entries)
+  const fetchLedgerStatement = useCallback(async (start?: Date, end?: Date) => {
     setIsLoading(true);
     setError(null);
     
-    try {
-      let url = `/api/ledger/ledger-entries?ledgerAccountId=${ledgerId}`;
-      
-      if (start && end) {
-        url += `&startDate=${start.toISOString()}&endDate=${end.toISOString()}`;
-      }
-      
-      const response = await fetch(url);
-      
-      if (!response.ok) {
-        const errorData: APIError = await response.json();
-        throw new Error(errorData.details || errorData.error || 'Failed to fetch ledger entries');
-      }
-      
-      const data = await response.json();
-      const fetchedEntries: LedgerEntry[] = data.entries || [];
-      
-      // Sort entries by date (newest first)
-      fetchedEntries.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-      
-      setAllEntries(fetchedEntries);
-      setEntries(fetchedEntries);
-      
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to fetch ledger entries';
-      setError(errorMessage);
-      console.error('Error fetching ledger entries:', err);
-      toast.error(`Failed to fetch ledger entries: ${errorMessage}`);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [ledgerId]);
-
-  // Fetch ledger statement
-  const fetchLedgerStatement = useCallback(async (start?: Date, end?: Date) => {
     try {
       let url = `/api/ledger/ledger-entries/statement?ledgerAccountId=${ledgerId}`;
       
@@ -180,13 +147,27 @@ export default function LedgerEntriesPage() {
         throw new Error(errorData.details || errorData.error || 'Failed to fetch ledger statement');
       }
       
-      const data = await response.json();
-      setStatement(data.statement);
+      const data: LedgerStatementResponse = await response.json();
+      
+      // Set ledger account info
+      setLedgerAccount(data.ledgerAccount);
+      
+      // Sort statement entries by date (newest first) - but preserve running balance order
+      const sortedEntries = [...data.statement].sort((a, b) => 
+        new Date(b.entry.date).getTime() - new Date(a.entry.date).getTime()
+      );
+      
+      setAllStatementEntries(sortedEntries);
+      setStatementEntries(sortedEntries);
+      setCurrentBalance(data.currentBalance);
       
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to fetch ledger statement';
+      setError(errorMessage);
       console.error('Error fetching ledger statement:', err);
       toast.error(`Failed to fetch ledger statement: ${errorMessage}`);
+    } finally {
+      setIsLoading(false);
     }
   }, [ledgerId]);
 
@@ -198,15 +179,13 @@ export default function LedgerEntriesPage() {
         return;
       }
       
-      fetchLedgerEntries(startDate, endDate);
       fetchLedgerStatement(startDate, endDate);
       setCurrentPage(1);
     } else {
-      fetchLedgerEntries();
       fetchLedgerStatement();
       setCurrentPage(1);
     }
-  }, [startDate, endDate, fetchLedgerEntries, fetchLedgerStatement]);
+  }, [startDate, endDate, fetchLedgerStatement]);
 
   // Handle search
   const handleSearch = useCallback((value: string) => {
@@ -216,28 +195,30 @@ export default function LedgerEntriesPage() {
 
   // Apply search filter
   const handleSubmit = useCallback(() => {
-    let filtered = [...allEntries];
+    let filtered = [...allStatementEntries];
     
     if (searchTerm.trim()) {
-      filtered = filtered.filter(entry =>
-        entry.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        entry.amount.toString().includes(searchTerm) ||
-        entry.type.toLowerCase().includes(searchTerm.toLowerCase())
+      filtered = filtered.filter(item =>
+        item.entry.primaryDescription?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        item.entry.secondaryDescription?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        item.entry.referenceDescription?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        item.entry.documentNumber?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        item.entry.amount.toString().includes(searchTerm) ||
+        item.entry.type.toLowerCase().includes(searchTerm.toLowerCase())
       );
     }
     
-    setEntries(filtered);
+    setStatementEntries(filtered);
     setCurrentPage(1);
-  }, [searchTerm, allEntries]);
+  }, [searchTerm, allStatementEntries]);
 
   // Clear date filters
   const handleClearDateFilters = useCallback(() => {
     setStartDate(undefined);
     setEndDate(undefined);
-    fetchLedgerEntries();
     fetchLedgerStatement();
     setCurrentPage(1);
-  }, [fetchLedgerEntries, fetchLedgerStatement]);
+  }, [fetchLedgerStatement]);
 
   // Download PDF handler (dummy)
   const handleDownloadPDF = useCallback(() => {
@@ -247,27 +228,24 @@ export default function LedgerEntriesPage() {
 
   // Refresh data
   const handleRefresh = useCallback(() => {
-    fetchLedgerAccount();
     if (startDate && endDate) {
-      fetchLedgerEntries(startDate, endDate);
       fetchLedgerStatement(startDate, endDate);
     } else {
-      fetchLedgerEntries();
       fetchLedgerStatement();
     }
-  }, [fetchLedgerAccount, fetchLedgerEntries, fetchLedgerStatement, startDate, endDate]);
+  }, [fetchLedgerStatement, startDate, endDate]);
 
   // Pagination logic
   const itemsPerPageNum = parseInt(itemsPerPage);
-  const totalPages = Math.ceil(entries.length / itemsPerPageNum);
+  const totalPages = Math.ceil(statementEntries.length / itemsPerPageNum);
   const startIndex = (currentPage - 1) * itemsPerPageNum;
   const endIndex = startIndex + itemsPerPageNum;
-  const currentEntries = entriesWithBalance.slice(startIndex, endIndex);
+  const currentEntries = statementEntries.slice(startIndex, endIndex);
 
   // Selection handlers
   const handleSelectAll = (checked: boolean) => {
     if (checked) {
-      setSelectedEntries(currentEntries.map(entry => entry.id));
+      setSelectedEntries(currentEntries.map(item => item.entry.id));
     } else {
       setSelectedEntries([]);
     }
@@ -283,15 +261,13 @@ export default function LedgerEntriesPage() {
 
   // Load initial data
   useEffect(() => {
-    fetchLedgerAccount();
-    fetchLedgerEntries();
     fetchLedgerStatement();
-  }, [fetchLedgerAccount, fetchLedgerEntries, fetchLedgerStatement]);
+  }, [fetchLedgerStatement]);
 
-  // Apply search when allEntries changes
+  // Apply search when allStatementEntries changes
   useEffect(() => {
     handleSubmit();
-  }, [allEntries]);
+  }, [allStatementEntries]);
 
   if (error && !isLoading) {
     return (
@@ -395,45 +371,57 @@ export default function LedgerEntriesPage() {
                   <p className="font-medium">{ledgerAccount.address}</p>
                 </div>
               )}
+              {ledgerAccount.state && (
+                <div>
+                  <p className="text-sm text-muted-foreground">State</p>
+                  <p className="font-medium">{ledgerAccount.state}</p>
+                </div>
+              )}
+              {ledgerAccount.gstNumber && (
+                <div>
+                  <p className="text-sm text-muted-foreground">GST Number</p>
+                  <p className="font-medium">{ledgerAccount.gstNumber}</p>
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>
       )}
 
       {/* Statement Summary Card */}
-      {statement && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Statement Summary</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              <div className="text-center p-4 bg-blue-50 rounded-lg">
-                <div className="text-2xl font-bold text-blue-600">₹{statement.openingBalance.balance.toLocaleString('en-IN')}</div>
-                <div className="text-sm text-blue-600">Opening Balance</div>
+      <Card>
+        <CardHeader>
+          <CardTitle>Statement Summary</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="text-center p-4 bg-blue-50 rounded-lg">
+              <div className="text-2xl font-bold text-blue-600">₹{statementSummary.openingBalance.toLocaleString('en-IN')}</div>
+              <div className="text-sm text-blue-600">Opening Balance</div>
+            </div>
+            <div className="text-center p-4 bg-green-50 rounded-lg">
+              <div className="text-2xl font-bold text-green-600 flex items-center justify-center gap-1">
+                <TrendingUp className="h-5 w-5" />
+                ₹{statementSummary.totalCredit.toLocaleString('en-IN')}
               </div>
-              <div className="text-center p-4 bg-green-50 rounded-lg">
-                <div className="text-2xl font-bold text-green-600 flex items-center justify-center gap-1">
-                  <TrendingUp className="h-5 w-5" />
-                  ₹{statement.totalCredit}
-                </div>
-                <div className="text-sm text-green-600">Total Credit</div>
+              <div className="text-sm text-green-600">Total Credit</div>
+            </div>
+            <div className="text-center p-4 bg-red-50 rounded-lg">
+              <div className="text-2xl font-bold text-red-600 flex items-center justify-center gap-1">
+                <TrendingDown className="h-5 w-5" />
+                ₹{statementSummary.totalDebit.toLocaleString('en-IN')}
               </div>
-              <div className="text-center p-4 bg-red-50 rounded-lg">
-                <div className="text-2xl font-bold text-red-600 flex items-center justify-center gap-1">
-                  <TrendingDown className="h-5 w-5" />
-                  ₹{statement.totalDebit}
-                </div>
-                <div className="text-sm text-red-600">Total Debit</div>
-              </div>
-              <div className="text-center p-4 bg-purple-50 rounded-lg">
-                <div className="text-2xl font-bold text-purple-600">₹{statement.closingBalance.balance}</div>
-                <div className="text-sm text-purple-600">Closing Balance</div>
+              <div className="text-sm text-red-600">Total Debit</div>
+            </div>
+            <div className="text-center p-4 bg-purple-50 rounded-lg">
+              <div className="text-2xl font-bold text-purple-600">₹{statementSummary.closingBalance.toLocaleString('en-IN')}</div>
+              <div className="text-sm text-purple-600">
+                Current Balance ({currentBalance?.balanceType || 'Cr'})
               </div>
             </div>
-          </CardContent>
-        </Card>
-      )}
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Filters Card */}
       <Card>
@@ -579,7 +567,7 @@ export default function LedgerEntriesPage() {
         </div>
 
         <div className="text-sm text-muted-foreground">
-          Total Entries: {entries.length}
+          Total Entries: {statementEntries.length}
         </div>
       </div>
 
@@ -606,36 +594,62 @@ export default function LedgerEntriesPage() {
                       </TableHead>
                       <TableHead>Date</TableHead>
                       <TableHead>Description</TableHead>
+                      <TableHead>Document</TableHead>
                       <TableHead>Type</TableHead>
                       <TableHead className="text-right">Amount</TableHead>
                       <TableHead className="text-right">Running Balance</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {currentEntries.map((entry) => (
-                      <TableRow key={entry.id}>
+                    {currentEntries.map((item) => (
+                      <TableRow key={item.entry.id}>
                         <TableCell>
                           <Checkbox
-                            checked={selectedEntries.includes(entry.id)}
-                            onCheckedChange={(checked) => handleSelectEntry(entry.id, !!checked)}
+                            checked={selectedEntries.includes(item.entry.id)}
+                            onCheckedChange={(checked) => handleSelectEntry(item.entry.id, !!checked)}
                           />
                         </TableCell>
                         <TableCell>
-                          {format(new Date(entry.date), "dd MMM yyyy")}
+                          {format(new Date(item.entry.date), "dd MMM yyyy")}
                         </TableCell>
-                        <TableCell className="max-w-xs truncate">
-                          {entry.description}
+                        <TableCell className="max-w-xs">
+                          <div>
+                            <p className="font-medium truncate">{item.entry.primaryDescription}</p>
+                            {item.entry.secondaryDescription && (
+                              <p className="text-xs text-muted-foreground truncate">
+                                {item.entry.secondaryDescription}
+                              </p>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell className="max-w-xs">
+                          {item.entry.documentNumber && (
+                            <p className="text-sm truncate">{item.entry.documentNumber}</p>
+                          )}
+                          {item.entry.referenceDescription && (
+                            <p className="text-xs text-muted-foreground truncate">
+                              {item.entry.referenceDescription}
+                            </p>
+                          )}
                         </TableCell>
                         <TableCell>
-                          <Badge variant={entry.type === 'Dr' ? 'destructive' : 'default'}>
-                            {entry.type}
+                          <Badge variant={item.entry.type === 'Dr' ? 'destructive' : 'default'}>
+                            {item.entry.type}
                           </Badge>
                         </TableCell>
                         <TableCell className="text-right font-medium">
-                          ₹{entry.amount.toLocaleString('en-IN')}
+                          ₹{item.entry.amount.toLocaleString('en-IN')}
                         </TableCell>
                         <TableCell className="text-right font-medium">
-                          ₹{entry.runningBalance.toLocaleString('en-IN')}
+                          <div className="flex items-center justify-end gap-2">
+                            <span>₹{item.runningBalance.toLocaleString('en-IN')}</span>
+                            <Badge 
+                              variant={item.runningBalanceType === 'Dr' ? 'destructive' : 'default'}
+                              className="text-xs"
+                            >
+                              {item.runningBalanceType}
+                            </Badge>
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))}
@@ -645,33 +659,44 @@ export default function LedgerEntriesPage() {
 
               {/* Mobile Cards */}
               <div className="md:hidden space-y-4 p-4">
-                {currentEntries.map((entry) => (
-                  <Card key={entry.id} className="p-4">
+                {currentEntries.map((item) => (
+                  <Card key={item.entry.id} className="p-4">
                     <div className="space-y-3">
                       <div className="flex justify-between items-start">
                         <div className="flex items-center gap-3">
                           <Checkbox
-                            checked={selectedEntries.includes(entry.id)}
-                            onCheckedChange={(checked) => handleSelectEntry(entry.id, !!checked)}
+                            checked={selectedEntries.includes(item.entry.id)}
+                            onCheckedChange={(checked) => handleSelectEntry(item.entry.id, !!checked)}
                           />
                           <div>
-                            <p className="font-medium">{format(new Date(entry.date), "dd MMM yyyy")}</p>
-                            <p className="text-sm text-muted-foreground">{entry.description}</p>
+                            <p className="font-medium">{format(new Date(item.entry.date), "dd MMM yyyy")}</p>
+                            <p className="text-sm text-muted-foreground">{item.entry.primaryDescription}</p>
+                            {item.entry.documentNumber && (
+                              <p className="text-xs text-muted-foreground">{item.entry.documentNumber}</p>
+                            )}
                           </div>
                         </div>
-                        <Badge variant={entry.type === 'Dr' ? 'destructive' : 'default'}>
-                          {entry.type}
+                        <Badge variant={item.entry.type === 'Dr' ? 'destructive' : 'default'}>
+                          {item.entry.type}
                         </Badge>
                       </div>
                       
                       <div className="flex justify-between items-center pt-2 border-t">
                         <div>
                           <p className="text-sm text-muted-foreground">Amount</p>
-                          <p className="font-medium">₹{entry.amount.toLocaleString('en-IN')}</p>
+                          <p className="font-medium">₹{item.entry.amount.toLocaleString('en-IN')}</p>
                         </div>
                         <div className="text-right">
                           <p className="text-sm text-muted-foreground">Balance</p>
-                          <p className="font-medium">₹{entry.runningBalance.toLocaleString('en-IN')}</p>
+                          <div className="flex items-center gap-1">
+                            <p className="font-medium">₹{item.runningBalance.toLocaleString('en-IN')}</p>
+                            <Badge 
+                              variant={item.runningBalanceType === 'Dr' ? 'destructive' : 'default'}
+                              className="text-xs"
+                            >
+                              {item.runningBalanceType}
+                            </Badge>
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -705,12 +730,12 @@ export default function LedgerEntriesPage() {
       </Card>
 
       {/* Pagination */}
-      {entries.length > itemsPerPageNum && (
+      {statementEntries.length > itemsPerPageNum && (
         <Card>
           <CardContent className="p-4">
             <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
               <div className="text-sm text-muted-foreground">
-                Showing {startIndex + 1} to {Math.min(endIndex, entries.length)} of {entries.length} results
+                Showing {startIndex + 1} to {Math.min(endIndex, statementEntries.length)} of {statementEntries.length} results
               </div>
               <div className="flex gap-2">
                 <Button 

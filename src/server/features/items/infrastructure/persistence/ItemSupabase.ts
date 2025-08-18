@@ -192,6 +192,8 @@ export async function updateProductStock(
   }
 }
 
+
+
 // 🟢 NEW: Function to get low stock products
 export async function getLowStockProducts(fpo_id: string): Promise<Product[] | null> {
   try {

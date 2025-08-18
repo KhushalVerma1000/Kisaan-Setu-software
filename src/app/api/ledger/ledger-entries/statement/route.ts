@@ -1,6 +1,7 @@
+
 // app/api/ledger-entries/statement/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import { getLedgerStatement } from '@/server/features/ledger/infrastructure/persistence/ledgerEntrySupabase';
+import { getLedgerWithStatement } from '@/server/features/ledger/infrastructure/persistence/ledgerEntrySupabase';
 
 export async function GET(request: NextRequest) {
     try {
@@ -25,43 +26,21 @@ export async function GET(request: NextRequest) {
             );
         }
 
-        console.log('Calling getLedgerStatement with:', {
+        console.log('Calling getLedgerWithStatement with:', {
             ledgerAccountId,
             startDate: startDate ? new Date(startDate) : undefined,
             endDate: endDate ? new Date(endDate) : undefined
         });
 
-        const statement = await getLedgerStatement(
+        const ledgerWithStatement = await getLedgerWithStatement(
             ledgerAccountId,
             startDate ? new Date(startDate) : undefined,
             endDate ? new Date(endDate) : undefined
         );
 
-        console.log('Statement received from database:', {
-            statementExists: !!statement,
-            statementType: typeof statement,
-            statementKeys: statement ? Object.keys(statement) : [],
-            statement: statement
-        });
+        console.log("=================STATEMENT DEBUG=================", ledgerWithStatement, ledgerWithStatement.statement);
 
-        if (statement) {
-            console.log('Statement details:', {
-                openingBalance: statement.openingBalance,
-                openingBalanceType: typeof statement.openingBalance,
-                closingBalance: statement.closingBalance,
-                closingBalanceType: typeof statement.closingBalance,
-                entries: statement.entries ? `${statement.entries.length} entries` : 'No entries',
-                sampleEntry: statement.entries.length > 0 ? statement.entries[0] : 'No entries to sample'
-            });
-        }
-
-        const response = { statement };
-        console.log('Response being sent:', {
-            hasStatement: !!response.statement,
-            responseKeys: Object.keys(response)
-        });
-
-        return NextResponse.json(response);
+        return NextResponse.json(ledgerWithStatement);
     } catch (error) {
         console.error('=== ERROR in GET /api/ledger-entries/statement ===');
         console.error('Error details:', {

@@ -13,7 +13,7 @@ export async function GET(
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
-        const {id}= await params;
+        const { id } = await params;
         const entry = await getLedgerEntryById(id);
         
         if (!entry) {
@@ -38,14 +38,22 @@ export async function PUT(
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
-        const {id} = await params;
+        const { id } = await params;
         const body = await request.json();
+        
         const entryData: LedgerEntryInterface = {
             ledgerAccountId: body.ledgerAccountId,
             date: new Date(body.date),
             amount: body.amount,
             type: body.type,
-            description: body.description
+            primaryDescription: body.primaryDescription,
+            documentId: body.documentId,
+            documentType: body.documentType,
+            documentNumber: body.documentNumber,
+            secondaryDescription: body.secondaryDescription,
+            referenceDescription: body.referenceDescription,
+            ledgerReference: body.ledgerReference,
+            isOpeningBalance: body.isOpeningBalance || false
         };
 
         const updatedEntry = await updateLedgerEntry(id, entryData);
@@ -64,7 +72,7 @@ export async function DELETE(
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
-        const {id} = await params ;
+        const { id } = await params;
         await deleteLedgerEntry(id);
         return NextResponse.json({ message: 'Ledger entry deleted successfully' });
     } catch (error) {

@@ -191,7 +191,7 @@ invoiceDate: formatDateForInput(invoice.invoiceDate),
         lineNumber: item.lineNumber || index + 1
         
       }));
-      // console.log("the converted item is this",convertedItems)
+      console.log("the converted item is this",convertedItems)
 
       setCurrentItems(convertedItems);
       

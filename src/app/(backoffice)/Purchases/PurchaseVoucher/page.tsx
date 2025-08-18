@@ -16,11 +16,13 @@ import { Search, FileDown, Plus, Eye, Edit, Trash2, MoreHorizontal, Calendar, Sh
 import { PurchaseVoucherAPI } from "@/server/features/purchase/infrastructure/apihelpers/purchaseVoucher/purchaseVoucherApi";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { fetchLedgerAccountsAsync, selectAllLedgerAccounts, selectLedgerAccountsError, selectLedgerAccountsLoading } from "@/store/slices/ledgerAccountSlice";
+import { PurchaseVoucherPDFService } from "@/server/services/pdf/PurchaseVoucherPDFService";
 
 // Purchase Voucher interface matching your API structure
 interface PurchaseVoucher {
   id: string;
   poNumber?: string;
+  voucherNumber? : string;
   supplierVendorName: string;
   supplierVendorId: string;
   supplierVendorBillingAddress: string;
@@ -230,6 +232,18 @@ export default function PurchaseVoucherPage() {
       setError("Failed to delete voucher");
     }
   }, [loadStats]);
+
+   const handleDownloadPDF = useCallback(async (voucherId: string) => {
+    try {
+  const pdfService = new PurchaseVoucherPDFService();
+await pdfService.generatePDF(voucherId);
+    } catch (error) {
+      console.error('Error geerating pdf', error);
+      setError("Failed to generate pdf");
+    }
+  }, [loadStats]);
+
+
 
   // Header buttons configuration
   const headerButtons = useMemo(() => [
@@ -561,7 +575,7 @@ export default function PurchaseVoucherPage() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>PO Number</TableHead>
+                      <TableHead>Voucher No.</TableHead>
                       <TableHead>Supplier</TableHead>
                       <TableHead>Invoice Number</TableHead>
                       <TableHead>Invoice Date</TableHead>
@@ -574,7 +588,7 @@ export default function PurchaseVoucherPage() {
                     {currentPurchaseVouchers.map((voucher) => (
                       <TableRow key={voucher.id}>
                         <TableCell className="font-medium text-primary">
-                          {voucher.poNumber || 'N/A'}
+                          {voucher.voucherNumber || 'N/A'}
                         </TableCell>
                         <TableCell>
                           <div>
@@ -601,7 +615,7 @@ export default function PurchaseVoucherPage() {
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
                               <DropdownMenuItem
- onSelect={(e) => e.preventDefault()}                              >
+ onSelect={(e) => handleDownloadPDF(voucher.id)}                              >
                                 <FileText className="mr-2 h-4 w-4" />
                                 Pdf
                               </DropdownMenuItem>
@@ -689,7 +703,7 @@ export default function PurchaseVoucherPage() {
                         <Button
                           size="sm"
                           variant="outline"
-                          onClick={() => router.push(`/dashboard/purchase/vouchers/${voucher.id}/edit`)}
+                          onClick={() => router.push(`/Purchases/PurchaseVoucher/${voucher.id}/edit`)}
                           className="flex-1"
                         >
                           <Edit className="h-4 w-4 mr-1" />

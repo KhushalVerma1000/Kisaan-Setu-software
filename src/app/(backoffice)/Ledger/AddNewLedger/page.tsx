@@ -262,7 +262,7 @@ export default function AddLedgerPage() {
         amountType: formData.amountType,
         address: formData.address.trim() || undefined,
         phoneNumber: formData.phoneNumber.trim() || undefined,
-        fpoId: fpoId, // FIX: Changed from fpo_id to fpoId to match API
+        fpoId: fpoId, 
         // Additional fields that might be useful but not required
         openingDate: formData.openingDate || undefined,
         state: formData.state || undefined,
