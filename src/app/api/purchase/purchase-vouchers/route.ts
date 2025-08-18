@@ -58,6 +58,7 @@ export async function GET(request: NextRequest) {
 
         // Get all vouchers for FPO
         const vouchers = await getAllFpoPurchaseVouchers(fpoId);
+        // console.log(vouchers)
         return NextResponse.json({ data: vouchers });
 
     } catch (error) {
@@ -82,8 +83,9 @@ export async function POST(request: NextRequest) {
         }
 
         const voucher = await createPurchaseVoucher(body);
+        console.log("vocuher created =========================================",voucher)
         return NextResponse.json({ 
-            data: voucher,
+             voucher,
             message: 'Purchase voucher created successfully'
         }, { status: 201 });
 

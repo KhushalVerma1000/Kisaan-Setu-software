@@ -7,6 +7,7 @@ import {
   logStockOperationSummary,
   BulkStockOperationResult 
 } from '@/server/features/items/infrastructure/itemApi/stockManagementHelper';
+import { LedgerEntryInterface } from '@/server/features/ledger/core/entities/Ledger';
 const API_BASE_URL = '/api/purchase/purchase-vouchers';
 
 export class PurchaseVoucherAPI {
@@ -47,31 +48,330 @@ export class PurchaseVoucherAPI {
         const response = await fetch(`${API_BASE_URL}/${id}`);
         if (!response.ok) throw new Error('Failed to fetch purchase voucher');
         return response.json();
+        
     }
 
-    // Create purchase voucher with mandatory ledger entry
-   // Create purchase voucher with mandatory ledger entry and stock updates
-  static async create(data: PurchaseVoucherInterface) {
-    console.log('=== PurchaseVoucherAPI: Creating purchase voucher with ledger entry and stock updates ===');
-    console.log('Purchase voucher data:', data);
+   
+// Create purchase voucher with mandatory ledger entry and stock updates
+static async create(data: PurchaseVoucherInterface) {
+  console.log('=== PurchaseVoucherAPI: Creating purchase voucher with ledger entry and stock updates ===');
+  console.log('Purchase voucher data:', data);
 
-    // Validation: Check if supplier ID exists for ledger entry
-    if (!data.supplierVendorId) {
-      throw new Error('Supplier ID is required for ledger entry creation');
+  // Validation: Check if supplier ID exists for ledger entry
+  if (!data.supplierVendorId) {
+    throw new Error('Supplier ID is required for ledger entry creation');
+  }
+
+  if (!data.summary?.grandTotal || data.summary.grandTotal <= 0) {
+    throw new Error('Valid grand total is required for ledger entry');
+  }
+
+  if (!data.poNumber && !data.partyInvoiceNumber) {
+    throw new Error('Either PO number or party invoice number is required');
+  }
+
+  try {
+    // Step 1: Create the purchase voucher
+    const response = await fetch(API_BASE_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(data),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Failed to create purchase voucher: ${response.status} - ${errorText}`);
+    }
+    // console.log("api response ======================================================",response)
+    const voucherResult = await response.json()
+    console.log('Purchase voucher created successfully:', voucherResult.voucher.id);
+
+    // Step 2: Update stock for all items
+    let stockUpdateResult: BulkStockOperationResult | null = null;
+    try {
+      console.log('=== Starting stock updates ===');
+      stockUpdateResult = await processDocumentStock(data, 'purchase_voucher');
+      
+      // Log the stock update summary
+      logStockOperationSummary(
+        stockUpdateResult, 
+        'purchase_voucher', 
+        voucherResult.voucher?.id
+      );
+
+      if (stockUpdateResult.failedCount > 0) {
+        console.warn(`Stock updates partially failed: ${stockUpdateResult.failedCount}/${stockUpdateResult.totalItems} items failed`);
+      } else {
+        console.log('All stock updates completed successfully');
+      }
+
+    } catch (stockError) {
+      console.error('Stock update failed:', stockError);
+      // Continue with ledger entry creation even if stock update fails
+      stockUpdateResult = {
+        totalItems: 0,
+        successCount: 0,
+        failedCount: 0,
+        results: [],
+        errors: [stockError instanceof Error ? stockError.message : 'Unknown stock update error']
+      };
     }
 
-    if (!data.summary?.grandTotal || data.summary.grandTotal <= 0) {
-      throw new Error('Valid grand total is required for ledger entry');
+    // Step 3: Create corresponding ledger entry using the helper method
+    try {
+      const voucherDataForLedger = {
+        voucherId: voucherResult.id, // ✅ Document ID
+        supplierId: data.supplierVendorId,
+        supplierName: data.supplierVendorName,
+        voucherNumber: data.voucherNumber || data.poNumber || data.partyInvoiceNumber || 'N/A',
+        voucherDate: typeof data.partyInvoiceDate === 'string' 
+          ? data.partyInvoiceDate 
+          : data.partyInvoiceDate?.toISOString() || new Date().toISOString(),
+        grandTotal: data.summary.grandTotal,
+        notes: data.notes,
+        partyInvoiceNumber: data.partyInvoiceNumber
+      };
+
+      console.log('Creating ledger entry using createFromPurchaseVoucher:', voucherDataForLedger);
+
+      const ledgerResult = await LedgerEntryAPI.createFromPurchaseVoucher(voucherDataForLedger);
+      console.log('Ledger entry created successfully:', ledgerResult?.id);
+
+      // Return comprehensive result
+      return {
+        success: true,
+        voucher: voucherResult.voucher,
+        ledgerEntry: ledgerResult,
+        stockUpdate: stockUpdateResult,
+        message: 'Purchase voucher, stock updates, and ledger entry completed',
+        warnings: stockUpdateResult?.failedCount > 0 
+          ? [`${stockUpdateResult.failedCount} stock updates failed`]
+          : []
+      };
+
+    } catch (ledgerError) {
+      console.error('Ledger entry creation failed:', ledgerError);
+
+      // Purchase voucher and stock updates completed but ledger failed
+      console.warn('Purchase voucher created and stock updated but ledger entry failed');
+
+      return {
+        success: false,
+        voucher: voucherResult.voucher,
+        stockUpdate: stockUpdateResult,
+        error: 'Purchase voucher created and stock updated but ledger entry failed',
+        ledgerError: ledgerError instanceof Error ? ledgerError.message : 'Unknown ledger error',
+        requiresManualLedgerEntry: true
+      };
     }
 
-    if (!data.poNumber && !data.partyInvoiceNumber) {
-      throw new Error('Either PO number or party invoice number is required');
+  } catch (error) {
+    console.error('Purchase voucher creation failed:', error);
+    throw new Error(`Failed to create purchase voucher: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
+}
+// Enhanced Update method for PurchaseVoucherAPI with smart stock management and ledger entry update
+static async update(
+  data: PurchaseVoucherInterface, 
+  options: {
+    updateLedger?: boolean;
+    updateStock?: boolean;
+  } = {}
+) {
+  const { updateLedger = true, updateStock = true } = options;
+  
+  console.log('=== PurchaseVoucherAPI: Updating purchase voucher with smart stock and ledger updates ===');
+  console.log('Purchase voucher data:', data);
+  console.log('Options:', { updateLedger, updateStock });
+
+  if (!data.id) {
+    throw new Error('Purchase voucher ID is required for update operation');
+  }
+
+  try {
+    // Step 1: Fetch original purchase voucher data
+    console.log('=== Step 1: Fetching original purchase voucher data ===');
+    const originalVoucherResponse = await this.getById(data.id);
+    const originalVoucherData = originalVoucherResponse.data;
+    
+    if (!originalVoucherData) {
+      throw new Error('Original purchase voucher data not found');
     }
+
+    console.log('Original purchase voucher fetched successfully:', {
+      id: originalVoucherData.id,
+      voucherNumber: originalVoucherData.voucherNumber,
+      itemsCount: originalVoucherData.items?.length || 0,
+      originalAmount: originalVoucherData.summary?.grandTotal,
+      newAmount: data.summary?.grandTotal
+    });
+
+    // Step 2: Handle ledger entry update (before stock/voucher updates for consistency)
+    let ledgerUpdateResult = null;
+    let originalLedgerEntry = null;
+
+    if (updateLedger && data.supplierVendorId && data.summary?.grandTotal) {
+      try {
+        console.log('=== Step 2: Handling ledger entry update ===');
+        
+        // Check if purchase voucher has existing ledger entries
+        const ledgerCheck = await LedgerEntryAPI.hasLedgerEntries(data.id);
+        console.log('Existing ledger entries check:', ledgerCheck);
+
+        if (ledgerCheck.exists && ledgerCheck.count > 0) {
+          // Get the primary ledger entry (should be only one for purchase voucher)
+          originalLedgerEntry = ledgerCheck.entries[0];
+          console.log('Found existing ledger entry:', originalLedgerEntry.id);
+
+          // Check if ledger update is needed
+          const needsLedgerUpdate = this.shouldUpdateLedgerEntry(originalVoucherData, data);
+          
+          if (needsLedgerUpdate.update) {
+            console.log('Ledger update required:', needsLedgerUpdate.reasons);
+            
+            if (needsLedgerUpdate.recreate) {
+              // Significant changes require recreating the entry
+              console.log('Recreating ledger entry due to significant changes');
+              
+              // Delete old entry
+              await LedgerEntryAPI.deleteByDocumentId(data.id);
+              
+              // Create new entry
+              const newLedgerEntryData = {
+                voucherId: data.id,
+                supplierId: data.supplierVendorId,
+                supplierName: data.supplierVendorName,
+                voucherNumber: data.voucherNumber || data.poNumber || data.partyInvoiceNumber || 'N/A',
+                voucherDate: typeof data.partyInvoiceDate === 'string' 
+                  ? data.partyInvoiceDate 
+                  : data.partyInvoiceDate?.toISOString() || new Date().toISOString(),
+                grandTotal: data.summary.grandTotal,
+                notes: data.notes,
+                partyInvoiceNumber: data.partyInvoiceNumber
+              };
+              
+              ledgerUpdateResult = await LedgerEntryAPI.createFromPurchaseVoucher(newLedgerEntryData);
+              console.log('New ledger entry created:', ledgerUpdateResult?.id);
+              
+            } else {
+              // Minor changes can be updated in place
+              console.log('Updating existing ledger entry in place');
+              
+              const updatedLedgerData = {
+                ...originalLedgerEntry,
+                amount: data.summary.grandTotal,
+                date: typeof data.partyInvoiceDate === 'string' 
+                  ? data.partyInvoiceDate 
+                  : data.partyInvoiceDate?.toISOString(),
+                description: `Purchase Voucher - ${data.voucherNumber || data.poNumber || data.partyInvoiceNumber}${data.notes ? ' - ' + data.notes : ''}`,
+                documentNumber: data.voucherNumber || data.poNumber || data.partyInvoiceNumber || 'N/A'
+              };
+              
+              ledgerUpdateResult = await LedgerEntryAPI.update(originalLedgerEntry.id, updatedLedgerData);
+              console.log('Ledger entry updated successfully:', ledgerUpdateResult?.id);
+            }
+          } else {
+            console.log('No ledger update required - values unchanged');
+            ledgerUpdateResult = originalLedgerEntry;
+          }
+          
+        } else {
+          // No existing ledger entry - create new one
+          console.log('No existing ledger entry found - creating new one');
+          
+          const newLedgerEntryData = {
+            voucherId: data.id,
+            supplierId: data.supplierVendorId,
+            supplierName: data.supplierVendorName,
+            voucherNumber: data.voucherNumber || data.poNumber || data.partyInvoiceNumber || 'N/A',
+            voucherDate: typeof data.partyInvoiceDate === 'string' 
+              ? data.partyInvoiceDate 
+              : data.partyInvoiceDate?.toISOString() || new Date().toISOString(),
+            grandTotal: data.summary.grandTotal,
+            notes: data.notes,
+            partyInvoiceNumber: data.partyInvoiceNumber
+          };
+          
+          ledgerUpdateResult = await LedgerEntryAPI.createFromPurchaseVoucher(newLedgerEntryData);
+          console.log('New ledger entry created:', ledgerUpdateResult?.id);
+        }
+
+      } catch (ledgerError) {
+        console.error('Ledger entry update failed:', ledgerError);
+        throw new Error(`Ledger update failed: ${ledgerError instanceof Error ? ledgerError.message : 'Unknown ledger error'}`);
+      }
+    }
+
+    // Step 3: Perform smart stock update (validates and updates only differences)
+    let stockUpdateResult: any = null;
+    let stockUpdateSucceeded = false;
+
+    if (updateStock) {
+      try {
+        console.log('=== Step 3: Performing smart stock update ===');
+        
+        const { 
+          smartUpdateDocumentStock, 
+          logStockOperationSummary 
+        } = await import('@/server/features/items/infrastructure/itemApi/stockManagementHelper');
+
+        stockUpdateResult = await smartUpdateDocumentStock(
+          originalVoucherData,
+          data,
+          'purchase_voucher'
+        );
+
+        stockUpdateSucceeded = true;
+        
+        // Log the stock update summary
+        logStockOperationSummary(
+          stockUpdateResult, 
+          'purchase_voucher_update', 
+          data.id
+        );
+
+        if (stockUpdateResult.failedCount > 0) {
+          // Stock validation/update failed - rollback ledger if updated
+          const errorMessage = `Stock update failed: ${stockUpdateResult.failedCount}/${stockUpdateResult.totalItems} items failed`;
+          console.error(errorMessage);
+          console.error('Stock update errors:', stockUpdateResult.errors);
+          
+          // Rollback ledger changes if they were made
+          if (ledgerUpdateResult && originalLedgerEntry) {
+            await this.rollbackLedgerUpdate(originalLedgerEntry, ledgerUpdateResult, data.id);
+          }
+          
+          throw new Error(`${errorMessage}. Issues: ${stockUpdateResult.errors.join(', ')}`);
+        }
+
+        console.log('✅ Smart stock update completed successfully:', {
+          totalItems: stockUpdateResult.totalItems,
+          successCount: stockUpdateResult.successCount,
+          failedCount: stockUpdateResult.failedCount
+        });
+
+      } catch (stockError) {
+        console.error('❌ Stock update failed:', stockError);
+        
+        // Rollback ledger changes if they were made
+        if (ledgerUpdateResult && originalLedgerEntry) {
+          await this.rollbackLedgerUpdate(originalLedgerEntry, ledgerUpdateResult, data.id);
+        }
+        
+        throw new Error(`Stock validation/update failed: ${stockError instanceof Error ? stockError.message : 'Unknown stock update error'}`);
+      }
+    }
+
+    // Step 4: Update purchase voucher in database
+    console.log('=== Step 4: Updating purchase voucher in database ===');
+    let voucherUpdateSucceeded = false;
+    let voucherResult: any = null;
 
     try {
-      // Step 1: Create the purchase voucher
-      const response = await fetch(API_BASE_URL, {
-        method: 'POST',
+      const response = await fetch(`${API_BASE_URL}/${data.id}`, {
+        method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
         },
@@ -80,175 +380,485 @@ export class PurchaseVoucherAPI {
 
       if (!response.ok) {
         const errorText = await response.text();
-        throw new Error(`Failed to create purchase voucher: ${response.status} - ${errorText}`);
+        throw new Error(`Failed to update purchase voucher: ${response.status} - ${errorText}`);
       }
 
-      const voucherResult = await response.json();
-      console.log('Purchase voucher created successfully:', voucherResult.voucher?.id);
+      voucherResult = await response.json();
+      voucherUpdateSucceeded = true;
+      
+      console.log('✅ Purchase voucher updated successfully in database:', voucherResult.voucher?.id);
 
-      // Step 2: Update stock for all items
-      let stockUpdateResult: BulkStockOperationResult | null = null;
-      try {
-        console.log('=== Starting stock updates ===');
-        stockUpdateResult = await processDocumentStock(data, 'purchase_voucher');
-        
-        // Log the stock update summary
-        logStockOperationSummary(
-          stockUpdateResult, 
-          'purchase_voucher', 
-          voucherResult.voucher?.id
-        );
-
-        if (stockUpdateResult.failedCount > 0) {
-          console.warn(`Stock updates partially failed: ${stockUpdateResult.failedCount}/${stockUpdateResult.totalItems} items failed`);
-        } else {
-          console.log('All stock updates completed successfully');
-        }
-
-      } catch (stockError) {
-        console.error('Stock update failed:', stockError);
-        // Continue with ledger entry creation even if stock update fails
-        stockUpdateResult = {
-          totalItems: 0,
-          successCount: 0,
-          failedCount: 0,
-          results: [],
-          errors: [stockError instanceof Error ? stockError.message : 'Unknown stock update error']
-        };
+    } catch (voucherError) {
+      console.error('❌ Purchase voucher database update failed:', voucherError);
+      
+      // COMPENSATION: Stock and ledger updates succeeded but voucher update failed
+      // We need to reverse both changes to maintain data consistency
+      if (stockUpdateSucceeded && updateStock && stockUpdateResult?.totalItems > 0) {
+        console.log('=== COMPENSATION: Reversing stock changes due to voucher update failure ===');
+        await this.rollbackStockUpdate(data, originalVoucherData);
       }
 
-      // Step 3: Create corresponding ledger entry
-      try {
-        const ledgerEntryData = {
-          supplierLedgerAccountId: data.supplierVendorId,
-          amount: data.summary.grandTotal,
-          date: typeof data.partyInvoiceDate === 'string' 
-            ? data.partyInvoiceDate 
-            : data.partyInvoiceDate?.toISOString() || new Date().toISOString(),
-          voucherNumber: data.poNumber || data.partyInvoiceNumber,
-          description: `Purchase Voucher - ${data.partyInvoiceNumber || data.poNumber}${data.notes ? ' - ' + data.notes : ''}`
-        };
-
-        console.log('Creating ledger entry:', ledgerEntryData);
-
-        const ledgerResult = await LedgerEntryAPI.createPurchaseVoucherEntry(ledgerEntryData);
-        console.log('Ledger entry created successfully:', ledgerResult.entry?.id);
-
-        // Return comprehensive result
-        return {
-          success: true,
-          voucher: voucherResult.voucher,
-          ledgerEntry: ledgerResult.entry,
-          stockUpdate: stockUpdateResult,
-          message: 'Purchase voucher, stock updates, and ledger entry completed',
-          warnings: stockUpdateResult?.failedCount > 0 
-            ? [`${stockUpdateResult.failedCount} stock updates failed`]
-            : []
-        };
-
-      } catch (ledgerError) {
-        console.error('Ledger entry creation failed:', ledgerError);
-
-        // Purchase voucher and stock updates completed but ledger failed
-        console.warn('Purchase voucher created and stock updated but ledger entry failed');
-
-        return {
-          success: false,
-          voucher: voucherResult.voucher,
-          stockUpdate: stockUpdateResult,
-          error: 'Purchase voucher created and stock updated but ledger entry failed',
-          ledgerError: ledgerError instanceof Error ? ledgerError.message : 'Unknown ledger error',
-          requiresManualLedgerEntry: true
-        };
+      // Rollback ledger changes if they were made
+      if (ledgerUpdateResult && originalLedgerEntry) {
+        await this.rollbackLedgerUpdate(originalLedgerEntry, ledgerUpdateResult, data.id);
       }
 
-    } catch (error) {
-      console.error('Purchase voucher creation failed:', error);
-      throw new Error(`Failed to create purchase voucher: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      throw new Error(`Purchase voucher update failed: ${voucherError instanceof Error ? voucherError.message : 'Unknown error'}`);
     }
+
+    // Step 5: Prepare success response
+    console.log('=== Purchase voucher update completed successfully ===');
+    
+    return {
+      success: true,
+      voucher: voucherResult.voucher,
+      stockUpdate: stockUpdateResult,
+      ledgerUpdate: {
+        updated: updateLedger,
+        entry: ledgerUpdateResult,
+        operation: originalLedgerEntry ? 'updated' : 'created'
+      },
+      message: 'Purchase voucher, stock, and ledger updated successfully',
+      summary: {
+        voucherUpdated: true,
+        stockUpdateRequested: updateStock,
+        stockItemsProcessed: stockUpdateResult?.totalItems || 0,
+        stockUpdatesSuccessful: stockUpdateResult?.successCount || 0,
+        stockUpdatesFailed: stockUpdateResult?.failedCount || 0,
+        ledgerUpdateRequested: updateLedger,
+        ledgerEntryUpdated: !!ledgerUpdateResult,
+        ledgerEntryId: ledgerUpdateResult?.id,
+        operationType: 'smart_update_with_ledger'
+      }
+    };
+
+  } catch (error) {
+    console.error('Purchase voucher update operation failed:', error);
+    throw new Error(`Failed to update purchase voucher: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
+}
+
+// Enhanced delete method with optimized ledger entry handling
+static async delete(
+  id: string, 
+  options: {
+    handleLedgerEntry?: boolean;
+    reverseStock?: boolean;
+    force?: boolean;
+  } = {}
+) {
+  const { handleLedgerEntry = true, reverseStock = true, force = false } = options;
+  
+  console.log('=== PurchaseVoucherAPI: Deleting purchase voucher with safe stock reversal and ledger cleanup ===');
+  console.log('Purchase voucher ID:', id);
+  console.log('Options:', { handleLedgerEntry, reverseStock, force });
+
+  if (!id || id.trim() === '') {
+    throw new Error('Purchase voucher ID is required for delete operation');
   }
 
-    // Update purchase voucher with optional ledger entry update
-    static async update(data: PurchaseVoucherInterface, updateLedger: boolean = true) {
-        console.log('=== PurchaseVoucherAPI: Updating purchase voucher ===');
-        console.log('Purchase voucher data:', data);
-        console.log('Update ledger:', updateLedger);
-
-        try {
-            // Step 1: Update the purchase voucher
-            const response = await fetch(`${API_BASE_URL}/${data.id}`, {
-                method: 'PUT',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(data),
-            });
-
-            if (!response.ok) {
-                const errorText = await response.text();
-                throw new Error(`Failed to update purchase voucher: ${response.status} - ${errorText}`);
-            }
-
-            const voucherResult = await response.json();
-            console.log('Purchase voucher updated successfully:', voucherResult.voucher?.id);
-
-            // Step 2: Update ledger entry if requested and data is valid
-            if (updateLedger && data.supplierVendorId && data.summary?.grandTotal) {
-                try {
-                    console.log('Ledger update requested but implementation depends on your business logic');
-                    
-                    return {
-                        success: true,
-                        voucher: voucherResult.voucher,
-                        message: 'Purchase voucher updated successfully',
-                        ledgerNote: 'Ledger update logic depends on your business requirements'
-                    };
-
-                } catch (ledgerError) {
-                    console.error('Ledger entry update failed:', ledgerError);
-                    return {
-                        success: true,
-                        voucher: voucherResult.voucher,
-                        warning: 'Purchase voucher updated but ledger entry update failed',
-                        ledgerError: ledgerError instanceof Error ? ledgerError.message : 'Unknown ledger error'
-                    };
-                }
-            }
-
-            return {
-                success: true,
-                voucher: voucherResult.voucher,
-                message: 'Purchase voucher updated successfully'
-            };
-
-        } catch (error) {
-            console.error('Purchase voucher update failed:', error);
-            throw new Error(`Failed to update purchase voucher: ${error instanceof Error ? error.message : 'Unknown error'}`);
-        }
+  try {
+    // Step 1: Fetch purchase voucher data to be deleted
+    console.log('=== Step 1: Fetching purchase voucher data for deletion ===');
+    const voucherResult = await this.getById(id);
+    const voucherData = voucherResult.data;
+    
+    if (!voucherData) {
+      if (!force) {
+        throw new Error('Purchase voucher data not found');
+      } else {
+        console.warn('⚠️ Force deletion enabled - proceeding without voucher data');
+      }
     }
 
-    // Delete purchase voucher (consider ledger entry implications)
-    static async delete(id: string, handleLedgerEntry: boolean = true) {
-        console.log('=== PurchaseVoucherAPI: Deleting purchase voucher ===');
-        console.log('Purchase voucher ID:', id);
-        console.log('Handle ledger entry:', handleLedgerEntry);
+    if (voucherData) {
+      console.log('Purchase voucher fetched successfully:', {
+        id: voucherData.id,
+        voucherNumber: voucherData.voucherNumber,
+        itemsCount: voucherData.items?.length || 0,
+        amount: voucherData.summary?.grandTotal
+      });
+    }
 
-        if (handleLedgerEntry) {
-            console.warn('Purchase voucher deletion with ledger entries requires careful consideration');
-            console.warn('Consider creating reversal entries instead of deletion');
+    // Step 2: Handle ledger entry cleanup (before other operations for consistency)
+    let ledgerCleanupResult: any = null;
+    let deletedLedgerEntries: any[] = [];
+
+    if (handleLedgerEntry) {
+      try {
+        console.log('=== Step 2: Handling ledger entry cleanup ===');
+        
+        // Check if purchase voucher has ledger entries
+        const ledgerCheck = await LedgerEntryAPI.hasLedgerEntries(id);
+        console.log('Existing ledger entries check:', ledgerCheck);
+
+        if (ledgerCheck.exists && ledgerCheck.count > 0) {
+          console.log(`Found ${ledgerCheck.count} ledger entries to handle`);
+          
+          // Store entries for potential rollback
+          deletedLedgerEntries = [...ledgerCheck.entries];
+          
+          // Delete all ledger entries for this purchase voucher
+          ledgerCleanupResult = await LedgerEntryAPI.deleteByDocumentId(id);
+          console.log('✅ Ledger entries deleted successfully:', {
+            deletedCount: ledgerCleanupResult.deletedCount || ledgerCheck.count
+          });
+          
+        } else {
+          console.log('ℹ️ No ledger entries found to handle');
+          ledgerCleanupResult = { deletedCount: 0, message: 'No ledger entries found' };
         }
 
-        const response = await fetch(`${API_BASE_URL}/${id}`, {
-            method: 'DELETE',
+      } catch (ledgerError) {
+        console.error('❌ Ledger cleanup handling failed:', ledgerError);
+        
+        if (!force) {
+          throw new Error(`Ledger cleanup failed: ${ledgerError instanceof Error ? ledgerError.message : 'Unknown ledger error'}`);
+        } else {
+          console.warn('⚠️ Force deletion enabled - proceeding despite ledger handling failure');
+          ledgerCleanupResult = {
+            strategy: 'create_reversal',
+            action: 'failed',
+            originalEntriesCount: deletedLedgerEntries.length,
+            reversalEntriesCreated: 0,
+            error: ledgerError instanceof Error ? ledgerError.message : 'Unknown error',
+            success: false
+          };
+        }
+      }
+    }
+
+    // Step 3: Perform safe stock reversal (validates and reverses stock changes)
+    let stockReversalResult: any = null;
+    let stockReversalSucceeded = false;
+
+    if (reverseStock && voucherData) {
+      try {
+        console.log('=== Step 3: Performing safe stock reversal ===');
+        
+        const { 
+          safeReverseDocumentStock, 
+          logStockOperationSummary 
+        } = await import('@/server/features/items/infrastructure/itemApi/stockManagementHelper');
+
+        stockReversalResult = await safeReverseDocumentStock(
+          voucherData,
+          'purchase_voucher',
+          {
+            skipValidation: false, // We want validation
+            force: force // Use the force flag for stock operations too
+          }
+        );
+
+        stockReversalSucceeded = true;
+        
+        // Log the stock reversal summary
+        logStockOperationSummary(
+          stockReversalResult, 
+          'purchase_voucher_delete_reversal', 
+          id
+        );
+
+        if (stockReversalResult.failedCount > 0) {
+          // Stock reversal failed - rollback ledger cleanup
+          const errorMessage = `Stock reversal failed: ${stockReversalResult.failedCount}/${stockReversalResult.totalItems} items failed`;
+          console.error(errorMessage);
+          console.error('Stock reversal errors:', stockReversalResult.errors);
+          
+          if (!force) {
+            // Rollback ledger deletion if it was done
+            if (deletedLedgerEntries.length > 0) {
+              await this.rollbackLedgerDeletion(deletedLedgerEntries);
+            }
+            
+            throw new Error(`${errorMessage}. Cannot delete purchase voucher safely. Issues: ${stockReversalResult.errors.join(', ')}`);
+          } else {
+            console.warn('⚠️ Force deletion enabled - proceeding despite stock reversal failures');
+          }
+        }
+
+        console.log('✅ Safe stock reversal completed successfully:', {
+          totalItems: stockReversalResult.totalItems,
+          successCount: stockReversalResult.successCount,
+          failedCount: stockReversalResult.failedCount
         });
+
+      } catch (stockError) {
+        console.error('❌ Stock reversal failed:', stockError);
         
-        if (!response.ok) {
-            const errorText = await response.text();
-            throw new Error(`Failed to delete purchase voucher: ${response.status} - ${errorText}`);
+        if (!force) {
+          // Rollback ledger deletion if it was done
+          if (deletedLedgerEntries.length > 0) {
+            await this.rollbackLedgerDeletion(deletedLedgerEntries);
+          }
+          
+          throw new Error(`Stock reversal validation/execution failed: ${stockError instanceof Error ? stockError.message : 'Unknown stock reversal error'}`);
+        } else {
+          console.warn('⚠️ Force deletion enabled - proceeding despite stock reversal failure');
+          stockReversalResult = {
+            totalItems: 0,
+            successCount: 0,
+            failedCount: 0,
+            results: [],
+            errors: [stockError instanceof Error ? stockError.message : 'Unknown stock reversal error']
+          };
         }
-        
-        return response.json();
+      }
     }
+
+    // Step 4: Delete purchase voucher from database
+    console.log('=== Step 4: Deleting purchase voucher from database ===');
+    let voucherDeleteSucceeded = false;
+    let deleteResult: any = null;
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/${id}`, {
+        method: 'DELETE',
+      });
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Failed to delete purchase voucher from database: ${response.status} - ${errorText}`);
+      }
+      
+      deleteResult = await response.json();
+      voucherDeleteSucceeded = true;
+      
+      console.log('✅ Purchase voucher deleted successfully from database');
+
+    } catch (deleteError) {
+      console.error('❌ Purchase voucher database deletion failed:', deleteError);
+      
+      if (!force) {
+        // COMPENSATION: Stock reversal and ledger cleanup succeeded but voucher deletion failed
+        // We need to restore both to maintain consistency
+        if (stockReversalSucceeded && stockReversalResult?.totalItems > 0) {
+          console.log('=== COMPENSATION: Re-applying stock changes due to voucher deletion failure ===');
+          await this.rollbackStockReversal(voucherData);
+        }
+
+        // Rollback ledger deletion if it was done
+        if (deletedLedgerEntries.length > 0) {
+          await this.rollbackLedgerDeletion(deletedLedgerEntries);
+        }
+
+        throw new Error(`Purchase voucher deletion failed: ${deleteError instanceof Error ? deleteError.message : 'Unknown error'}`);
+      } else {
+        console.warn('⚠️ Force deletion enabled - continuing despite database deletion failure');
+      }
+    }
+
+    // Step 5: Prepare success response
+    console.log('=== Purchase voucher deletion completed successfully ===');
+    
+    const warnings = [];
+    if (stockReversalResult && (stockReversalResult.failedCount || 0) > 0) {
+      warnings.push(`${stockReversalResult.failedCount} stock reversals failed`);
+    }
+    if (ledgerCleanupResult && ledgerCleanupResult.deletedCount === 0 && deletedLedgerEntries.length > 0) {
+      warnings.push('Ledger entries cleanup failed');
+    }
+    if (!voucherDeleteSucceeded && force) {
+      warnings.push('Database deletion failed but force mode was used');
+    }
+
+    return {
+      success: true,
+      deletedVoucherId: id,
+      stockReversal: stockReversalResult,
+      ledgerCleanup: ledgerCleanupResult,
+      message: 'Purchase voucher deleted successfully with proper cleanup',
+      summary: {
+        voucherDeleted: voucherDeleteSucceeded,
+        stockReversalRequested: reverseStock,
+        stockItemsProcessed: stockReversalResult?.totalItems || 0,
+        stockItemsReversed: stockReversalResult?.successCount || 0,
+        stockHadChanges: stockReversalResult ? (stockReversalResult.totalItems || 0) > 0 : false,
+        ledgerHandlingRequested: handleLedgerEntry,
+        ledgerEntriesFound: deletedLedgerEntries.length,
+        ledgerEntriesDeleted: ledgerCleanupResult?.deletedCount || 0,
+        ledgerHandlingSuccessful: (ledgerCleanupResult?.deletedCount || 0) === deletedLedgerEntries.length,
+        forceUsed: force,
+        operationType: 'safe_delete_with_ledger_cleanup'
+      },
+      warnings: warnings.length > 0 ? warnings : undefined
+    };
+
+  } catch (error) {
+    console.error('Purchase voucher deletion operation failed:', error);
+    throw new Error(`Failed to delete purchase voucher: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
+}
+
+// Helper method to determine if ledger entry needs updating
+private static shouldUpdateLedgerEntry(original: PurchaseVoucherInterface, updated: PurchaseVoucherInterface) {
+  const reasons: string[] = [];
+  let needsUpdate = false;
+  let needsRecreate = false;
+
+  // Check amount change
+  if (original.summary?.grandTotal !== updated.summary?.grandTotal) {
+    reasons.push('Amount changed');
+    needsUpdate = true;
+  }
+
+  // Check supplier change (requires recreation)
+  if (original.supplierVendorId !== updated.supplierVendorId) {
+    reasons.push('Supplier changed');
+    needsUpdate = true;
+    needsRecreate = true;
+  }
+
+  // Check date change
+  const originalDate = typeof original.partyInvoiceDate === 'string' 
+    ? original.partyInvoiceDate 
+    : original.partyInvoiceDate?.toISOString();
+  const updatedDate = typeof updated.partyInvoiceDate === 'string' 
+    ? updated.partyInvoiceDate 
+    : updated.partyInvoiceDate?.toISOString();
+  
+  if (originalDate !== updatedDate) {
+    reasons.push('Date changed');
+    needsUpdate = true;
+  }
+
+  // Check voucher number change
+  const originalVoucherNumber = original.voucherNumber || original.poNumber || original.partyInvoiceNumber;
+  const updatedVoucherNumber = updated.voucherNumber || updated.poNumber || updated.partyInvoiceNumber;
+  
+  if (originalVoucherNumber !== updatedVoucherNumber) {
+    reasons.push('Voucher number changed');
+    needsUpdate = true;
+  }
+
+  return {
+    update: needsUpdate,
+    recreate: needsRecreate,
+    reasons
+  };
+}
+
+// Helper method to rollback ledger updates
+private static async rollbackLedgerUpdate(originalEntry: any, newEntry: any, documentId: string): Promise<void> {
+  console.log('=== ROLLBACK: Reversing ledger changes ===');
+  try {
+    if (newEntry && newEntry.id !== originalEntry?.id) {
+      // New entry was created - delete it
+      if (newEntry.id) {
+        await LedgerEntryAPI.delete(newEntry.id);
+        console.log('✅ New ledger entry deleted');
+      }
+      
+      // Restore original entry if it existed
+      if (originalEntry) {
+        const { id, ...entryData } = originalEntry;
+        await LedgerEntryAPI.create(entryData);
+        console.log('✅ Original ledger entry restored');
+      }
+    } else if (newEntry && newEntry.id === originalEntry?.id) {
+      // Entry was updated - restore original values
+      if (originalEntry.id) {
+        await LedgerEntryAPI.update(originalEntry.id, originalEntry);
+        console.log('✅ Original ledger entry values restored');
+      }
+    }
+  } catch (rollbackError) {
+    console.error('❌ CRITICAL: Ledger rollback failed:', rollbackError);
+    throw new Error('Ledger rollback failed - manual intervention required');
+  }
+}
+
+// Helper method to rollback ledger reversal entries
+private static async rollbackLedgerReversalEntries(reversalEntries: any[]): Promise<void> {
+  console.log('=== ROLLBACK: Deleting created reversal entries ===');
+  try {
+    for (const reversalInfo of reversalEntries) {
+      if (reversalInfo.reversalEntry?.id) {
+        await LedgerEntryAPI.delete(reversalInfo.reversalEntry.id);
+        console.log('✅ Reversal entry deleted:', reversalInfo.reversalEntry.id);
+      }
+    }
+  } catch (rollbackError) {
+    console.error('❌ CRITICAL: Reversal entries rollback failed:', rollbackError);
+    throw new Error('Reversal entries rollback failed - manual intervention required');
+  }
+}
+
+// Helper method to rollback stock updates
+private static async rollbackStockUpdate(currentData: PurchaseVoucherInterface, originalData: PurchaseVoucherInterface): Promise<void> {
+  try {
+    const { smartUpdateDocumentStock } = await import('@/server/features/items/infrastructure/itemApi/stockManagementHelper');
+    await smartUpdateDocumentStock(currentData, originalData, 'purchase_voucher');
+    console.log('✅ Stock update rollback completed');
+  } catch (rollbackError) {
+    console.error('❌ CRITICAL: Stock rollback failed:', rollbackError);
+    throw new Error('Stock rollback failed - manual intervention required');
+  }
+}
+
+// Helper method to rollback stock reversal
+private static async rollbackStockReversal(voucherData: PurchaseVoucherInterface): Promise<void> {
+  try {
+    const { processDocumentStock } = await import('@/server/features/items/infrastructure/itemApi/stockManagementHelper');
+    await processDocumentStock(voucherData, 'purchase_voucher');
+    console.log('✅ Stock reversal rollback completed');
+  } catch (rollbackError) {
+    console.error('❌ CRITICAL: Stock reversal rollback failed:', rollbackError);
+    throw new Error('Stock reversal rollback failed - manual intervention required');
+  }
+}
+ // Helper method to rollback ledger deletion
+    private static async rollbackLedgerDeletion(deletedEntries: LedgerEntryInterface[]): Promise<void> {
+        console.log('=== ROLLBACK: Restoring deleted ledger entries ===');
+        try {
+            for (const entry of deletedEntries) {
+                // Remove the ID to create a new entry with same data
+                const { id, ...entryData } = entry;
+                await LedgerEntryAPI.create(entryData as LedgerEntryInterface);
+                console.log('✅ Ledger entry restored:', entry.id || 'unknown');
+            }
+        } catch (rollbackError) {
+            console.error('❌ CRITICAL: Ledger deletion rollback failed:', rollbackError);
+            throw new Error('Ledger deletion rollback failed - manual intervention required');
+        }
+    }
+
+// Convenience method for stock-only updates
+static async updateWithoutStock(data: PurchaseVoucherInterface, updateLedger: boolean = false) {
+  return this.update(data, { updateStock: false, updateLedger });
+}
+
+// Convenience method for metadata-only updates (no stock, no ledger)
+static async updateMetadataOnly(data: PurchaseVoucherInterface) {
+  return this.update(data, { updateStock: false, updateLedger: false });
+}
+
+// Convenience method for safe deletion (with all protections)
+static async safeDelete(id: string) {
+  return this.delete(id, {
+    handleLedgerEntry: true,
+    reverseStock: true,
+    force: false
+  });
+}
+
+// Convenience method for force deletion (when you need to delete despite errors)
+static async forceDelete(id: string, reverseStock: boolean = true) {
+  return this.delete(id, {
+    handleLedgerEntry: true, // Still try to handle ledger, but with force
+    reverseStock,
+    force: true
+  });
+}
+
+// Convenience method for document-only deletion (no stock or ledger changes)
+static async deleteDocumentOnly(id: string) {
+  return this.delete(id, {
+    handleLedgerEntry: false,
+    reverseStock: false,
+    force: false
+  });
+}
 
     // Update purchase voucher status with ledger considerations
     static async updateStatus(id: string, status: 'draft' | 'approved' | 'rejected', handleLedgerEntry: boolean = true) {
@@ -506,95 +1116,4 @@ export class PurchaseVoucherAPI {
         const response = await fetch(`${API_BASE_URL}/party-invoice/${partyInvoiceNumber}${params.toString() ? '?' + params.toString() : ''}`);
         if (!response.ok) throw new Error('Failed to fetch purchase voucher by party invoice number');
         return response.json();
-    }
-
-    // === LEDGER-SPECIFIC HELPER METHODS ===
-
-    // Get supplier ledger statement for purchase voucher period
-    static async getSupplierLedgerStatement(supplierId: string, startDate?: string, endDate?: string) {
-        return LedgerEntryAPI.getStatement(supplierId, startDate, endDate);
-    }
-
-    // Get supplier balance
-    static async getSupplierBalance(supplierId: string) {
-        return LedgerEntryAPI.getBalance(supplierId);
-    }
-
-    // Create payment voucher entry (when purchase voucher is paid)
-    static async createPaymentVoucher(supplierId: string, amount: number, paymentNumber: string, date?: string) {
-        return LedgerEntryAPI.createPaymentOutEntry({
-            supplierLedgerAccountId: supplierId,
-            amount: amount,
-            date: date || new Date().toISOString(),
-            paymentNumber: paymentNumber,
-            description: `Payment made - Voucher ${paymentNumber}`
-        });
-    }
-
-    // Helper: Create ledger entry from existing purchase voucher data
-    static async createLedgerEntryFromVoucher(voucherId: string) {
-        try {
-            const voucher = await this.getById(voucherId);
-            
-            if (!voucher || !voucher.data) {
-                throw new Error('Purchase voucher not found');
-            }
-
-            const voucherData = voucher.data;
-
-            return LedgerEntryAPI.createFromPurchaseVoucher({
-                supplierId: voucherData.supplierVendorId,
-                voucherNumber: voucherData.poNumber || voucherData.partyInvoiceNumber,
-                voucherDate: voucherData.partyInvoiceDate,
-                grandTotal: voucherData.summary.grandTotal,
-                notes: voucherData.notes,
-                partyInvoiceNumber: voucherData.partyInvoiceNumber
-            });
-
-        } catch (error) {
-            console.error('Failed to create ledger entry from voucher:', error);
-            throw new Error(`Failed to create ledger entry: ${error instanceof Error ? error.message : 'Unknown error'}`);
-        }
-    }
-
-    // Get next PO number
-    static async getNextPONumber(fpoId: string, prefix: string = 'PO') {
-        const params = new URLSearchParams();
-        params.append('fpoId', fpoId);
-        params.append('prefix', prefix);
-
-        const response = await fetch(`${API_BASE_URL}/next-po-number?${params.toString()}`);
-        if (!response.ok) throw new Error('Failed to get next PO number');
-        return response.json();
-    }
-
-    // === REPORTING AND ANALYTICS ===
-
-    // Get purchase voucher analytics
-    static async getAnalytics(fpoId: string, dateRange?: { startDate: string, endDate: string }) {
-        const params = new URLSearchParams({ fpoId });
-        
-        if (dateRange) {
-            params.append('startDate', dateRange.startDate);
-            params.append('endDate', dateRange.endDate);
-        }
-
-        const response = await fetch(`${API_BASE_URL}/analytics?${params.toString()}`);
-        if (!response.ok) throw new Error('Failed to fetch purchase voucher analytics');
-        return response.json();
-    }
-
-    // Get supplier-wise purchase summary
-    static async getSupplierWiseSummary(fpoId: string, dateRange?: { startDate: string, endDate: string }) {
-        const params = new URLSearchParams({ fpoId });
-        
-        if (dateRange) {
-            params.append('startDate', dateRange.startDate);
-            params.append('endDate', dateRange.endDate);
-        }
-
-        const response = await fetch(`${API_BASE_URL}/supplier-summary?${params.toString()}`);
-        if (!response.ok) throw new Error('Failed to fetch supplier-wise purchase summary');
-        return response.json();
-    }
-}
+    }}

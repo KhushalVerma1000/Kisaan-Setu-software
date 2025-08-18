@@ -13,7 +13,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { CalendarIcon, Save, ArrowLeft, AlertCircle, CheckCircle, Loader2 } from 'lucide-react';
+import { CalendarIcon, Save, ArrowLeft, AlertCircle, CheckCircle, Loader2, Hash } from 'lucide-react';
 import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
 import AddItemComponent from '@/components/items/AddItemComponent';
@@ -45,8 +45,9 @@ interface LineItem {
   amount: number;
 }
 
-// Simplified form data interface
+// Enhanced form data interface with voucherNumber
 interface PurchaseVoucherFormData {
+  voucherNumber: string;
   poNumber: string;
   supplierId: string;
   supplierName: string;
@@ -65,10 +66,11 @@ const AddPurchaseVoucherPage: React.FC = () => {
   const router = useRouter();
   const dispatch = useAppDispatch();
   const [loading, setLoading] = useState(false);
+  const [voucherNumberLoading, setVoucherNumberLoading] = useState(true);
   const [errors, setErrors] = useState<string[]>([]);
   const [isFormValid, setIsFormValid] = useState(false);
 
-const [hasExportedData, setHasExportedData] = useState(false);
+  const [hasExportedData, setHasExportedData] = useState(false);
   // New state to store the exported data from AddItemComponent
   const [exportedItemsData, setExportedItemsData] = useState<any>(null);
 
@@ -80,8 +82,9 @@ const [hasExportedData, setHasExportedData] = useState(false);
 
   const fpoIdOfUser = user.fpoId;
 
-  // Simplified initial form data
+  // Enhanced initial form data with voucherNumber
   const [formData, setFormData] = useState<PurchaseVoucherFormData>({
+    voucherNumber: '',
     poNumber: '',
     supplierId: '',
     supplierName: '',
@@ -148,6 +151,71 @@ const [hasExportedData, setHasExportedData] = useState(false);
     }
   };
 
+  // Enhanced previewDocumentNumber function
+  const previewDocumentNumber = async () => {
+    try {
+      setVoucherNumberLoading(true);
+      
+      const response = await fetch('/api/document-number/preview', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          fpoId: fpoIdOfUser,
+          documentType: 'purchase_voucher',
+        }),
+      });
+
+      if (!response.ok) {
+        console.error('Failed to fetch next voucher number', response);
+        toast.warn('Failed to generate voucher number. Please refresh the page.', {
+          position: "top-right",
+          autoClose: 5000,
+          hideProgressBar: false,
+          closeOnClick: true,
+          pauseOnHover: true,
+          draggable: true,
+        });
+        return;
+      }
+
+      const result = await response.json();
+      const documentNumber = result.data;
+      
+      console.log("The new purchase voucher number from the fetch api is", documentNumber);
+      
+      // Update form data with the voucher number
+      setFormData(prev => ({
+        ...prev,
+        voucherNumber: documentNumber
+      }));
+
+      // // Show success toast
+      // toast.success(`Voucher number generated: ${documentNumber}`, {
+      //   position: "top-right",
+      //   autoClose: 3000,
+      //   hideProgressBar: false,
+      //   closeOnClick: true,
+      //   pauseOnHover: true,
+      //   draggable: true,
+      // });
+
+    } catch (error) {
+      console.error('Error fetching voucher number:', error);
+      toast.error('Error generating voucher number. Please refresh the page.', {
+        position: "top-right",
+        autoClose: 5000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true,
+      });
+    } finally {
+      setVoucherNumberLoading(false);
+    }
+  };
+
   const handleSummaryChange = useCallback((summary: LineItemSummary) => {
     setFormData(prev => ({
       ...prev,
@@ -165,19 +233,8 @@ const [hasExportedData, setHasExportedData] = useState(false);
     // Save the exported data to state
     setExportedItemsData(itemsData);
 
-    
-  // Set the flag to enable action buttons
-  setHasExportedData(true);
-
-    // // Show success toast to indicate data has been captured
-    // toast.success('Item data captured successfully!', {
-    //   position: "top-right",
-    //   autoClose: 2000,
-    //   hideProgressBar: false,
-    //   closeOnClick: true,
-    //   pauseOnHover: true,
-    //   draggable: true,
-    // });
+    // Set the flag to enable action buttons
+    setHasExportedData(true);
   }, []);
 
   // Function to prepare and save data to API
@@ -193,6 +250,21 @@ const [hasExportedData, setHasExportedData] = useState(false);
       if (!formData.supplierId || !formData.partyInvoiceNo) {
         toast.update(toastId, {
           render: 'Please fill in all required fields',
+          type: 'error',
+          isLoading: false,
+          autoClose: 5000,
+          hideProgressBar: false,
+          closeOnClick: true,
+          pauseOnHover: true,
+          draggable: true,
+        });
+        return;
+      }
+
+      // Validate voucher number
+      if (!formData.voucherNumber) {
+        toast.update(toastId, {
+          render: 'Voucher number is missing. Please refresh the page.',
           type: 'error',
           isLoading: false,
           autoClose: 5000,
@@ -356,8 +428,9 @@ const [hasExportedData, setHasExportedData] = useState(false);
         gstType: 'intrastate' // Backend will determine correct type
       };
 
-      // Prepare data for API - match PurchaseVoucherInterface structure 
+      // Enhanced data for API - include voucherNumber
       const voucherData: PurchaseVoucherInterface = {
+        voucherNumber: formData.voucherNumber, // Add voucher number
         poNumber: formData.poNumber,
         supplierVendorName: formData.supplierName,
         supplierVendorId: formData.supplierId,
@@ -381,7 +454,7 @@ const [hasExportedData, setHasExportedData] = useState(false);
 
       // Update the loading toast to success
       toast.update(toastId, {
-        render: `Purchase voucher ${status === 'draft' ? 'saved as draft' : 'submitted for approval'} successfully!`,
+        render: `Purchase voucher ${formData.voucherNumber} ${status === 'draft' ? 'saved as draft' : 'submitted for approval'} successfully!`,
         type: 'success',
         isLoading: false,
         autoClose: 3000,
@@ -453,6 +526,13 @@ const [hasExportedData, setHasExportedData] = useState(false);
     await saveToAPI('approved');
   };
 
+  // Fetch voucher number on component mount
+  useEffect(() => {
+    if (fpoIdOfUser) {
+      previewDocumentNumber();
+    }
+  }, [fpoIdOfUser]);
+
   // Show warning toast when ledger accounts fail to load
   useEffect(() => {
     if (ledgerAccountsError) {
@@ -491,6 +571,13 @@ const [hasExportedData, setHasExportedData] = useState(false);
             <Badge variant="outline" className="text-blue-600 border-blue-200">
               {user.fpoName?.toUpperCase()}
             </Badge>
+            {/* Voucher Number Badge */}
+            {formData.voucherNumber && (
+              <Badge variant="default" className="text-white bg-green-600">
+                <Hash className="h-3 w-3 mr-1" />
+                {formData.voucherNumber}
+              </Badge>
+            )}
           </div>
         </div>
 
@@ -505,6 +592,16 @@ const [hasExportedData, setHasExportedData] = useState(false);
                   <li key={index} className="text-sm">{error}</li>
                 ))}
               </ul>
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {/* Voucher Number Loading Alert */}
+        {voucherNumberLoading && (
+          <Alert className="mb-6 border-blue-200 bg-blue-50">
+            <Loader2 className="h-4 w-4 text-blue-600 animate-spin" />
+            <AlertDescription className="text-blue-800">
+              Generating voucher number...
             </AlertDescription>
           </Alert>
         )}
@@ -530,7 +627,30 @@ const [hasExportedData, setHasExportedData] = useState(false);
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
+              {/* Voucher Number Field */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="voucherNumber" className="flex items-center gap-2">
+                    <Hash className="h-4 w-4" />
+                    Voucher Number
+                  </Label>
+                  <div className="relative">
+                    <Input
+                      id="voucherNumber"
+                      value={formData.voucherNumber}
+                      placeholder={voucherNumberLoading ? "Generating..." : "Voucher number will appear here"}
+                      readOnly
+                      className="bg-gray-50 cursor-not-allowed font-mono font-medium"
+                    />
+                    {voucherNumberLoading && (
+                      <Loader2 className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 animate-spin text-gray-400" />
+                    )}
+                  </div>
+                  <p className="text-xs text-gray-500">
+                    Auto-generated voucher number for this purchase voucher
+                  </p>
+                </div>
+
                 <div className="space-y-2">
                   <Label htmlFor="poNumber">PO Number</Label>
                   <Select value={formData.poNumber} onValueChange={(value) => handleInputChange('poNumber', value)}>
@@ -546,7 +666,9 @@ const [hasExportedData, setHasExportedData] = useState(false);
                     </SelectContent>
                   </Select>
                 </div>
+              </div>
 
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="supplier">
                     Supplier/Vendor <span className="text-red-500">*</span>
@@ -589,9 +711,7 @@ const [hasExportedData, setHasExportedData] = useState(false);
                     </SelectContent>
                   </Select>
                 </div>
-              </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="partyInvoiceNo">
                     Party Invoice No <span className="text-red-500">*</span>
@@ -603,7 +723,9 @@ const [hasExportedData, setHasExportedData] = useState(false);
                     placeholder="Enter invoice number"
                   />
                 </div>
+              </div>
 
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="partyInvoiceDate">
                     Party Invoice Date <span className="text-red-500">*</span>
@@ -635,6 +757,22 @@ const [hasExportedData, setHasExportedData] = useState(false);
                     </PopoverContent>
                   </Popover>
                 </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="supplierState">
+                    Supplier State <span className="text-red-500">*</span>
+                  </Label>
+                  <Input
+                    id="supplierState"
+                    value={formData.supplierState}
+                    placeholder="State will be auto-filled from supplier selection"
+                    readOnly
+                    className="bg-gray-50 cursor-not-allowed"
+                  />
+                  <p className="text-xs text-gray-500">
+                    State is automatically set based on supplier selection
+                  </p>
+                </div>
               </div>
 
               <div className="space-y-4">
@@ -651,30 +789,14 @@ const [hasExportedData, setHasExportedData] = useState(false);
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="supplierState">
-                      Supplier State <span className="text-red-500">*</span>
-                    </Label>
+                    <Label htmlFor="gstin">GSTIN</Label>
                     <Input
-                      id="supplierState"
-                      value={formData.supplierState}
-                      placeholder="State will be auto-filled from supplier selection"
-                      readOnly
-                      className="bg-gray-50 cursor-not-allowed"
+                      id="gstin"
+                      value={formData.gstin}
+                      onChange={(e) => handleInputChange('gstin', e.target.value)}
+                      placeholder="Enter GSTIN"
                     />
-                    <p className="text-xs text-gray-500">
-                      State is automatically set based on supplier selection
-                    </p>
                   </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="gstin">GSTIN</Label>
-                  <Input
-                    id="gstin"
-                    value={formData.gstin}
-                    onChange={(e) => handleInputChange('gstin', e.target.value)}
-                    placeholder="Enter GSTIN"
-                  />
                 </div>
               </div>
             </CardContent>
@@ -732,7 +854,7 @@ const [hasExportedData, setHasExportedData] = useState(false);
                 onClick={handleSaveAsDraft}
                 variant="outline"
                 className="flex-1"
-                disabled={loading || !isFormValid || !hasExportedData}
+                disabled={loading || !isFormValid || !hasExportedData || voucherNumberLoading}
               >
                 <Save className="h-4 w-4 mr-2" />
                 Save as Draft
@@ -740,19 +862,22 @@ const [hasExportedData, setHasExportedData] = useState(false);
               <Button
                 onClick={handleSubmitForApproval}
                 className="flex-1"
-                disabled={loading || !isFormValid || !hasExportedData}
+                disabled={loading || !isFormValid || !hasExportedData || voucherNumberLoading}
               >
                 <CheckCircle className="h-4 w-4 mr-2" />
                 {loading ? 'Saving...' : 'Save & Submit'}
               </Button>
             </CardContent>
-            {!hasExportedData && (
-  <div className="px-6 py-4 bg-purple-50 ">
-    <p className="text-sm text-purple-800 text-center">
-    ➕ Please add items and click save to proceed 
-    </p>
-  </div>
-)}
+            {(!hasExportedData || voucherNumberLoading) && (
+              <div className="px-6 py-4 bg-purple-50">
+                <p className="text-sm text-purple-800 text-center">
+                  {voucherNumberLoading ? 
+                    "🔄 Generating voucher number..." : 
+                    "➕ Please add items and click save to proceed"
+                  }
+                </p>
+              </div>
+            )}
           </Card>
         </div>
       </div>

@@ -2,7 +2,6 @@ import { createClient } from "@/utils/supabase/server";
 import { PurchaseVoucher, PurchaseVoucherInterface } from "../../core/entities/PurchaseVoucher";
 import { getFpoState } from "@/server/features/fpo/infrastructure/persistence/FpoProfileSupabase";
 import { getSupplierStateById } from "@/server/features/ledger/infrastructure/persistence/ledgerAccountSupabase";
-import { stat } from "fs";
 
 /**
  * Get supplier state by supplier ID (assuming you have a suppliers/ledger_accounts table)
@@ -212,7 +211,7 @@ export async function createPurchaseVoucher(voucherData: PurchaseVoucherInterfac
             throw new Error(error.message);
         }
 
-        console.log('Purchase voucher created successfully:', data.id);
+        console.log('Purchase voucher created successfully:', data);
         return PurchaseVoucher.fromDbFormat(data);
     } catch (error) {
         console.error('Error in createPurchaseVoucher:', error);

@@ -90,6 +90,8 @@ export interface GSTBreakdownInterface {
 
 export interface PurchaseVoucherInterface {
     id?: string;
+    voucherNumber?: string; // NEW: Auto-generated voucher number
+
     poNumber?: string;
     supplierVendorName: string;
     supplierVendorId?: string;
@@ -112,6 +114,8 @@ export interface PurchaseVoucherInterface {
 
 export class PurchaseVoucher implements PurchaseVoucherInterface {
     public id?: string;
+    public voucherNumber?: string; // NEW: Auto-generated voucher number
+
     public poNumber?: string;
     public supplierVendorName: string;
     public supplierVendorId?: string;
@@ -133,6 +137,7 @@ export class PurchaseVoucher implements PurchaseVoucherInterface {
 
     constructor(purchaseVoucherData: PurchaseVoucherInterface) {
         this.id = purchaseVoucherData.id;
+        this.voucherNumber = purchaseVoucherData.voucherNumber; // NEW: Auto-generated voucher number
         this.poNumber = purchaseVoucherData.poNumber;
         this.supplierVendorName = purchaseVoucherData.supplierVendorName;
         this.supplierVendorId = purchaseVoucherData.supplierVendorId;
@@ -166,6 +171,7 @@ export class PurchaseVoucher implements PurchaseVoucherInterface {
     static fromDbFormat(dbData: any): PurchaseVoucher {
         return new PurchaseVoucher({
             id: dbData.id,
+            voucherNumber: dbData.voucher_number, // NEW: Map from DB
             poNumber: dbData.po_number,
             supplierVendorName: dbData.supplier_vendor_name,
             supplierVendorId: dbData.supplier_vendor_id,

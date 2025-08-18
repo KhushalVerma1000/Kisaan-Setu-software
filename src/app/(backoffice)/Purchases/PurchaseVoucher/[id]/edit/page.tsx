@@ -43,6 +43,7 @@ interface EditPurchaseVoucherPageProps {
 }
 
 interface PurchaseVoucherFormData {
+  voucherNumber?: string; // Added voucher number - readonly field
   poNumber: string;
   supplierId: string;
   supplierName: string;
@@ -93,6 +94,7 @@ const EditPurchaseVoucherPage: React.FC<EditPurchaseVoucherPageProps> = ({ param
 
   // Form data initialization
   const [formData, setFormData] = useState<PurchaseVoucherFormData>({
+    voucherNumber: '', // Added voucher number field
     poNumber: '',
     supplierId: '',
     supplierName: '',
@@ -114,16 +116,6 @@ const EditPurchaseVoucherPage: React.FC<EditPurchaseVoucherPageProps> = ({ param
     notes: '',
     status: 'draft'
   });
-
-  // // Memoized supplier options for better performance
-  // const supplierOptions = useMemo(() => {
-  //   return ledgerAccounts.filter(account => 
-  //     account.groupName && 
-  //     (account.groupName.toLowerCase().includes('creditor') || 
-  //      account.groupName.toLowerCase().includes('vendor') ||
-  //      account.groupName.toLowerCase().includes('supplier'))
-  //   );
-  // }, [ledgerAccounts]);
 
   // Critical null checks for fpoId
   useEffect(() => {
@@ -153,7 +145,6 @@ const EditPurchaseVoucherPage: React.FC<EditPurchaseVoucherPageProps> = ({ param
       });
     }
   }, [ledgerAccountsError]);
-
 
 // Convert PurchaseVoucherItem to SelectedItem for AddItemComponent
 const convertToSelectedItems = useCallback((purchaseItems: PurchaseVoucherItemInterface[]): SelectedItem[] => {
@@ -206,6 +197,7 @@ const convertToPurchaseVoucherItems = useCallback((selectedItems: SelectedItem[]
     };
   });
 }, []);
+
   // Load voucher data
   useEffect(() => {
     const loadVoucherData = async () => {
@@ -213,6 +205,7 @@ const convertToPurchaseVoucherItems = useCallback((selectedItems: SelectedItem[]
         setIsLoading(true);
         const voucherDataApi = await PurchaseVoucherAPI.getById(id);
         const voucherData = voucherDataApi.data;
+        console.log(voucherData)
         setOriginalData(voucherData);
 
         // Convert items to SelectedItem format for AddItemComponent
@@ -229,8 +222,9 @@ const convertToPurchaseVoucherItems = useCallback((selectedItems: SelectedItem[]
           itemCount: convertedItems.length
         };
 
-        // Set form data
+        // Set form data - including voucher number
         setFormData({
+          voucherNumber: voucherData.voucherNumber || '', // Set voucher number from API response
           poNumber: voucherData.poNumber || '',
           supplierId: voucherData.supplierVendorId || '',
           supplierName: voucherData.supplierVendorName || '',
@@ -405,6 +399,7 @@ const convertToPurchaseVoucherItems = useCallback((selectedItems: SelectedItem[]
 
       const voucherData: PurchaseVoucherInterface = {
         id: originalData?.id,
+        // Note: voucherNumber is not included as it's read-only and shouldn't be sent to API
         poNumber: formData.poNumber,
         supplierVendorName: formData.supplierName,
         supplierVendorId: formData.supplierId,
@@ -554,44 +549,47 @@ const convertToPurchaseVoucherItems = useCallback((selectedItems: SelectedItem[]
   const isSaveDisabled = loading || !itemsDataReady;
 
   return (
-    <div className="container  mx-auto px-4 py-8 max-w-7xl">
+    <div className="container mx-auto px-4 py-8 max-w-7xl">
       {/* Header */}
-     <div className="container mx-auto px-4 py-8 max-w-7xl">
-  {/* Header */}
-  <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mb-6">
-    {/* Left Section */}
-    <div className="flex flex-col sm:flex-row sm:items-center sm:gap-4 gap-2">
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={() => router.back()}
-        className="flex items-center gap-2 w-fit"
-      >
-        <ArrowLeft className="h-4 w-4" />
-        Back
-      </Button>
-      <div>
-        <h1 className="text-xl sm:text-2xl font-bold text-gray-900">
-          Edit Purchase Voucher
-        </h1>
-        <p className="text-sm text-gray-600">
-          Modify purchase voucher details for your FPO
-        </p>
-      </div>
-    </div>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mb-6">
+        {/* Left Section */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:gap-4 gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => router.back()}
+            className="flex items-center gap-2 w-fit"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Back
+          </Button>
+          <div>
+            <h1 className="text-xl sm:text-2xl font-bold text-gray-900">
+              Edit Purchase Voucher
+              {/* Display voucher number in header if available */}
+              {formData.voucherNumber && (
+                <span className="text-lg text-blue-600 ml-2">
+                  #{formData.voucherNumber}
+                </span>
+              )}
+            </h1>
+            <p className="text-sm text-gray-600">
+              Modify purchase voucher details for your FPO
+            </p>
+          </div>
+        </div>
 
-    {/* Right Section */}
-    <div className="flex flex-wrap sm:flex-nowrap items-center gap-2">
-      <Badge variant="outline" className="text-blue-600 border-blue-200 flex items-center">
-        <Building2 className="h-3 w-3 mr-1" />
-        {user.fpoName?.toUpperCase()}
-      </Badge>
-      <Badge variant={formData.status === 'approved' ? 'default' : 'secondary'}>
-        {formData.status.toUpperCase()}
-      </Badge>
-    </div>
-  </div>
-</div>
+        {/* Right Section */}
+        <div className="flex flex-wrap sm:flex-nowrap items-center gap-2">
+          <Badge variant="outline" className="text-blue-600 border-blue-200 flex items-center">
+            <Building2 className="h-3 w-3 mr-1" />
+            {user.fpoName?.toUpperCase()}
+          </Badge>
+          <Badge variant={formData.status === 'approved' ? 'default' : 'secondary'}>
+            {formData.status.toUpperCase()}
+          </Badge>
+        </div>
+      </div>
 
       {/* Unsaved Changes Warning */}
       {hasChanges && (
@@ -638,6 +636,23 @@ const convertToPurchaseVoucherItems = useCallback((selectedItems: SelectedItem[]
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {/* Show Voucher Number field only if it exists */}
+              {formData.voucherNumber && (
+                <div>
+                  <Label htmlFor="voucherNumber">Voucher Number</Label>
+                  <Input
+                    id="voucherNumber"
+                    value={formData.voucherNumber}
+                    readOnly
+                    className="bg-gray-50 font-medium text-blue-900"
+                    placeholder="Auto-generated"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Auto-generated voucher number
+                  </p>
+                </div>
+              )}
+
               <div>
                 <Label htmlFor="poNumber">Purchase Order Number</Label>
                 <Select
@@ -847,7 +862,7 @@ const convertToPurchaseVoucherItems = useCallback((selectedItems: SelectedItem[]
                   </>
                 )}
               </Button>
-  <Button
+              <Button
                 onClick={handleDelete}
                 disabled={loading || formData.status === 'approved'}
                 variant="destructive"
@@ -855,20 +870,10 @@ const convertToPurchaseVoucherItems = useCallback((selectedItems: SelectedItem[]
                 <Trash2 className="mr-2 h-4 w-4" />
                 Delete Voucher
               </Button>
-             
             </div>
 
-            <div className="grid grid-cols-1  gap-3">
-              {/* <Button
-                onClick={handleSaveAsCopy}
-                disabled={loading || !itemsDataReady}
-                variant="outline"
-              >
-                <Copy className="mr-2 h-4 w-4" />
-                Save as Copy
-              </Button> */}
-
-             <Button
+            <div className="grid grid-cols-1 gap-3">
+              <Button
                 onClick={() => saveToAPI('approved')}
                 disabled={isSaveDisabled}
                 title={!itemsDataReady ? "Please save items first using the 'Save Items' button above" : ""}
@@ -909,6 +914,13 @@ const convertToPurchaseVoucherItems = useCallback((selectedItems: SelectedItem[]
                     {formData.status.toUpperCase()}
                   </Badge>
                 </div>
+                {/* Display voucher number in metadata section if available */}
+                {formData.voucherNumber && (
+                  <div className="flex justify-between">
+                    <span>Voucher Number:</span>
+                    <span className="font-medium text-blue-900">{formData.voucherNumber}</span>
+                  </div>
+                )}
                 {originalData?.createdAt && (
                   <div className="flex justify-between">
                     <span>Created:</span>

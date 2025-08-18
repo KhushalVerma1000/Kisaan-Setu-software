@@ -22,6 +22,7 @@ import { PurchaseVoucherPDFService } from "@/server/services/pdf/PurchaseVoucher
 interface PurchaseVoucher {
   id: string;
   poNumber?: string;
+  voucherNumber? : string;
   supplierVendorName: string;
   supplierVendorId: string;
   supplierVendorBillingAddress: string;
@@ -574,7 +575,7 @@ await pdfService.generatePDF(voucherId);
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>PO Number</TableHead>
+                      <TableHead>Voucher No.</TableHead>
                       <TableHead>Supplier</TableHead>
                       <TableHead>Invoice Number</TableHead>
                       <TableHead>Invoice Date</TableHead>
@@ -587,7 +588,7 @@ await pdfService.generatePDF(voucherId);
                     {currentPurchaseVouchers.map((voucher) => (
                       <TableRow key={voucher.id}>
                         <TableCell className="font-medium text-primary">
-                          {voucher.poNumber || 'N/A'}
+                          {voucher.voucherNumber || 'N/A'}
                         </TableCell>
                         <TableCell>
                           <div>
@@ -702,7 +703,7 @@ await pdfService.generatePDF(voucherId);
                         <Button
                           size="sm"
                           variant="outline"
-                          onClick={() => router.push(`/dashboard/purchase/vouchers/${voucher.id}/edit`)}
+                          onClick={() => router.push(`/Purchases/PurchaseVoucher/${voucher.id}/edit`)}
                           className="flex-1"
                         >
                           <Edit className="h-4 w-4 mr-1" />
