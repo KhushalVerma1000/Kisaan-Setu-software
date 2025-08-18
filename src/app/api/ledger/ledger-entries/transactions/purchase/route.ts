@@ -1,20 +1,21 @@
 
 // app/api/ledger-entries/transactions/purchase/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import { createPurchaseVoucherEntry, PurchaseVoucherData } from '@/server/features/ledger/infrastructure/persistence/ledgerEntrySupabase';
+import { createPurchaseVoucherEntry } from '@/server/features/ledger/infrastructure/persistence/ledgerEntrySupabase';
 
 export async function POST(request: NextRequest) {
     try {
         const body = await request.json();
-        const purchaseData: PurchaseVoucherData = {
-            supplierLedgerAccountId: body.supplierLedgerAccountId,
-            amount: body.amount,
-            date: new Date(body.date),
-            voucherNumber: body.voucherNumber,
-            description: body.description
-        };
-
-        const entry = await createPurchaseVoucherEntry(purchaseData);
+        
+        const entry = await createPurchaseVoucherEntry(
+            body.supplierLedgerAccountId,
+            body.amount,
+            new Date(body.date),
+            body.voucherId,
+            body.voucherNumber,
+            body.supplierName
+        );
+        
         return NextResponse.json({ entry }, { status: 201 });
     } catch (error) {
         console.error('Error creating purchase voucher entry:', error);
@@ -24,4 +25,3 @@ export async function POST(request: NextRequest) {
         );
     }
 }
-

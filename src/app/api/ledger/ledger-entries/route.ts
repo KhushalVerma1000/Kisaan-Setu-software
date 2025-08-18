@@ -2,8 +2,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { 
     getAllLedgerEntries, 
-    createLedgerEntry, 
-    getLedgerEntriesForDateRange 
+    createLedgerEntry
 } from '@/server/features/ledger/infrastructure/persistence/ledgerEntrySupabase';
 import { LedgerEntryInterface } from '@/server/features/ledger/core/entities/Ledger';
 
@@ -11,16 +10,10 @@ export async function GET(request: NextRequest) {
     try {
         const { searchParams } = new URL(request.url);
         const ledgerAccountId = searchParams.get('ledgerAccountId');
-        const startDate = searchParams.get('startDate');
-        const endDate = searchParams.get('endDate');
 
         console.log('=== GET /api/ledger-entries Debug ===');
         console.log('Request URL:', request.url);
-        console.log('Search params:', {
-            ledgerAccountId,
-            startDate,
-            endDate
-        });
+        console.log('Search params:', { ledgerAccountId });
 
         if (!ledgerAccountId) {
             console.log('ERROR: Missing ledgerAccountId parameter');
@@ -30,18 +23,8 @@ export async function GET(request: NextRequest) {
             );
         }
 
-        let entries;
-        if (startDate && endDate) {
-            console.log('Fetching entries for date range:', { startDate, endDate });
-            entries = await getLedgerEntriesForDateRange(
-                ledgerAccountId,
-                new Date(startDate),
-                new Date(endDate)
-            );
-        } else {
-            console.log('Fetching all entries for ledger account:', ledgerAccountId);
-            entries = await getAllLedgerEntries(ledgerAccountId);
-        }
+        console.log('Fetching all entries for ledger account:', ledgerAccountId);
+        const entries = await getAllLedgerEntries(ledgerAccountId);
 
         console.log('Entries fetched:', {
             count: entries ? entries.length : 0,
@@ -78,7 +61,7 @@ export async function POST(request: NextRequest) {
     try {
         const body = await request.json();
         
-        console.log('=== POST /api/ledger/ledger-entries Debug ===');
+        console.log('=== POST /api/ledger-entries Debug ===');
         console.log('Request body:', body);
 
         const entryData: LedgerEntryInterface = {
@@ -86,7 +69,15 @@ export async function POST(request: NextRequest) {
             date: new Date(body.date),
             amount: body.amount,
             type: body.type,
-            description: body.description
+            primaryDescription: body.primaryDescription,
+            id: body.id,
+            documentId: body.documentId,
+            documentType: body.documentType,
+            documentNumber: body.documentNumber,
+            secondaryDescription: body.secondaryDescription,
+            referenceDescription: body.referenceDescription,
+            ledgerReference: body.ledgerReference,
+            isOpeningBalance: body.isOpeningBalance || false
         };
 
         console.log('Processed entry data:', entryData);

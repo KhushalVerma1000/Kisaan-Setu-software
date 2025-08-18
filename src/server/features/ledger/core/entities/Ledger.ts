@@ -78,13 +78,29 @@ export class LedgerAccount implements LedgerAccountInterface {
     }
 }
 
+// Ledger Entry Interface
 export interface LedgerEntryInterface {
     id?: string;
     ledgerAccountId: string;
     date: Date;
     amount: number;
     type: 'Dr' | 'Cr';
-    description?: string;
+    
+    // Document Reference System
+    documentId?: string;        // Reference to source document (invoice_id, voucher_id, etc.)
+    documentType?: string;      // 'invoice', 'voucher', 'payment', 'purchase', etc.
+    documentNumber?: string;    // Human-readable document number
+    
+    // Rich Description System
+    primaryDescription: string; // Main description (e.g., "Payment In", "Invoice", "Purchase")
+    secondaryDescription?: string; // Additional context (e.g., "Party: PARTY NAME")
+    referenceDescription?: string; // Reference info (e.g., "Invoice #3")
+    ledgerReference?: string;   // Related ledger name for cross-references
+    
+    // Additional Metadata
+    isOpeningBalance?: boolean; // Flag for opening balance entries
+    createdAt?: Date;
+    updatedAt?: Date;
 }
 
 export class LedgerEntry implements LedgerEntryInterface {
@@ -93,9 +109,37 @@ export class LedgerEntry implements LedgerEntryInterface {
         public date: Date,
         public amount: number,
         public type: 'Dr' | 'Cr',
+        public primaryDescription: string,
         public id?: string,
-        public description?: string
+        public documentId?: string,
+        public documentType?: string,
+        public documentNumber?: string,
+        public secondaryDescription?: string,
+        public referenceDescription?: string,
+        public ledgerReference?: string,
+        public isOpeningBalance: boolean = false,
+        public createdAt?: Date,
+        public updatedAt?: Date
     ) {}
+
+    // Get formatted description like in your image
+    getFormattedDescription(): string {
+        let description = this.primaryDescription;
+        
+        if (this.secondaryDescription) {
+            description += `\n${this.secondaryDescription}`;
+        }
+        
+        if (this.referenceDescription) {
+            description += `\n${this.referenceDescription}`;
+        }
+        
+        if (this.ledgerReference) {
+            description += `\nLedger: ${this.ledgerReference}`;
+        }
+        
+        return description;
+    }
 
     // Method to convert to database format
     toDbFormat(): any {
@@ -105,7 +149,16 @@ export class LedgerEntry implements LedgerEntryInterface {
             date: this.date,
             amount: this.amount,
             type: this.type,
-            description: this.description
+            document_id: this.documentId,
+            document_type: this.documentType,
+            document_number: this.documentNumber,
+            primary_description: this.primaryDescription,
+            secondary_description: this.secondaryDescription,
+            reference_description: this.referenceDescription,
+            ledger_reference: this.ledgerReference,
+            is_opening_balance: this.isOpeningBalance,
+            created_at: this.createdAt || new Date(),
+            updated_at: this.updatedAt || new Date()
         };
     }
 
@@ -113,27 +166,124 @@ export class LedgerEntry implements LedgerEntryInterface {
     static fromDbFormat(dbRow: any): LedgerEntry {
         return new LedgerEntry(
             dbRow.ledger_account_id,
-            dbRow.date,
+            new Date(dbRow.date),
             dbRow.amount,
             dbRow.type,
+            dbRow.primary_description,
             dbRow.id,
-            dbRow.description
+            dbRow.document_id,
+            dbRow.document_type,
+            dbRow.document_number,
+            dbRow.secondary_description,
+            dbRow.reference_description,
+            dbRow.ledger_reference,
+            dbRow.is_opening_balance || false,
+            dbRow.created_at ? new Date(dbRow.created_at) : undefined,
+            dbRow.updated_at ? new Date(dbRow.updated_at) : undefined
         );
     }
 }
 
-// Enhanced Ledger class
+// Universal Transaction Entry Builder
+export interface UniversalTransactionData {
+    // Core transaction data
+    ledgerAccountId: string;
+    amount: number;
+    type: 'Dr' | 'Cr';
+    date: Date;
+    
+    // Description components
+    transactionType: string;    // "Invoice", "Payment In", "Purchase Voucher", etc.
+    partyName?: string;         // Customer/Supplier name
+    documentNumber?: string;    // Invoice #, Voucher #, etc.
+    additionalInfo?: string;    // Any additional context
+    relatedLedgerName?: string; // Cross-reference ledger name
+    
+    // Document reference
+    documentId?: string;
+    documentType?: string;      // 'invoice', 'voucher', 'payment', etc.
+}
+
+// Ledger with Running Balance
+export interface LedgerStatementEntry {
+    entry: LedgerEntry;
+    runningBalance: number;
+    runningBalanceType: 'Dr' | 'Cr';
+}
+
 export class Ledger {
     constructor(
         public ledgerAccount: LedgerAccount,
         public ledgerEntries: LedgerEntry[] = []
     ) {}
 
-    // Calculate current balance
-    getCurrentBalance(): number {
+    // Get statement with running balance
+    getStatementWithRunningBalance(
+        startDate?: Date,
+        endDate?: Date
+    ): LedgerStatementEntry[] {
+        // Filter entries by date range if provided
+        let entries = this.ledgerEntries;
+        if (startDate && endDate) {
+            entries = entries.filter(entry => 
+                entry.date >= startDate && entry.date <= endDate
+            );
+        }
+
+        // Sort by date
+        const sortedEntries = [...entries].sort((a, b) => 
+            a.date.getTime() - b.date.getTime()
+        );
+
+        const statement: LedgerStatementEntry[] = [];
+        let runningBalance = 0;
+        const currentBalanceType = this.ledgerAccount.balanceType;
+
+        // Start with opening balance (if no date filter or includes opening date)
+        if (!startDate || startDate <= this.ledgerAccount.openingDate!) {
+            runningBalance = this.ledgerAccount.openingBalance;
+        }
+
+        sortedEntries.forEach(entry => {
+            // Skip opening balance entry in calculation if we already included it
+            if (entry.isOpeningBalance && (!startDate || startDate <= this.ledgerAccount.openingDate!)) {
+                statement.push({
+                    entry,
+                    runningBalance: Math.abs(runningBalance),
+                    runningBalanceType: runningBalance >= 0 ? currentBalanceType : 
+                                      (currentBalanceType === 'Dr' ? 'Cr' : 'Dr')
+                });
+                return;
+            }
+
+            // Calculate running balance
+            if (this.ledgerAccount.balanceType === 'Dr') {
+                runningBalance += entry.type === 'Dr' ? entry.amount : -entry.amount;
+            } else {
+                runningBalance += entry.type === 'Cr' ? entry.amount : -entry.amount;
+            }
+
+            // Determine balance type
+            const balanceType = runningBalance >= 0 ? this.ledgerAccount.balanceType : 
+                              (this.ledgerAccount.balanceType === 'Dr' ? 'Cr' : 'Dr');
+
+            statement.push({
+                entry,
+                runningBalance: Math.abs(runningBalance),
+                runningBalanceType: balanceType
+            });
+        });
+
+        return statement;
+    }
+
+    // Get current balance
+    getCurrentBalance(): { balance: number; balanceType: 'Dr' | 'Cr' } {
         let balance = this.ledgerAccount.openingBalance;
         
         this.ledgerEntries.forEach(entry => {
+            if (entry.isOpeningBalance) return; // Skip opening balance entry
+            
             if (this.ledgerAccount.balanceType === 'Dr') {
                 balance += entry.type === 'Dr' ? entry.amount : -entry.amount;
             } else {
@@ -141,14 +291,11 @@ export class Ledger {
             }
         });
         
-        return balance;
-    }
-
-    // Get balance type (Dr/Cr) for current balance
-    getCurrentBalanceType(): 'Dr' | 'Cr' {
-        const currentBalance = this.getCurrentBalance();
-        return currentBalance >= 0 ? this.ledgerAccount.balanceType : 
-               (this.ledgerAccount.balanceType === 'Dr' ? 'Cr' : 'Dr');
+        return {
+            balance: Math.abs(balance),
+            balanceType: balance >= 0 ? this.ledgerAccount.balanceType : 
+                        (this.ledgerAccount.balanceType === 'Dr' ? 'Cr' : 'Dr')
+        };
     }
 
     // Add a new entry
@@ -162,4 +309,60 @@ export class Ledger {
             entry.date >= startDate && entry.date <= endDate
         );
     }
+}
+
+// Utility function to create universal transaction entry
+export function createUniversalLedgerEntry(data: UniversalTransactionData): LedgerEntry {
+    // Build rich description
+    const primaryDescription = data.transactionType;
+    
+    let secondaryDescription = '';
+    if (data.partyName) {
+        secondaryDescription = `Party: ${data.partyName}`;
+    }
+    
+    let referenceDescription = '';
+    if (data.documentNumber) {
+        referenceDescription = data.documentNumber;
+    }
+    
+    if (data.additionalInfo) {
+        referenceDescription += referenceDescription ? ` - ${data.additionalInfo}` : data.additionalInfo;
+    }
+
+    return new LedgerEntry(
+        data.ledgerAccountId,
+        data.date,
+        data.amount,
+        data.type,
+        primaryDescription,
+        undefined, // id
+        data.documentId,
+        data.documentType,
+        data.documentNumber,
+        secondaryDescription || undefined,
+        referenceDescription || undefined,
+        data.relatedLedgerName
+    );
+}
+
+// Opening balance utility
+export function createOpeningBalanceEntry(
+    ledgerAccount: LedgerAccount
+): LedgerEntry {
+    return new LedgerEntry(
+        ledgerAccount.id!,
+        ledgerAccount.openingDate || new Date(),
+        ledgerAccount.openingBalance,
+        ledgerAccount.balanceType,
+        'Opening Balance',
+        undefined, // id
+        undefined, // documentId
+        'opening_balance', // documentType
+        undefined, // documentNumber
+        undefined, // secondaryDescription
+        undefined, // referenceDescription
+        undefined, // ledgerReference
+        true // isOpeningBalance
+    );
 }

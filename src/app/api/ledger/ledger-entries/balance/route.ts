@@ -7,7 +7,6 @@ export async function GET(request: NextRequest) {
     try {
         const { searchParams } = new URL(request.url);
         const ledgerAccountId = searchParams.get('ledgerAccountId');
-        const upToDate = searchParams.get('upToDate');
 
         if (!ledgerAccountId) {
             return NextResponse.json(
@@ -16,11 +15,7 @@ export async function GET(request: NextRequest) {
             );
         }
 
-        const balance = await getLedgerBalance(
-            ledgerAccountId,
-            upToDate ? new Date(upToDate) : undefined
-        );
-
+        const balance = await getLedgerBalance(ledgerAccountId);
         return NextResponse.json({ balance });
     } catch (error) {
         console.error('Error calculating ledger balance:', error);
