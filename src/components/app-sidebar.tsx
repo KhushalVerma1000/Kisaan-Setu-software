@@ -9,11 +9,13 @@ import {
   LayoutDashboard, ChevronDown, ChevronRight, FileText, Plus, Eye, Edit, TrendingUp, Package, LucideIcon,
   Wallet2, Wallet, NotebookPen, Truck, BanknoteArrowDown, Notebook, Recycle, BanknoteArrowUpIcon,
   Ticket, TicketsIcon, ShoppingBasket, Settings, Users, BlocksIcon, Tags, FileBox,
-  Quote
+  Quote, Copyright,
+  Landmark
 } from "lucide-react";
 import {
   Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarHeader, SidebarMenu,
-  SidebarMenuButton, SidebarMenuItem, SidebarMenuSub, SidebarMenuSubButton, SidebarMenuSubItem
+  SidebarMenuButton, SidebarMenuItem, SidebarMenuSub, SidebarMenuSubButton, SidebarMenuSubItem,
+  SidebarFooter
 } from "@/components/ui/sidebar";
 import {
   Collapsible, CollapsibleContent, CollapsibleTrigger
@@ -74,8 +76,8 @@ const items: MenuItem[] = [
   { title: "Journal", url: "/Journal", icon: NotebookPen },
   {
     title: "Bank Book", url: "#", icon: WalletCards, subItems: [
-      { title: "Bank Transactions", url: "/bankbook/transactions", icon: FileText },
-      { title: "Bank Reconciliation", url: "/bankbook/reconciliation", icon: Edit },
+      { title: "Add Bank", url: "/Banking/AddBankAccount", icon: Landmark },
+      { title: "Books", url: "/Bankbook", icon: Notebook },
     ]
   },
   { title: "Cashbook", url: "/Cashbook", icon: Wallet2 },
@@ -90,6 +92,7 @@ export function AppSidebar() {
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const pathname = usePathname();
   const router = useRouter();
+  const currentYear = new Date().getFullYear();
 
   const toggleItem = (title: string) => {
     setOpenItems(prev =>
@@ -188,6 +191,29 @@ const supabase = createClient()
             </SidebarGroupContent>
           </SidebarGroup>
         </SidebarContent>
+
+        <SidebarFooter className="p-4 border-t border-emerald-200 mt-auto">
+          {/* Copyright notice for expanded sidebar */}
+          <div className="group-data-[collapsible=icon]:hidden">
+            <div className="flex flex-col items-center text-center space-y-1">
+              <div className="flex items-center gap-1 text-xs text-emerald-600">
+                <Copyright className="h-3 w-3" />
+                <span>{currentYear} Sukrsh Infotech</span>
+              </div>
+              <div className="text-xs text-emerald-500">
+                All rights reserved
+              </div>
+            </div>
+          </div>
+          
+          {/* Copyright notice for collapsed sidebar */}
+          <div className="hidden group-data-[collapsible=icon]:flex items-center justify-center">
+            <div className="text-xs text-emerald-600 rotate-90 whitespace-nowrap">
+              {/* © {currentYear} */}
+              © Sukrsh
+            </div>
+          </div>
+        </SidebarFooter>
       </Sidebar>
 
       <AlertDialog open={showLogoutConfirm} onOpenChange={setShowLogoutConfirm}>
