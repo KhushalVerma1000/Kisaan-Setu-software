@@ -2,6 +2,7 @@ import { createClient } from "@/utils/supabase/server";
 import { PurchaseVoucher, PurchaseVoucherInterface } from "../../core/entities/PurchaseVoucher";
 import { getFpoState } from "@/server/features/fpo/infrastructure/persistence/FpoProfileSupabase";
 import { getSupplierStateById } from "@/server/features/ledger/infrastructure/persistence/ledgerAccountSupabase";
+import { convertKeysToCamel } from "@/utils/caseConvertor";
 
 /**
  * Get supplier state by supplier ID (assuming you have a suppliers/ledger_accounts table)
@@ -531,7 +532,18 @@ export async function getPurchaseVoucherStats(fpoId: string): Promise<{
         };
 
         data.forEach(voucher => {
-            const summary = JSON.parse(voucher.summary || '{}');
+            // FIXED: Handle both stringified (old) and object (new) formats
+            let summary;
+            if (typeof voucher.summary === 'string') {
+                try {
+                    summary = JSON.parse(voucher.summary);
+                } catch {
+                    summary = {};
+                }
+            } else {
+                summary = voucher.summary || {};
+            }
+
             stats.totalAmount += summary.grandTotal || 0;
             stats.totalCGST += summary.totalCGST || 0;
             stats.totalSGST += summary.totalSGST || 0;
@@ -566,6 +578,7 @@ export async function getPurchaseVoucherStats(fpoId: string): Promise<{
         throw error;
     }
 }
+
 
 /**
  * Search purchase vouchers
@@ -689,8 +702,28 @@ export async function getPurchaseVoucherGSTReport(
         };
 
         data.forEach(voucher => {
-            const summary = JSON.parse(voucher.summary || '{}');
-            const gstBreakdown = JSON.parse(voucher.gst_breakdown || '{}');
+            // FIXED: Handle both stringified (old) and object (new) formats
+            let summary, gstBreakdown;
+            
+            if (typeof voucher.summary === 'string') {
+                try {
+                    summary = JSON.parse(voucher.summary);
+                } catch {
+                    summary = {};
+                }
+            } else {
+                summary = voucher.summary || {};
+            }
+
+            if (typeof voucher.gst_breakdown === 'string') {
+                try {
+                    gstBreakdown = JSON.parse(voucher.gst_breakdown);
+                } catch {
+                    gstBreakdown = {};
+                }
+            } else {
+                gstBreakdown = voucher.gst_breakdown || {};
+            }
 
             report.totalCGST += summary.totalCGST || 0;
             report.totalSGST += summary.totalSGST || 0;
@@ -727,3 +760,34 @@ export async function getPurchaseVoucherGSTReport(
         throw error;
     }
 }
+
+/**
+ * Utility function to safely parse JSON fields for backward compatibility
+ * Use this helper in any function that reads JSONB fields
+ */
+function parseJsonField(field: any, defaultValue: any = {}) {
+    if (typeof field === 'string') {
+        try {
+            return JSON.parse(field);
+        } catch (error) {
+            console.warn('Failed to parse JSON field:', error);
+            return defaultValue;
+        }
+    }
+    return field || defaultValue;
+}
+
+
+
+export const getPurchaseVouchersList = async (ledgerId: string, status?: string) => {
+  const supabase = await createClient();
+    const query = supabase
+    .from('purchase_vouchers')
+    .select('id, voucher_number')
+    .eq('supplier_vendor_id', ledgerId);
+  
+  if (status) query.eq('status', status);
+  
+  const { data, error } = await query;
+  return { data: convertKeysToCamel(data), error };
+};

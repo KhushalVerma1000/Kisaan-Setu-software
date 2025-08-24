@@ -174,28 +174,27 @@ export class Invoice implements InvoiceInterface {
     }
 
     // Create from database format
-    static fromDbFormat(dbData: any): Invoice {
-        return new Invoice({
-            id: dbData.id,
-            invoiceNumber: dbData.invoice_number,
-            invoiceDate: new Date(dbData.invoice_date),
-            customer: JSON.parse(dbData.customer || '{}'),
-            eWayBillNumber: dbData.eway_bill_number,
-            vehicleNumber: dbData.vehicle_number,
-            poNumber: dbData.po_number,
-            items: JSON.parse(dbData.items || '[]'),
-            summary: JSON.parse(dbData.summary || '{}'),
-            gstBreakdown: JSON.parse(dbData.gst_breakdown || '{}'),
-            documentType: 'invoice',
-            fpoId: dbData.fpo_id,
-            createdAt: dbData.created_at ? new Date(dbData.created_at) : undefined,
-            updatedAt: dbData.updated_at ? new Date(dbData.updated_at) : undefined,
-            createdBy: dbData.created_by,
-            status: dbData.status || 'draft',
-            notes: dbData.notes
-        });
-    }
-
+  static fromDbFormat(dbData: any): Invoice {
+    return new Invoice({
+        id: dbData.id,
+        invoiceNumber: dbData.invoice_number,
+        invoiceDate: new Date(dbData.invoice_date),
+        customer: dbData.customer,           // ✅ Direct assignment (no parsing needed)
+        eWayBillNumber: dbData.eway_bill_number,
+        vehicleNumber: dbData.vehicle_number,
+        poNumber: dbData.po_number,
+        items: dbData.items,                 // ✅ Direct assignment (no parsing needed)
+        summary: dbData.summary,             // ✅ Direct assignment (no parsing needed)
+        gstBreakdown: dbData.gst_breakdown,  // ✅ Direct assignment (no parsing needed)
+        documentType: 'invoice',
+        fpoId: dbData.fpo_id,
+        createdAt: dbData.created_at ? new Date(dbData.created_at) : undefined,
+        updatedAt: dbData.updated_at ? new Date(dbData.updated_at) : undefined,
+        createdBy: dbData.created_by,
+        status: dbData.status || 'draft',
+        notes: dbData.notes
+    });
+}
     // Convert to database format
     toDbFormat(): any {
         // Helper function to safely convert various date formats to ISO string
@@ -257,26 +256,26 @@ export class Invoice implements InvoiceInterface {
 
         // Convert invoice date (required field)
         const invoiceDateString = convertDateToISOString(this.invoiceDate, 'Invoice date');
-
-        return {
-            id: this.id,
-            invoice_number: this.invoiceNumber,
-            invoice_date: invoiceDateString,
-            customer: JSON.stringify(this.customer),
-            eway_bill_number: this.eWayBillNumber,
-            vehicle_number: this.vehicleNumber,
-            po_number: this.poNumber,
-            items: JSON.stringify(this.items),
-            summary: JSON.stringify(this.summary),
-            gst_breakdown: JSON.stringify(this.gstBreakdown),
-            document_type: this.documentType,
-            fpo_id: this.fpoId,
-            created_at: convertOptionalDateToISOString(this.createdAt),
-            updated_at: convertOptionalDateToISOString(this.updatedAt),
-            created_by: this.createdBy,
-            status: this.status,
-            notes: this.notes
-        };
+// Fixed version in toDbFormat() method
+return {
+    id: this.id,
+    invoice_number: this.invoiceNumber,
+    invoice_date: invoiceDateString,
+    customer: this.customer,           // ✅ Direct object assignment
+    eway_bill_number: this.eWayBillNumber,
+    vehicle_number: this.vehicleNumber,
+    po_number: this.poNumber,
+    items: this.items,                 // ✅ Direct object assignment
+    summary: this.summary,             // ✅ Direct object assignment
+    gst_breakdown: this.gstBreakdown,  // ✅ Direct object assignment
+    document_type: this.documentType,
+    fpo_id: this.fpoId,
+    created_at: convertOptionalDateToISOString(this.createdAt),
+    updated_at: convertOptionalDateToISOString(this.updatedAt),
+    created_by: this.createdBy,
+    status: this.status,
+    notes: this.notes
+};
     }
 
 // Calculate line item GST based on invoice GST type and GST config
