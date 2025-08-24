@@ -1,3 +1,4 @@
+import { convertKeysToCamel } from "@/utils/caseConvertor";
 import { Invoice, InvoiceInterface } from "../../core/entities/invoice";
 import { createClient } from "@/utils/supabase/server";
 
@@ -327,3 +328,17 @@ export function getOverdueInvoices(daysOverdue: number = 30, options: InvoicePag
     }
   };
 }
+
+export const getInvoicesList = async (ledgerId: string, status?: string) => {
+  const supabase = await createClient()
+  const query = supabase
+    .from('invoices')
+    .select('id, invoice_number')
+    .eq("customer->>id",ledgerId); // or however your schema works
+  
+  if (status) query.eq('status', status);
+  
+  const { data, error } = await query;
+
+  return { data: convertKeysToCamel(data), error };
+};
