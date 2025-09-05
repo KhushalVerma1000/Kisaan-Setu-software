@@ -260,9 +260,7 @@ export default function ContactAdminPage() {
           <Button 
             size="lg" 
             className="px-8"
-            onClick={() => window.open('mailto:kisaansetu@sukrshinfotech.com
-
-?subject=New Account Request - Kisaan Setu Platform&body=Dear Administrator,%0A%0AI would like to request a new account for the Kisaan Setu platform.%0A%0AMy Details:%0AName: [Your Full Name]%0AOrganization: [Your Organization]%0AJob Title: [Your Position]%0APhone: [Your Phone Number]%0APurpose: [Why you need access]%0A%0AThank you for your consideration.%0A%0ABest regards')}
+            onClick={() => window.open('mailto:kisaansetu@sukrshinfotech.com?subject=New Account Request - Kisaan Setu Platform&body=Dear Administrator,%0A%0AI would like to request a new account for the Kisaan Setu platform.%0A%0AMy Details:%0AName: [Your Full Name]%0AOrganization: [Your Organization]%0AJob Title: [Your Position]%0APhone: [Your Phone Number]%0APurpose: [Why you need access]%0A%0AThank you for your consideration.%0A%0ABest regards')}
           >
             <Mail className="w-5 h-5 mr-2" />
             Send Account Request Email
