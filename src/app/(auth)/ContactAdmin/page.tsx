@@ -83,7 +83,7 @@ export default function ContactAdminPage() {
                     variant="outline" 
                     size="sm" 
                     className="mt-2"
-                    onClick={() => window.open('tel:+917820038781')}
+                    onClick={() => window.open('tel:+917217065399')}
                   >
                     <Phone className="w-4 h-4 mr-2" />
                     Call Now
@@ -100,7 +100,7 @@ export default function ContactAdminPage() {
                 </div>
                 <div className="flex-1">
                   <h3 className="font-semibold text-slate-900">WhatsApp</h3>
-                  <p className="text-slate-600">+91 78200 38781</p>
+                  <p className="text-slate-600">+91 72170 65399</p>
                   <Button 
                     variant="outline" 
                     size="sm" 
