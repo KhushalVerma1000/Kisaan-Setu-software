@@ -105,7 +105,7 @@ export default function ContactAdminPage() {
                     variant="outline" 
                     size="sm" 
                     className="mt-2"
-                    onClick={() => window.open('https://wa.me/917820038781?text=Hi, I would like to request a new account for Kisaan Setu platform.')}
+                    onClick={() => window.open('https://wa.me/917217065399?text=Hi, I would like to request a new account for Kisaan Setu platform.')}
                   >
                     <MessageSquare className="w-4 h-4 mr-2" />
                     WhatsApp
