@@ -7,10 +7,10 @@ import { PaymentType, PaymentMethod } from '@/server/features/Payment/core/entit
 // app/api/payments/[paymentId]/route.ts
 export async function GET(
     request: NextRequest,
-    { params }: { params: { paymentId: string } }
+    { params }: { params: Promise<{ paymentId: string }> }
 ) {
     try {
-        const { paymentId } = params;
+        const { paymentId } = await params;
 
         if (!paymentId) {
             return NextResponse.json(
@@ -80,10 +80,10 @@ interface ReversePaymentRequest {
 
 export async function POST(
     request: NextRequest,
-    { params }: { params: { paymentId: string } }
+    { params }: { params: Promise<{ paymentId: string }> }
 ) {
     try {
-        const { paymentId } = params;
+        const { paymentId } = await params;
         const body: ReversePaymentRequest = await request.json();
 
         if (!paymentId) {

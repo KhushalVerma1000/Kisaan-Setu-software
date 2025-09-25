@@ -60,6 +60,7 @@ export async function POST(request: NextRequest) {
 
     // Create BankBook instance
     const bankBook = new BankBook(
+      "",
       bankAccountId,
       fpoId,
       parseFloat(openingBalance),

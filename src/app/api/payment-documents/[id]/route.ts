@@ -4,9 +4,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getPaymentDocumentById } from '@/server/features/Payment/infrastructure/persistence/paymentDocumentSupabase';
 
 interface RouteParams {
-  params: {
+  params: Promise<{
     id: string;
-  };
+  }>;
 }
 
 export async function GET(
@@ -14,7 +14,7 @@ export async function GET(
   { params }: RouteParams
 ) {
   try {
-    const { id } = params;
+    const { id } = await params;
 
     if (!id) {
       return NextResponse.json(

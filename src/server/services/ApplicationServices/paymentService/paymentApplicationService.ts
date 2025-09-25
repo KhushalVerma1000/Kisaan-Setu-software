@@ -36,9 +36,7 @@ export interface PaymentDocumentInput {
     fpoId: string;
 }
 
-export interface PaymentInput extends Omit<PaymentInterface, 'paymentDocumentId'> {
-    // paymentDocumentId will be resolved internally
-}
+export type PaymentInput = Omit<PaymentInterface, 'paymentDocumentId'>;
 
 // Enhanced result type with all created entries
 export interface PaymentServiceResult {

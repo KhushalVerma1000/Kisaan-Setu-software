@@ -496,7 +496,7 @@ export async function createLedgerEntriesFromPaymentOperations(
             }
 
             // Build enhanced document reference
-            let documentNumber = payment.referenceNumber || 
+            const documentNumber = payment.referenceNumber || 
                 `${payment.method === 'cash' ? 'Cash' : 'Bank'} ${payment.type === 'payment_in' ? 'Receipt' : 'Payment'}${payment.isReversalPayment() ? ' (Rev)' : ''}`;
 
             // Create enhanced descriptions
