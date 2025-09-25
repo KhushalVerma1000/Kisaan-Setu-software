@@ -1,6 +1,28 @@
 import { createClient } from "@/utils/supabase/server";
 import { LedgerAccount, LedgerAccountInterface, LedgerEntry, createOpeningBalanceEntry } from "../../core/entities/Ledger";
 
+
+export async function getLedgerNameById(ledgerId: string): Promise<string | null> {
+    const supabase = await createClient();
+    try {
+        const { data, error } = await supabase
+            .from('ledger_account')
+            .select('name')
+            .eq('id', ledgerId)
+            .single();
+
+        if (error) {
+            console.error('Error fetching ledger name by ID:', error);
+            return null;
+        }
+
+        return data?.name || null;
+    } catch (error) {
+        console.error('Error in getLedgerNameById:', error);
+        return null;
+    }
+}
+
 export async function getAllUserAssociatedLedgerAccount(fpo_id: string): Promise<LedgerAccount[]> {
     const supabase = await createClient();
     try {

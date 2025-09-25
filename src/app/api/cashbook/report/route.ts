@@ -90,6 +90,7 @@ export async function GET(request: NextRequest) {
 
       // Get statement with running balance
       const statement = cashbook.getStatementWithRunningBalance(startDateObj, endDateObj);
+    // console.log("========this is cashbook entry format =======",statement)
 
       // Calculate summary metrics
       const totalCashIn = entries

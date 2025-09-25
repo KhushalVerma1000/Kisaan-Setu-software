@@ -168,30 +168,30 @@ export class PurchaseVoucher implements PurchaseVoucherInterface {
     }
 
     // Create from database format
-    static fromDbFormat(dbData: any): PurchaseVoucher {
-        return new PurchaseVoucher({
-            id: dbData.id,
-            voucherNumber: dbData.voucher_number, // NEW: Map from DB
-            poNumber: dbData.po_number,
-            supplierVendorName: dbData.supplier_vendor_name,
-            supplierVendorId: dbData.supplier_vendor_id,
-            supplierState: dbData.supplier_state, // NEW: Map from DB
-            partyInvoiceNumber: dbData.party_invoice_number,
-            partyInvoiceDate: new Date(dbData.party_invoice_date),
-            supplierVendorBillingAddress: dbData.supplier_vendor_billing_address,
-            gstin: dbData.gstin,
-            items: JSON.parse(dbData.items || '[]'),
-            summary: JSON.parse(dbData.summary || '{}'),
-            gstBreakdown: JSON.parse(dbData.gst_breakdown || '{}'),
-            documentType: 'purchase_voucher',
-            fpoId: dbData.fpo_id,
-            createdAt: dbData.created_at ? new Date(dbData.created_at) : undefined,
-            updatedAt: dbData.updated_at ? new Date(dbData.updated_at) : undefined,
-            createdBy: dbData.created_by,
-            status: dbData.status || 'draft',
-            notes: dbData.notes
-        });
-    }
+static fromDbFormat(dbData: any): PurchaseVoucher {
+    return new PurchaseVoucher({
+        id: dbData.id,
+        voucherNumber: dbData.voucher_number,
+        poNumber: dbData.po_number,
+        supplierVendorName: dbData.supplier_vendor_name,
+        supplierVendorId: dbData.supplier_vendor_id,
+        supplierState: dbData.supplier_state,
+        partyInvoiceNumber: dbData.party_invoice_number,
+        partyInvoiceDate: new Date(dbData.party_invoice_date),
+        supplierVendorBillingAddress: dbData.supplier_vendor_billing_address,
+        gstin: dbData.gstin,
+        items: dbData.items,           // ✅ Direct assignment (no parsing)
+        summary: dbData.summary,       // ✅ Direct assignment (no parsing)
+        gstBreakdown: dbData.gst_breakdown, // ✅ Direct assignment (no parsing)
+        documentType: 'purchase_voucher',
+        fpoId: dbData.fpo_id,
+        createdAt: dbData.created_at ? new Date(dbData.created_at) : undefined,
+        updatedAt: dbData.updated_at ? new Date(dbData.updated_at) : undefined,
+        createdBy: dbData.created_by,
+        status: dbData.status || 'draft',
+        notes: dbData.notes
+    });
+}
 
     // Convert to database format
     toDbFormat(): any {
@@ -255,27 +255,27 @@ export class PurchaseVoucher implements PurchaseVoucherInterface {
         // Convert party invoice date (required field)
         const partyInvoiceDateString = convertDateToISOString(this.partyInvoiceDate, 'Party invoice date');
 
-        return {
-            id: this.id,
-            po_number: this.poNumber,
-            supplier_vendor_name: this.supplierVendorName,
-            supplier_vendor_id: this.supplierVendorId,
-            supplier_state: this.supplierState, // NEW: Map to DB
-            party_invoice_number: this.partyInvoiceNumber,
-            party_invoice_date: partyInvoiceDateString,
-            supplier_vendor_billing_address: this.supplierVendorBillingAddress,
-            gstin: this.gstin,
-            items: JSON.stringify(this.items),
-            summary: JSON.stringify(this.summary),
-            gst_breakdown: JSON.stringify(this.gstBreakdown),
-            document_type: this.documentType,
-            fpo_id: this.fpoId,
-            created_at: convertOptionalDateToISOString(this.createdAt),
-            updated_at: convertOptionalDateToISOString(this.updatedAt),
-            created_by: this.createdBy,
-            status: this.status,
-            notes: this.notes
-        };
+      return {
+        id: this.id,
+        po_number: this.poNumber,
+        supplier_vendor_name: this.supplierVendorName,
+        supplier_vendor_id: this.supplierVendorId,
+        supplier_state: this.supplierState,
+        party_invoice_number: this.partyInvoiceNumber,
+        party_invoice_date: partyInvoiceDateString,
+        supplier_vendor_billing_address: this.supplierVendorBillingAddress,
+        gstin: this.gstin,
+        items: this.items,           // ✅ Direct object assignment
+        summary: this.summary,       // ✅ Direct object assignment
+        gst_breakdown: this.gstBreakdown, // ✅ Direct object assignment
+        document_type: this.documentType,
+        fpo_id: this.fpoId,
+        created_at: convertOptionalDateToISOString(this.createdAt),
+        updated_at: convertOptionalDateToISOString(this.updatedAt),
+        created_by: this.createdBy,
+        status: this.status,
+        notes: this.notes
+    };
     }
 
     // Calculate line item GST based on purchase voucher GST type and GST config

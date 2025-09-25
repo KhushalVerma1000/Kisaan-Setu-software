@@ -18,37 +18,42 @@ import { CashbookAPI } from '@/server/features/cashbookSystem/infrastructure/api
 import { useAppSelector } from '@/store/hooks';
 
 interface CashbookEntry {
-  id: string;
-  cashBookId: string;
-  date: Date;
-  amount: number;
-  type: 'Dr' | 'Cr';
-  transactionType: string;
-  primaryDescription: string;
-  documentId?: string;
-  documentType?: string;
-  documentNumber?: string;
-  secondaryDescription?: string;
-  referenceDescription?: string;
-  ledgerReference?: string;
-  isOpeningBalance?: boolean;
-  runningBalance?: number;
+  entry: {
+    id: string;
+    cashBookId: string;
+    date: string;
+    amount: number;
+    type: 'Dr' | 'Cr';
+    transactionType: string;
+    primaryDescription: string;
+    documentId?: string;
+    documentType?: string;
+    documentNumber?: string;
+    secondaryDescription?: string;
+    referenceDescription?: string;
+    ledgerReference?: string;
+    isOpeningBalance?: boolean;
+    createdAt: string;
+    updatedAt: string;
+  };
+  runningBalance: number;
+  isNegativeBalance: boolean;
 }
 
 interface Cashbook {
   id: string;
   fpoId: string;
   openingBalance: number;
-  openingDate: Date;
-  createdAt: Date;
-  updatedAt: Date;
+  openingDate: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 interface CashbookStatement {
   reportType: string;
   period: {
-    startDate?: Date;
-    endDate?: Date;
+    startDate?: string;
+    endDate?: string;
   };
   openingBalance: number;
   currentBalance: number;
@@ -127,6 +132,8 @@ export default function CashbookPage() {
         dateRange.startDate || undefined,
         dateRange.endDate || undefined
       );
+
+      console.log('Statement data:', statementData);
       setStatement(statementData);
     } catch (error) {
       console.error('Error loading statement:', error);
@@ -187,11 +194,22 @@ export default function CashbookPage() {
         return;
       }
 
-      // await CashbookAPI.exportStatementAsJSON(
-      //   fpoIdOfUser,
-      //   exportForm.startDate,
-      //   exportForm.endDate
-      // );
+      // Create and download JSON file
+      const exportData = await CashbookAPI.getStatement(
+        fpoIdOfUser,
+        exportForm.startDate,
+        exportForm.endDate
+      );
+      
+      const dataStr = JSON.stringify(exportData, null, 2);
+      const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
+      
+      const exportFileDefaultName = `cashbook_${exportForm.startDate}_${exportForm.endDate}.json`;
+      
+      const linkElement = document.createElement('a');
+      linkElement.setAttribute('href', dataUri);
+      linkElement.setAttribute('download', exportFileDefaultName);
+      linkElement.click();
       
       setShowExportDialog(false);
       setExportForm({ startDate: '', endDate: '' });
@@ -215,7 +233,8 @@ export default function CashbookPage() {
   };
 
   // Filter entries
-  const filteredEntries = statement?.statement?.filter(entry => {
+  const filteredEntries = statement?.statement?.filter(entryWrapper => {
+    const entry = entryWrapper.entry;
     const matchesSearch = !searchTerm || 
       entry.primaryDescription?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       entry.secondaryDescription?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -236,10 +255,30 @@ export default function CashbookPage() {
     }, 100);
   };
 
+  // Helper function to format date safely
+  const formatDate = (dateString: string | undefined) => {
+    if (!dateString) return 'N/A';
+    try {
+      return format(new Date(dateString), 'dd MMM, yyyy');
+    } catch (error) {
+      return 'Invalid Date';
+    }
+  };
+
+  // Helper function to format currency
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat('en-IN', {
+      style: 'currency',
+      currency: 'INR',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 2
+    }).format(amount);
+  };
+
   // useEffect hook
   useEffect(() => {
     loadCashbookData();
-  }, []);
+  }, [fpoIdOfUser]);
 
   // Early return after all hooks are declared
   if (!fpoIdOfUser) {
@@ -299,7 +338,7 @@ export default function CashbookPage() {
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">
-                  {statement.isNegativeBalance && '-'}₹{Math.abs(statement.currentBalance).toLocaleString()}
+                  {formatCurrency(statement.currentBalance)}
                 </div>
                 <p className="text-xs text-muted-foreground">
                   {statement.isNegativeBalance ? 
@@ -317,7 +356,7 @@ export default function CashbookPage() {
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold text-green-600">
-                  ₹{statement.totalCashIn.toLocaleString()}
+                  {formatCurrency(statement.totalCashIn)}
                 </div>
                 <p className="text-xs text-muted-foreground">
                   Total receipts
@@ -332,7 +371,7 @@ export default function CashbookPage() {
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold text-red-600">
-                  ₹{statement.totalCashOut.toLocaleString()}
+                  {formatCurrency(statement.totalCashOut)}
                 </div>
                 <p className="text-xs text-muted-foreground">
                   Total payments
@@ -347,7 +386,7 @@ export default function CashbookPage() {
               </CardHeader>
               <CardContent>
                 <div className={`text-2xl font-bold ${statement.netCashFlow >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                  {statement.netCashFlow < 0 && '-'}₹{Math.abs(statement.netCashFlow).toLocaleString()}
+                  {formatCurrency(statement.netCashFlow)}
                 </div>
                 <p className="text-xs text-muted-foreground">
                   {statement.entryCount} transactions
@@ -441,7 +480,7 @@ export default function CashbookPage() {
                   <div className="text-sm text-muted-foreground">
                     {dateRange.startDate && dateRange.endDate ? (
                       <div>
-                        {format(new Date(dateRange.startDate), 'MMM dd, yyyy')} - {format(new Date(dateRange.endDate), 'MMM dd, yyyy')}
+                        {formatDate(dateRange.startDate)} - {formatDate(dateRange.endDate)}
                       </div>
                     ) : (
                       <div>All entries</div>
@@ -463,7 +502,7 @@ export default function CashbookPage() {
                 {filteredEntries.length} of {statement.statement.length} entries
                 {statement.period.startDate && statement.period.endDate && (
                   <span className="ml-2">
-                    ({format(new Date(statement.period.startDate), 'MMM dd, yyyy')} - {format(new Date(statement.period.endDate), 'MMM dd, yyyy')})
+                    ({formatDate(statement.period.startDate)} - {formatDate(statement.period.endDate)})
                   </span>
                 )}
               </CardDescription>
@@ -489,45 +528,53 @@ export default function CashbookPage() {
                         </TableCell>
                       </TableRow>
                     ) : (
-                      filteredEntries.map((entry) => (
-                        <TableRow key={entry.id}>
-                          <TableCell>
-                            {format(new Date(entry.date), 'MMM dd, yyyy')}
-                          </TableCell>
-                          <TableCell>
-                            <div>
-                              <div className="font-medium">{entry.primaryDescription}</div>
-                              {entry.secondaryDescription && (
-                                <div className="text-sm text-muted-foreground">
-                                  {entry.secondaryDescription}
-                                </div>
-                              )}
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant={entry.type === 'Dr' ? 'default' : 'destructive'}>
-                              {entry.type === 'Dr' ? 'Cash In' : 'Cash Out'}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
-                            {entry.documentNumber && (
-                              <Badge variant="outline">
-                                {entry.documentNumber}
+                      filteredEntries.map((entryWrapper) => {
+                        const entry = entryWrapper.entry;
+                        return (
+                          <TableRow key={entry.id}>
+                            <TableCell>
+                              {formatDate(entry.date)}
+                            </TableCell>
+                            <TableCell>
+                              <div>
+                                <div className="font-medium">{entry.primaryDescription}</div>
+                                {entry.secondaryDescription && (
+                                  <div className="text-sm text-muted-foreground">
+                                    {entry.secondaryDescription}
+                                  </div>
+                                )}
+                                {entry.referenceDescription && (
+                                  <div className="text-xs text-muted-foreground mt-1">
+                                    {entry.referenceDescription}
+                                  </div>
+                                )}
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant={entry.type === 'Dr' ? 'default' : 'destructive'}>
+                                {entry.type === 'Dr' ? 'Cash In' : 'Cash Out'}
                               </Badge>
-                            )}
-                          </TableCell>
-                          <TableCell className={`text-right font-medium ${
-                            entry.type === 'Dr' ? 'text-green-600' : 'text-red-600'
-                          }`}>
-                            {entry.type === 'Dr' ? '+' : '-'}₹{entry.amount.toLocaleString()}
-                          </TableCell>
-                          <TableCell className={`text-right font-medium ${
-                            (entry.runningBalance || 0) < 0 ? 'text-red-600' : 'text-green-600'
-                          }`}>
-                            ₹{Math.abs(entry.runningBalance || 0).toLocaleString()}
-                          </TableCell>
-                        </TableRow>
-                      ))
+                            </TableCell>
+                            <TableCell>
+                              {entry.documentNumber && (
+                                <Badge variant="outline">
+                                  {entry.documentNumber}
+                                </Badge>
+                              )}
+                            </TableCell>
+                            <TableCell className={`text-right font-medium ${
+                              entry.type === 'Dr' ? 'text-green-600' : 'text-red-600'
+                            }`}>
+                              {entry.type === 'Dr' ? '+' : '-'}{formatCurrency(entry.amount)}
+                            </TableCell>
+                            <TableCell className={`text-right font-medium ${
+                              entryWrapper.isNegativeBalance ? 'text-red-600' : 'text-green-600'
+                            }`}>
+                              {formatCurrency(Math.abs(entryWrapper.runningBalance))}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })
                     )}
                   </TableBody>
                 </Table>
@@ -617,7 +664,7 @@ export default function CashbookPage() {
               <div className="p-3 bg-muted rounded-lg">
                 <p className="text-sm font-medium">Export Period:</p>
                 <p className="text-sm text-muted-foreground">
-                  {format(new Date(exportForm.startDate), 'MMMM dd, yyyy')} - {format(new Date(exportForm.endDate), 'MMMM dd, yyyy')}
+                  {formatDate(exportForm.startDate)} - {formatDate(exportForm.endDate)}
                 </p>
               </div>
             )}
@@ -634,7 +681,7 @@ export default function CashbookPage() {
               <Download className="h-4 w-4" />
               Export Data
             </Button>
-          </DialogFooter>
+            </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

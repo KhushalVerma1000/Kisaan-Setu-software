@@ -33,13 +33,13 @@ export interface BankBookEntryInterface {
 
 export class BankBookEntry implements BankBookEntryInterface {
     constructor(
+        public id: string | undefined,
         public bankBookId: string,
         public date: Date,
         public amount: number,
         public type: 'Dr' | 'Cr',
         public transactionType: string,
         public primaryDescription: string,
-        public id?: string,
         public paymentMethod?: string,
         public documentId?: string,
         public documentType?: string,
@@ -54,7 +54,32 @@ export class BankBookEntry implements BankBookEntryInterface {
         public updatedAt?: Date
     ) {}
 
-    // Get formatted description like in your previous software
+    // Static factory methods
+    static fromDbFormat(dbRow: any): BankBookEntry {
+        return new BankBookEntry(
+            dbRow.id,
+            dbRow.bank_book_id,
+            new Date(dbRow.date),
+            dbRow.amount,
+            dbRow.type,
+            dbRow.transaction_type,
+            dbRow.primary_description,
+            dbRow.payment_method,
+            dbRow.document_id,
+            dbRow.document_type,
+            dbRow.document_number,
+            dbRow.secondary_description,
+            dbRow.reference_description,
+            dbRow.ledger_reference,
+            dbRow.cheque_number,
+            dbRow.reference_number,
+            dbRow.is_opening_balance || false,
+            dbRow.created_at ? new Date(dbRow.created_at) : undefined,
+            dbRow.updated_at ? new Date(dbRow.updated_at) : undefined
+        );
+    }
+
+    // Core business methods
     getFormattedDescription(): string {
         let description = this.primaryDescription;
         
@@ -73,7 +98,7 @@ export class BankBookEntry implements BankBookEntryInterface {
         return description;
     }
 
-    // Method to convert to database format
+    // Conversion methods
     toDbFormat(): any {
         return {
             id: this.id,
@@ -97,31 +122,6 @@ export class BankBookEntry implements BankBookEntryInterface {
             updated_at: this.updatedAt || new Date()
         };
     }
-
-    // Static method to create from database format
-    static fromDbFormat(dbRow: any): BankBookEntry {
-        return new BankBookEntry(
-            dbRow.bank_book_id,
-            new Date(dbRow.date),
-            dbRow.amount,
-            dbRow.type,
-            dbRow.transaction_type,
-            dbRow.primary_description,
-            dbRow.id,
-            dbRow.payment_method,
-            dbRow.document_id,
-            dbRow.document_type,
-            dbRow.document_number,
-            dbRow.secondary_description,
-            dbRow.reference_description,
-            dbRow.ledger_reference,
-            dbRow.cheque_number,
-            dbRow.reference_number,
-            dbRow.is_opening_balance || false,
-            dbRow.created_at ? new Date(dbRow.created_at) : undefined,
-            dbRow.updated_at ? new Date(dbRow.updated_at) : undefined
-        );
-    }
 }
 
 // Bank Book Interface
@@ -137,11 +137,11 @@ export interface BankBookInterface {
 
 export class BankBook implements BankBookInterface {
     constructor(
+        public id: string | undefined,
         public bankAccountId: string,
         public fpoId: string,
         public openingBalance: number,
         public openingDate: Date,
-        public id?: string,
         public createdAt?: Date,
         public updatedAt?: Date,
         public entries: BankBookEntry[] = []
@@ -149,44 +149,24 @@ export class BankBook implements BankBookInterface {
         // No validation needed - negative balances are allowed (overdraft)
     }
 
-    // Method to convert to database format
-    toDbFormat(): any {
-        return {
-            id: this.id,
-            bank_account_id: this.bankAccountId,
-            fpo_id: this.fpoId,
-            opening_balance: this.openingBalance,
-            opening_date: this.openingDate,
-            created_at: this.createdAt || new Date(),
-            updated_at: this.updatedAt || new Date()
-        };
-    }
-
-    // Static method to create from database format
+    // Static factory methods
     static fromDbFormat(dbRow: any): BankBook {
         return new BankBook(
+            dbRow.id,
             dbRow.bank_account_id,
             dbRow.fpo_id,
             dbRow.opening_balance,
             new Date(dbRow.opening_date),
-            dbRow.id,
             dbRow.created_at ? new Date(dbRow.created_at) : undefined,
             dbRow.updated_at ? new Date(dbRow.updated_at) : undefined
         );
     }
 
-    // Add entry (no balance validation - overdraft allowed)
+    // Core business methods
     addEntry(entry: BankBookEntry): void {
         this.entries.push(entry);
     }
 
-    // Helper method to calculate net amount effect
-    private getNetAmount(entry: BankBookEntry): number {
-        // Dr = Money In (positive), Cr = Money Out (negative)
-        return entry.type === 'Dr' ? entry.amount : -entry.amount;
-    }
-
-    // Get current bank balance (can be negative for overdraft)
     getCurrentBalance(): number {
         let balance = this.openingBalance;
         
@@ -198,7 +178,6 @@ export class BankBook implements BankBookInterface {
         return balance; // Can be negative
     }
 
-    // Get current balance with sign indicator
     getCurrentBalanceWithSign(): { balance: number; isNegative: boolean } {
         const balance = this.getCurrentBalance();
         return {
@@ -207,7 +186,6 @@ export class BankBook implements BankBookInterface {
         };
     }
 
-    // Get bank book statement with running balance
     getStatementWithRunningBalance(
         startDate?: Date,
         endDate?: Date
@@ -252,11 +230,29 @@ export class BankBook implements BankBookInterface {
         return statement;
     }
 
-    // Get entries for a specific date range
     getEntriesForDateRange(startDate: Date, endDate: Date): BankBookEntry[] {
         return this.entries.filter(entry => 
             entry.date >= startDate && entry.date <= endDate
         );
+    }
+
+    // Conversion methods
+    toDbFormat(): any {
+        return {
+            id: this.id,
+            bank_account_id: this.bankAccountId,
+            fpo_id: this.fpoId,
+            opening_balance: this.openingBalance,
+            opening_date: this.openingDate,
+            created_at: this.createdAt || new Date(),
+            updated_at: this.updatedAt || new Date()
+        };
+    }
+
+    // Private helper methods
+    private getNetAmount(entry: BankBookEntry): number {
+        // Dr = Money In (positive), Cr = Money Out (negative)
+        return entry.type === 'Dr' ? entry.amount : -entry.amount;
     }
 }
 
@@ -316,7 +312,7 @@ export interface UniversalBankBookTransactionData {
     documentType?: string;      // 'invoice', 'voucher', 'payment', etc.
 }
 
-// Utility function to create bank book entry
+// Utility functions
 export function createBankBookEntry(data: UniversalBankBookTransactionData): BankBookEntry {
     // Build rich description
     const primaryDescription = data.transactionType;
@@ -347,13 +343,13 @@ export function createBankBookEntry(data: UniversalBankBookTransactionData): Ban
     }
 
     return new BankBookEntry(
+        undefined, // id
         data.bankBookId,
         data.date,
         data.amount,
         data.type,
         data.transactionType,
         primaryDescription,
-        undefined, // id
         data.paymentMethod,
         data.documentId,
         data.documentType,
@@ -366,7 +362,6 @@ export function createBankBookEntry(data: UniversalBankBookTransactionData): Ban
     );
 }
 
-// Opening balance utility for bank book
 export function createBankBookOpeningBalanceEntry(
     bankBook: BankBook
 ): BankBookEntry {
@@ -375,13 +370,13 @@ export function createBankBookOpeningBalanceEntry(
     const balanceAmount = Math.abs(bankBook.openingBalance);
     
     return new BankBookEntry(
+        undefined, // id
         bankBook.id!,
         bankBook.openingDate,
         balanceAmount,  // Always positive amount
         balanceType,    // Dr for positive, Cr for negative opening balance
         BankBookTransactionType.OPENING_BALANCE,
         'Opening Balance',
-        undefined, // id
         undefined, // paymentMethod
         undefined, // documentId
         'opening_balance', // documentType

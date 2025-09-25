@@ -9,7 +9,7 @@ export function DashboardCards() {
   const cards = [
     {
       title: "Share Capital",
-      value: "₹5,00,000",
+      value: "0",
       color: "text-blue-600",
       icon: <Briefcase className="w-5 h-5" />,
       href: "/Register",
@@ -17,31 +17,31 @@ export function DashboardCards() {
     },
     {
       title: "Share Holders",
-      value: "NAN",
+      value: "0",
       color: "text-emerald-600",
       icon: <Users className="w-5 h-5" />,
-      href: "/Shareholder",
+      href: "/Shareholders",
       linkText: "View shareholders",
     },
     {
       title: "Sales",
-      value: "₹2,45,000",
+      value: "0",
       color: "text-green-600",
       icon: <TrendingUp className="w-5 h-5" />,
-      href: "/Sales",
+      href: "/Sales/Invoice",
       linkText: "View sales",
     },
     {
       title: "Purchase",
-      value: "₹1,10,000",
+      value: "0",
       color: "text-yellow-600",
       icon: <Package className="w-5 h-5" />,
-      href: "/Purchase",
+      href: "/Purchases/PurchaseVoucher",
       linkText: "View purchases",
     },
     {
       title: "Net Profit",
-      value: "₹1,35,000",
+      value: "0",
       color: "text-purple-600",
       icon: <DollarSign className="w-5 h-5" />,
       href: "/Reports",
@@ -49,7 +49,7 @@ export function DashboardCards() {
     },
     {
       title: "Stock",
-      value: "₹40,000",
+      value: "0",
       color: "text-indigo-600",
       icon: <Warehouse className="w-5 h-5" />,
       href: "/Items",
@@ -57,7 +57,7 @@ export function DashboardCards() {
     },
     {
       title: "Bank",
-      value: "₹3,00,000",
+      value: "0",
       color: "text-cyan-600",
       icon: <Banknote className="w-5 h-5" />,
       href: "/Cashbook",
@@ -65,7 +65,7 @@ export function DashboardCards() {
     },
     {
       title: "Cash",
-      value: "₹25,000",
+      value: "0",
       color: "text-rose-600",
       icon: <CreditCard className="w-5 h-5" />,
       href: "/Cashbook",
@@ -73,7 +73,7 @@ export function DashboardCards() {
     },
     {
       title: "Sundry Debtors",
-      value: "₹60,000",
+      value: "0",
       color: "text-teal-600",
       icon: <UserCheck className="w-5 h-5" />,
       href: "/Ledger",
@@ -81,7 +81,7 @@ export function DashboardCards() {
     },
     {
       title: "Sundry Creditors",
-      value: "₹45,000",
+      value: "0",
       color: "text-orange-600",
       icon: <UserX className="w-5 h-5" />,
       href: "/Ledger",
@@ -89,7 +89,7 @@ export function DashboardCards() {
     },
     {
       title: "Assets",
-      value: "₹7,20,000",
+      value: "0",
       color: "text-pink-600",
       icon: <Building2 className="w-5 h-5" />,
       href: "/Reports",
@@ -111,7 +111,7 @@ export function DashboardCards() {
           <CardContent>
             <div className={`text-2xl font-bold ${card.color}`}>{card.value}</div>
             <Link
-              href={card.href}
+              href={card.href} prefetch={true}
               className="text-sm text-primary underline hover:text-primary/80 mt-2 inline-block"
             >
               {card.linkText}

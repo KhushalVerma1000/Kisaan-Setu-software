@@ -46,7 +46,6 @@ export async function getLedgerEntryById(entryId: string): Promise<LedgerEntry |
     }
 }
 
-
 export async function getLedgerEntryByDocumentId(documentId: string): Promise<LedgerEntry | null> {
     const supabase = await createClient();
     try {
@@ -118,10 +117,10 @@ export async function getLedgerEntriesByDocumentType(
         throw error;
     }
 }
+
 export async function createLedgerEntry(entryData: LedgerEntryInterface): Promise<LedgerEntry> {
     const supabase = await createClient();
     try {
-        // Fix: Use the correct constructor parameters
         const newEntry = new LedgerEntry(
             entryData.ledgerAccountId,
             entryData.date,
@@ -159,7 +158,6 @@ export async function createLedgerEntry(entryData: LedgerEntryInterface): Promis
 export async function updateLedgerEntry(entryId: string, entryData: LedgerEntryInterface): Promise<LedgerEntry> {
     const supabase = await createClient();
     try {
-        // Fix: Use the correct constructor parameters
         const updatedEntry = new LedgerEntry(
             entryData.ledgerAccountId,
             entryData.date,
@@ -221,14 +219,16 @@ export async function deleteLedgerEntry(entryId: string): Promise<void> {
 // Simple Transaction Functions using createUniversalLedgerEntry
 
 import { createUniversalLedgerEntry, UniversalTransactionData } from "../../core/entities/Ledger";
-// Updated ledgerEntrySupabase.ts functions
+
+// Updated transaction functions to properly use relatedLedgerName and notes parameters
 export async function createSalesInvoiceEntry(
     customerLedgerAccountId: string,
     amount: number,
     date: Date,
-    invoiceId: string,        // Changed from invoiceNumber to invoiceId
-    invoiceNumber: string,    // Added separate parameter for display number
-    customerName: string
+    invoiceId: string,
+    invoiceNumber: string,
+    customerName: string,
+    notes?: string  // Added notes parameter
 ): Promise<LedgerEntry> {
     const supabase = await createClient();
     try {
@@ -239,9 +239,10 @@ export async function createSalesInvoiceEntry(
             type: 'Dr',
             date: date,
             transactionType: 'Invoice',
-            partyName: customerName,
+            relatedLedgerName: customerName,    // Changed from partyName to relatedLedgerName
             documentNumber: `Invoice #${invoiceNumber}`,
-            documentId: invoiceId,        // Use actual invoice ID
+            notes: notes,                       // Added notes parameter
+            documentId: invoiceId,
             documentType: 'invoice'
         };
 
@@ -269,9 +270,10 @@ export async function createPurchaseVoucherEntry(
     supplierLedgerAccountId: string,
     amount: number,
     date: Date,
-    voucherId: string,        // Changed from voucherNumber to voucherId
-    voucherNumber: string,    // Added separate parameter for display number
-    supplierName: string
+    voucherId: string,
+    voucherNumber: string,
+    supplierName: string,
+    notes?: string  // Added notes parameter
 ): Promise<LedgerEntry> {
     const supabase = await createClient();
     try {
@@ -282,9 +284,10 @@ export async function createPurchaseVoucherEntry(
             type: 'Cr',
             date: date,
             transactionType: 'Purchase Voucher',
-            partyName: supplierName,
+            relatedLedgerName: supplierName,    // Changed from partyName to relatedLedgerName
             documentNumber: `Voucher #${voucherNumber}`,
-            documentId: voucherId,        // Use actual voucher ID
+            notes: notes,                       // Added notes parameter
+            documentId: voucherId,
             documentType: 'voucher'
         };
 
@@ -308,70 +311,413 @@ export async function createPurchaseVoucherEntry(
     }
 }
 
-export async function createPaymentInEntry(
-    customerLedgerAccountId: string,
-    amount: number,
-    date: Date,
-    paymentId: string,        // Changed from receiptNumber to paymentId
-    receiptNumber: string,    // Added separate parameter for display number
-    customerName: string
+// functions for payments
+import { PaymentDocument } from "@/server/features/Payment/core/entities/PaymentDocument";
+import { PaymentOperationResult } from "@/server/features/Payment/infrastructure/persistence/paymentSupabase";
+import { getLedgerNameById } from "./ledgerAccountSupabase";
+
+
+// Function to create ledger entry from PaymentOperationResult
+
+// Function to create ledger entry from PaymentOperationResult
+// Designed to be called from a separate service after payment operations
+// Enhanced function to create ledger entry from PaymentOperationResult
+export async function createLedgerEntryFromPaymentOperation(
+    paymentResult: PaymentOperationResult,
 ): Promise<LedgerEntry> {
     const supabase = await createClient();
+    
     try {
-        // Customer Account - Credit (Reduces amount receivable from customer)
+        const { payment, paymentDocument, newPaidAmount, remainingAmount, statusChanged } = paymentResult;
+        
+        // Get party ledger name
+        const partyLedgerName = await getLedgerNameById(payment.partyLedgerAccountId);
+        if (!partyLedgerName) {
+            throw new Error(`Ledger name not found for ID: ${payment.partyLedgerAccountId}`);
+        }
+
+        // Determine transaction type and entry direction based on payment type and reversal status
+        let transactionType: string;
+        let entryType: 'Dr' | 'Cr';
+        let primaryDescription: string;
+        
+        if (payment.isReversalPayment()) {
+            // For reversals, we need to reverse the normal accounting direction
+            transactionType = payment.type === 'payment_in' ? 'Payment In Reversal' : 'Payment Out Reversal';
+            entryType = payment.type === 'payment_in' ? 'Dr' : 'Cr'; // Opposite of normal payment
+            primaryDescription = `${transactionType} - ${paymentDocument.getDocumentDisplayName()}`;
+        } else {
+            // Normal payments
+            transactionType = payment.type === 'payment_in' ? 'Payment In' : 'Payment Out';
+            entryType = payment.type === 'payment_in' ? 'Cr' : 'Dr'; // Credit reduces receivable, Debit increases payable
+            primaryDescription = `${transactionType} - ${paymentDocument.getDocumentDisplayName()}`;
+        }
+
+        // Build comprehensive document number reference
+        let documentNumber = '';
+        if (payment.referenceNumber) {
+            documentNumber = paymentDocument.documentNumber;
+        } else {
+            // Create meaningful reference based on payment method and type
+            const methodPrefix = payment.method === 'cash' ? 'Cash' : 'Bank';
+            const typePrefix = payment.type === 'payment_in' ? 'Receipt' : 'Payment';
+            const reversalSuffix = payment.isReversalPayment() ? ' (Rev)' : '';
+            documentNumber = `${methodPrefix} ${typePrefix}${reversalSuffix}`;
+        }
+
+        // Create rich secondary description with payment method details
+        const methodInfo = payment.method === 'cash' ? 'Cash Payment' : 'Bank Transfer';
+        const bookReference = payment.getBookId() ? ` | Book: ${payment.getBookId()}` : '';
+        const dateInfo = ` | Date: ${payment.date.toLocaleDateString()}`;
+        const secondaryDescription = `${methodInfo}${bookReference}${dateInfo}`;
+
+        // Create comprehensive reference description with document and payment context
+        const documentContext = `Document: ${paymentDocument.documentNumber} (${paymentDocument.documentType})`;
+        const amountContext = `Amount: ₹${Math.abs(payment.amount).toLocaleString()}`;
+        const progressContext = `Progress: ₹${newPaidAmount.toLocaleString()} / ₹${paymentDocument.totalDocumentAmount.toLocaleString()}`;
+        const statusContext = statusChanged ? ` | Status: ${paymentDocument.paymentStatus}` : '';
+        const balanceContext = remainingAmount > 0 
+            ? ` | Outstanding: ₹${remainingAmount.toLocaleString()}` 
+            : ' | Fully Settled';
+        
+        const referenceDescription = `${documentContext} | ${amountContext} | ${progressContext}${statusContext}${balanceContext}`;
+
+        // Create detailed notes combining payment notes with operation context
+        let comprehensiveNotes = '';
+        
+        // Add user notes if provided
+        if (payment.notes && payment.notes.trim()) {
+            comprehensiveNotes += `Notes: ${payment.notes} | `;
+        }
+        
+        // Add operational context
+        const operationContext = payment.isReversalPayment() ? 'Reversal Operation' : 'Payment Operation';
+        const methodDetails = payment.method === 'cash' ? 'Cash Transaction' : 'Bank Transfer';
+        const paymentSummary = payment.getPaymentSummary();
+        
+        comprehensiveNotes += `${operationContext} | ${methodDetails}`;
+        
+        // Add reversal context if applicable
+        if (payment.isReversalPayment() && payment.reversalPaymentId) {
+            comprehensiveNotes += ` | Reverses Payment: ${payment.reversalPaymentId}`;
+        }
+
+        // Create universal transaction data with all enhanced information
         const transactionData: UniversalTransactionData = {
-            ledgerAccountId: customerLedgerAccountId,
-            amount: amount,
-            type: 'Cr',
-            date: date,
-            transactionType: 'Payment In',
-            partyName: customerName,
-            documentNumber: `Receipt #${receiptNumber}`,
-            documentId: paymentId,        // Use actual payment ID
+            ledgerAccountId: payment.partyLedgerAccountId,
+            amount: Math.abs(payment.amount), // Always use absolute amount
+            type: entryType,
+            date: payment.date,
+            transactionType: transactionType,
+            relatedLedgerName: partyLedgerName,
+            documentNumber: documentNumber,
+            notes: comprehensiveNotes,
+            documentId: payment.id,
             documentType: 'payment'
         };
 
-        const entry = createUniversalLedgerEntry(transactionData);
+        // Create ledger entry using the universal function
+        const ledgerEntry = createUniversalLedgerEntry(transactionData);
+        
+        // Override the auto-generated descriptions with our enhanced versions
+        const enhancedEntry = new LedgerEntry(
+            ledgerEntry.ledgerAccountId,
+            ledgerEntry.date,
+            ledgerEntry.amount,
+            ledgerEntry.type,
+            primaryDescription, // Enhanced primary description
+            ledgerEntry.id,
+            ledgerEntry.documentId,
+            ledgerEntry.documentType,
+            documentNumber, // Enhanced document number
+            secondaryDescription, // Enhanced secondary description
+            referenceDescription, // Enhanced reference description
+            ledgerEntry.ledgerReference,
+            ledgerEntry.isOpeningBalance
+        );
 
+        // Insert the enhanced ledger entry
         const { data, error } = await supabase
             .from('ledger_entry')
-            .insert(entry.toDbFormat())
+            .insert(enhancedEntry.toDbFormat())
             .select()
             .single();
 
         if (error) {
-            console.error("Error creating payment in entry:", error);
-            throw new Error(error.message);
+            console.error("Error creating ledger entry from payment operation:", error);
+            throw new Error(`Failed to create ledger entry: ${error.message}`);
         }
 
+        console.log(`Created ledger entry for ${transactionType} - ${partyLedgerName}: ₹${Math.abs(payment.amount).toLocaleString()}`);
         return LedgerEntry.fromDbFormat(data);
+
     } catch (error) {
-        console.error('Error in createPaymentInEntry:', error);
+        console.error('Error in createLedgerEntryFromPaymentOperation:', error);
         throw error;
     }
 }
 
-export async function createPaymentOutEntry(
-    supplierLedgerAccountId: string,
+// Enhanced batch function with improved descriptions
+export async function createLedgerEntriesFromPaymentOperations(
+    paymentResults: PaymentOperationResult[],
+    partyLedgerNames?: Map<string, string>
+): Promise<LedgerEntry[]> {
+    const supabase = await createClient();
+    
+    try {
+        const ledgerEntries: LedgerEntry[] = [];
+        
+        // Process each payment result with enhanced descriptions
+        for (const paymentResult of paymentResults) {
+            const { payment, paymentDocument, newPaidAmount, remainingAmount, statusChanged } = paymentResult;
+            
+            // Get party name from provided map or fetch it
+            let partyName = partyLedgerNames?.get(payment.partyLedgerAccountId);
+            if (!partyName) {
+                partyName = await getLedgerNameById(payment.partyLedgerAccountId) || undefined;
+                if (!partyName) {
+                    throw new Error(`Ledger name not found for ID: ${payment.partyLedgerAccountId}`);
+                }
+            }
+            
+            // Determine transaction details with enhanced logic
+            let transactionType: string;
+            let entryType: 'Dr' | 'Cr';
+            let primaryDescription: string;
+            
+            if (payment.isReversalPayment()) {
+                transactionType = payment.type === 'payment_in' ? 'Payment In Reversal' : 'Payment Out Reversal';
+                entryType = payment.type === 'payment_in' ? 'Dr' : 'Cr';
+                primaryDescription = `${transactionType} - ${paymentDocument.getDocumentDisplayName()}`;
+            } else {
+                transactionType = payment.type === 'payment_in' ? 'Payment In' : 'Payment Out';
+                entryType = payment.type === 'payment_in' ? 'Cr' : 'Dr';
+                primaryDescription = `${transactionType} - ${paymentDocument.getDocumentDisplayName()}`;
+            }
+
+            // Build enhanced document reference
+            const documentNumber = payment.referenceNumber || 
+                `${payment.method === 'cash' ? 'Cash' : 'Bank'} ${payment.type === 'payment_in' ? 'Receipt' : 'Payment'}${payment.isReversalPayment() ? ' (Rev)' : ''}`;
+
+            // Create enhanced descriptions
+            const methodInfo = payment.method === 'cash' ? 'Cash Payment' : 'Bank Transfer';
+            const bookReference = payment.getBookId() ? ` | Book: ${payment.getBookId()}` : '';
+            const secondaryDescription = `${methodInfo}${bookReference} | Date: ${payment.date.toLocaleDateString()}`;
+
+            const documentContext = `Document: ${paymentDocument.documentNumber} (${paymentDocument.documentType})`;
+            const progressContext = `Progress: ₹${newPaidAmount.toLocaleString()} / ₹${paymentDocument.totalDocumentAmount.toLocaleString()}`;
+            const statusContext = statusChanged ? ` | Status: ${paymentDocument.paymentStatus}` : '';
+            const balanceContext = remainingAmount > 0 
+                ? ` | Outstanding: ₹${remainingAmount.toLocaleString()}` 
+                : ' | Fully Settled';
+            const referenceDescription = `${documentContext} | ${progressContext}${statusContext}${balanceContext}`;
+
+            // Create comprehensive notes
+            let notes = '';
+            if (payment.notes && payment.notes.trim()) {
+                notes += `Notes: ${payment.notes} | `;
+            }
+            const operationContext = payment.isReversalPayment() ? 'Reversal Operation' : 'Payment Operation';
+            notes += `${operationContext} | ${methodInfo}`;
+            if (payment.isReversalPayment() && payment.reversalPaymentId) {
+                notes += ` | Reverses Payment: ${payment.reversalPaymentId}`;
+            }
+
+            // Create the enhanced ledger entry
+            const ledgerEntry = new LedgerEntry(
+                payment.partyLedgerAccountId,
+                payment.date,
+                Math.abs(payment.amount),
+                entryType,
+                primaryDescription,
+                undefined, // Let database generate ID
+                payment.id,
+                'payment',
+                documentNumber,
+                secondaryDescription,
+                referenceDescription,
+                partyName,
+                false
+            );
+
+            ledgerEntries.push(ledgerEntry);
+        }
+
+        // Bulk insert all enhanced ledger entries
+        const dbEntries = ledgerEntries.map(entry => entry.toDbFormat());
+        
+        const { data, error } = await supabase
+            .from('ledger_entry')
+            .insert(dbEntries)
+            .select();
+
+        if (error) {
+            console.error("Error creating ledger entries from payment operations:", error);
+            throw new Error(`Failed to create ledger entries: ${error.message}`);
+        }
+
+        console.log(`Created ${data.length} enhanced ledger entries from payment operation results`);
+        return data.map(LedgerEntry.fromDbFormat);
+
+    } catch (error) {
+        console.error('Error in createLedgerEntriesFromPaymentOperations:', error);
+        throw error;
+    }
+}
+
+// Helper function to create payment ledger entry with full context
+export async function createPaymentLedgerEntryWithFullContext(
+    paymentResult: PaymentOperationResult,
+    additionalContext?: {
+        userNotes?: string;
+        internalReference?: string;
+        batchId?: string;
+    }
+): Promise<LedgerEntry> {
+    const supabase = await createClient();
+    
+    try {
+        const { payment, paymentDocument, newPaidAmount, remainingAmount, statusChanged } = paymentResult;
+        
+        // Get party ledger name
+        const partyLedgerName = await getLedgerNameById(payment.partyLedgerAccountId);
+        if (!partyLedgerName) {
+            throw new Error(`Ledger name not found for ID: ${payment.partyLedgerAccountId}`);
+        }
+
+        // Get payment progress information
+        const paymentProgress = paymentDocument.getPaymentProgress();
+        const paymentSummary = payment.getPaymentSummary();
+
+        // Create the most comprehensive descriptions possible
+        const transactionType = payment.isReversalPayment() 
+            ? `${payment.type === 'payment_in' ? 'Payment In' : 'Payment Out'} Reversal`
+            : `${payment.type === 'payment_in' ? 'Payment In' : 'Payment Out'}`;
+
+        const entryType: 'Dr' | 'Cr' = payment.isReversalPayment()
+            ? (payment.type === 'payment_in' ? 'Dr' : 'Cr')
+            : (payment.type === 'payment_in' ? 'Cr' : 'Dr');
+
+        // Ultra-comprehensive primary description
+        const primaryDescription = `${transactionType} - ${paymentDocument.getDocumentDisplayName()} | ${partyLedgerName}`;
+
+        // Enhanced document number with context
+        const documentNumber = payment.referenceNumber || 
+            `${payment.method.toUpperCase().replace('_', ' ')} ${payment.type.replace('_', ' ').toUpperCase()}${payment.isReversalPayment() ? ' REV' : ''} #${payment.id?.substring(0, 8)}`;
+
+        // Comprehensive secondary description
+        const secondaryDescription = `${paymentSummary.method} | Book: ${payment.getBookId() || 'N/A'} | ${paymentSummary.date} | Status: ${paymentSummary.status.toUpperCase()}`;
+
+        // Exhaustive reference description
+        const referenceDescription = [
+            `Doc: ${paymentDocument.documentNumber} (${paymentDocument.documentType})`,
+            `Amount: ${paymentSummary.amount}`,
+            `Progress: ${paymentProgress.progressPercentage.toFixed(1)}% (₹${paymentProgress.paidAmount.toLocaleString()} / ₹${paymentProgress.totalAmount.toLocaleString()})`,
+            statusChanged ? `Status Changed: ${paymentProgress.status.toUpperCase()}` : null,
+            remainingAmount > 0 ? `Outstanding: ₹${remainingAmount.toLocaleString()}` : 'FULLY SETTLED',
+            payment.isReversalPayment() ? `REVERSAL of Payment ${payment.reversalPaymentId}` : null
+        ].filter(Boolean).join(' | ');
+
+        // Complete notes with all available context
+        const notesArray = [];
+        
+        if (payment.notes && payment.notes.trim()) {
+            notesArray.push(`Payment Notes: ${payment.notes}`);
+        }
+        
+        if (additionalContext?.userNotes) {
+            notesArray.push(`User Notes: ${additionalContext.userNotes}`);
+        }
+        
+        notesArray.push(`Operation: ${payment.isReversalPayment() ? 'Payment Reversal' : 'Payment Processing'}`);
+        notesArray.push(`Method: ${paymentSummary.method}`);
+        
+        if (payment.getBookId()) {
+            notesArray.push(`Book ID: ${payment.getBookId()}`);
+        }
+        
+        if (additionalContext?.internalReference) {
+            notesArray.push(`Internal Ref: ${additionalContext.internalReference}`);
+        }
+        
+        if (additionalContext?.batchId) {
+            notesArray.push(`Batch ID: ${additionalContext.batchId}`);
+        }
+
+        const comprehensiveNotes = notesArray.join(' | ');
+
+        // Create the ultimate ledger entry
+        const ledgerEntry = new LedgerEntry(
+            payment.partyLedgerAccountId,
+            payment.date,
+            Math.abs(payment.amount),
+            entryType,
+            primaryDescription,
+            undefined,
+            payment.id,
+            'payment',
+            documentNumber,
+            secondaryDescription,
+            referenceDescription,
+            partyLedgerName,
+            false
+        );
+
+        // Insert with comprehensive logging
+        const { data, error } = await supabase
+            .from('ledger_entry')
+            .insert(ledgerEntry.toDbFormat())
+            .select()
+            .single();
+
+        if (error) {
+            console.error("Error creating comprehensive ledger entry:", error);
+            throw new Error(`Failed to create ledger entry: ${error.message}`);
+        }
+
+        console.log(`✓ Created comprehensive ledger entry:
+        - Type: ${transactionType}
+        - Party: ${partyLedgerName}
+        - Amount: ₹${Math.abs(payment.amount).toLocaleString()}
+        - Document: ${paymentDocument.getDocumentDisplayName()}
+        - Progress: ${paymentProgress.progressPercentage.toFixed(1)}%
+        - Status: ${paymentProgress.status}`);
+
+        return LedgerEntry.fromDbFormat(data);
+
+    } catch (error) {
+        console.error('Error in createPaymentLedgerEntryWithFullContext:', error);
+        throw error;
+    }
+}
+
+
+// Generic transaction entry function that fully utilizes all parameters
+export async function createGenericTransactionEntry(
+    ledgerAccountId: string,
     amount: number,
+    type: 'Dr' | 'Cr',
     date: Date,
-    paymentId: string,        // Changed from paymentNumber to paymentId
-    paymentNumber: string,    // Added separate parameter for display number
-    supplierName: string
+    transactionType: string,
+    relatedLedgerName?: string,
+    documentNumber?: string,
+    notes?: string,
+    documentId?: string,
+    documentType?: string
 ): Promise<LedgerEntry> {
     const supabase = await createClient();
     try {
-        // Supplier Account - Debit (Reduces amount payable to supplier)
         const transactionData: UniversalTransactionData = {
-            ledgerAccountId: supplierLedgerAccountId,
-            amount: amount,
-            type: 'Dr',
-            date: date,
-            transactionType: 'Payment Out',
-            partyName: supplierName,
-            documentNumber: `Payment #${paymentNumber}`,
-            documentId: paymentId,        // Use actual payment ID
-            documentType: 'payment'
+            ledgerAccountId,
+            amount,
+            type,
+            date,
+            transactionType,
+            relatedLedgerName,
+            documentNumber,
+            notes,
+            documentId,
+            documentType
         };
 
         const entry = createUniversalLedgerEntry(transactionData);
@@ -383,13 +729,13 @@ export async function createPaymentOutEntry(
             .single();
 
         if (error) {
-            console.error("Error creating payment out entry:", error);
+            console.error("Error creating generic transaction entry:", error);
             throw new Error(error.message);
         }
 
         return LedgerEntry.fromDbFormat(data);
     } catch (error) {
-        console.error('Error in createPaymentOutEntry:', error);
+        console.error('Error in createGenericTransactionEntry:', error);
         throw error;
     }
 }
