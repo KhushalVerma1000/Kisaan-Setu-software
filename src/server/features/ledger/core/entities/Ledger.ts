@@ -93,7 +93,7 @@ export interface LedgerEntryInterface {
     
     // Rich Description System
     primaryDescription: string; // Main description (e.g., "Payment In", "Invoice", "Purchase")
-    secondaryDescription?: string; // Additional context (e.g., "Party: PARTY NAME")
+    secondaryDescription?: string; // User notes/additional context
     referenceDescription?: string; // Reference info (e.g., "Invoice #3")
     ledgerReference?: string;   // Related ledger name for cross-references
     
@@ -194,10 +194,9 @@ export interface UniversalTransactionData {
     
     // Description components
     transactionType: string;    // "Invoice", "Payment In", "Purchase Voucher", etc.
-    partyName?: string;         // Customer/Supplier name
-    documentNumber?: string;    // Invoice #, Voucher #, etc.
-    additionalInfo?: string;    // Any additional context
-    relatedLedgerName?: string; // Cross-reference ledger name
+    relatedLedgerName?: string; // Customer/Supplier ledger name (goes to ledgerReference)
+    documentNumber?: string;    // Invoice #, Voucher #, etc. (goes to referenceDescription)
+    notes?: string;             // User-provided notes (goes to secondaryDescription)
     
     // Document reference
     documentId?: string;
@@ -313,22 +312,11 @@ export class Ledger {
 
 // Utility function to create universal transaction entry
 export function createUniversalLedgerEntry(data: UniversalTransactionData): LedgerEntry {
-    // Build rich description
+    // Build rich description structure
     const primaryDescription = data.transactionType;
-    
-    let secondaryDescription = '';
-    if (data.partyName) {
-        secondaryDescription = `Party: ${data.partyName}`;
-    }
-    
-    let referenceDescription = '';
-    if (data.documentNumber) {
-        referenceDescription = data.documentNumber;
-    }
-    
-    if (data.additionalInfo) {
-        referenceDescription += referenceDescription ? ` - ${data.additionalInfo}` : data.additionalInfo;
-    }
+    const secondaryDescription = data.notes || undefined; // User notes go here
+    const referenceDescription = data.documentNumber || undefined; // Document reference
+    const ledgerReference = data.relatedLedgerName || undefined; // Related ledger name
 
     return new LedgerEntry(
         data.ledgerAccountId,
@@ -340,9 +328,9 @@ export function createUniversalLedgerEntry(data: UniversalTransactionData): Ledg
         data.documentId,
         data.documentType,
         data.documentNumber,
-        secondaryDescription || undefined,
-        referenceDescription || undefined,
-        data.relatedLedgerName
+        secondaryDescription, // This stores user notes
+        referenceDescription, // Document reference
+        ledgerReference // Related ledger name
     );
 }
 
@@ -360,7 +348,7 @@ export function createOpeningBalanceEntry(
         undefined, // documentId
         'opening_balance', // documentType
         undefined, // documentNumber
-        undefined, // secondaryDescription
+        undefined, // secondaryDescription (no notes for opening balance)
         undefined, // referenceDescription
         undefined, // ledgerReference
         true // isOpeningBalance
