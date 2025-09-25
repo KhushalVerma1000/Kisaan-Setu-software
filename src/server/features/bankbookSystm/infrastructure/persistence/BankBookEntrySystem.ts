@@ -1,3 +1,4 @@
+import { PaymentOperationResult } from "@/server/features/Payment/infrastructure/persistence/paymentSupabase";
 import { BankBookEntry } from "../../core/entities/BankBookSystem";
 import { createClient } from "@/utils/supabase/server";
 
@@ -548,4 +549,205 @@ export function getAllBankBookEntriesForFpo(fpoId: string) {
       return [];
     }
   };
+}
+
+
+
+
+
+
+
+// Function to create bank book entry from PaymentOperationResult
+export async function createBankBookEntryFromPaymentOperation(
+    paymentResult: PaymentOperationResult,
+    partyName?: string
+): Promise<BankBookEntry> {
+    const supabase = await createClient();
+    
+    try {
+        const { payment, paymentDocument, newPaidAmount, remainingAmount, statusChanged } = paymentResult;
+
+        // Validate that this is a bank payment
+        if (payment.method !== 'bank_transfer') {
+            throw new Error('Payment method must be bank_transfer for bank book entries');
+        }
+
+        if (!payment.bankbookId) {
+            throw new Error('Bank book ID is required for bank transfers');
+        }
+
+        // Determine transaction type and entry type
+        let transactionType: string;
+        let entryType: 'Dr' | 'Cr';
+        
+        if (payment.isReversalPayment()) {
+            transactionType = `Payment Reversal`;
+            // For reversals, flip the normal logic
+            entryType = payment.type === 'payment_in' ? 'Cr' : 'Dr';
+        } else {
+            transactionType = payment.type === 'payment_in' ? 'Payment In' : 'Payment Out';
+            // Payment In = Debit to bank (money coming in)
+            // Payment Out = Credit to bank (money going out)
+            entryType = payment.type === 'payment_in' ? 'Dr' : 'Cr';
+        }
+
+        // Build comprehensive descriptions
+        const partyInfo = partyName ? ` - ${partyName}` : '';
+        const documentInfo = ` (${paymentDocument.documentType} #${paymentDocument.documentNumber})`;
+        
+        const primaryDescription = `${transactionType}${partyInfo}${documentInfo}`;
+        
+        // Secondary description with payment context
+        const operationContext = payment.isReversalPayment() ? 'Reversal of payment' : 'Payment processing';
+        const statusContext = statusChanged ? ` | Status: ${paymentDocument.paymentStatus}` : '';
+        const secondaryDescription = `${operationContext}${statusContext}`;
+        
+        // Reference description with financial details
+        const balanceInfo = `Paid: ₹${newPaidAmount.toLocaleString()} / ₹${paymentDocument.totalDocumentAmount.toLocaleString()}`;
+        const remainingInfo = remainingAmount > 0 
+            ? ` | Outstanding: ₹${remainingAmount.toLocaleString()}` 
+            : ' | Fully Settled';
+        const referenceDescription = `${balanceInfo}${remainingInfo}`;
+
+        // Create bank book entry with correct parameter order matching BankBookEntry constructor
+        const bankBookEntry = new BankBookEntry(
+            undefined, // id
+            payment.bankbookId, // bankBookId
+            payment.date, // date
+            Math.abs(payment.amount), // amount
+            entryType, // type
+            transactionType, // transactionType
+            primaryDescription, // primaryDescription
+            'bank_transfer', // paymentMethod
+            payment.id, // documentId (payment ID)
+            'payment', // documentType
+            paymentDocument.documentNumber, // documentNumber - use from PaymentDocument
+            secondaryDescription, // secondaryDescription
+            referenceDescription, // referenceDescription
+            `Payment-${payment.id}`, // ledgerReference
+            undefined, // chequeNumber (not applicable for bank transfers typically)
+            payment.referenceNumber, // referenceNumber
+            false // isOpeningBalance
+        );
+
+        // Insert the entry
+        const { data, error } = await supabase
+            .from('bank_book_entries')
+            .insert(bankBookEntry.toDbFormat())
+            .select('*')
+            .single();
+
+        if (error) {
+            console.error("Error creating bank book entry from payment operation:", error);
+            throw new Error(`Failed to create bank book entry: ${error.message}`);
+        }
+
+        console.log(`Created bank book entry for payment ${payment.id} in bank book ${payment.bankbookId}`);
+        return BankBookEntry.fromDbFormat(data);
+
+    } catch (error) {
+        console.error('Error in createBankBookEntryFromPaymentOperation:', error);
+        throw error;
+    }
+}
+
+// Batch function for processing multiple payment operation results
+export async function createBankBookEntriesFromPaymentOperations(
+    paymentResults: PaymentOperationResult[],
+    partyNames?: Map<string, string>
+): Promise<BankBookEntry[]> {
+    const supabase = await createClient();
+    
+    try {
+        const bankBookEntries: BankBookEntry[] = [];
+        
+        // Filter and process only bank transfer payments
+        const bankPaymentResults = paymentResults.filter(result => 
+            result.payment.method === 'bank_transfer' && result.payment.bankbookId
+        );
+
+        if (bankPaymentResults.length === 0) {
+            console.log('No bank transfer payments found in the results');
+            return [];
+        }
+ 
+        // Process each bank payment result
+        for (const paymentResult of bankPaymentResults) {
+            const { payment, paymentDocument, newPaidAmount, remainingAmount, statusChanged } = paymentResult;
+            const partyName = partyNames?.get(payment.partyLedgerAccountId);
+            
+            // Determine transaction details
+            let transactionType: string;
+            let entryType: 'Dr' | 'Cr';
+            
+            if (payment.isReversalPayment()) {
+                transactionType = `Payment Reversal`;
+                entryType = payment.type === 'payment_in' ? 'Cr' : 'Dr';
+            } else {
+                transactionType = payment.type === 'payment_in' ? 'Payment In' : 'Payment Out';
+                entryType = payment.type === 'payment_in' ? 'Dr' : 'Cr';
+            }
+
+            // Build descriptions
+            const partyInfo = partyName ? ` - ${partyName}` : '';
+            const documentInfo = ` (${paymentDocument.documentType} #${paymentDocument.documentNumber})`;
+            
+            const primaryDescription = `${transactionType}${partyInfo}${documentInfo}`;
+            
+            const operationContext = payment.isReversalPayment() ? 'Reversal' : 'Payment';
+            const statusContext = statusChanged ? ` | Status: ${paymentDocument.paymentStatus}` : '';
+            const secondaryDescription = `${operationContext}${statusContext}`;
+            
+            const balanceInfo = `₹${newPaidAmount.toLocaleString()} / ₹${paymentDocument.totalDocumentAmount.toLocaleString()}`;
+            const remainingInfo = remainingAmount > 0 ? ` | Due: ₹${remainingAmount.toLocaleString()}` : ' | Settled';
+            const referenceDescription = `${balanceInfo}${remainingInfo}`;
+
+            // Create bank book entry with correct parameter order
+            const bankBookEntry = new BankBookEntry(
+                undefined, // id
+                payment.bankbookId!, // bankBookId
+                payment.date, // date
+                Math.abs(payment.amount), // amount
+                entryType, // type
+                transactionType, // transactionType
+                primaryDescription, // primaryDescription
+                'bank_transfer', // paymentMethod
+                payment.id, // documentId
+                'payment', // documentType
+                paymentDocument.documentNumber, // documentNumber - use from PaymentDocument
+                secondaryDescription, // secondaryDescription
+                referenceDescription, // referenceDescription
+                `Payment-${payment.id}`, // ledgerReference
+                undefined, // chequeNumber
+                payment.referenceNumber, // referenceNumber
+                false // isOpeningBalance
+            );
+
+            bankBookEntries.push(bankBookEntry);
+        }
+
+        // Bulk insert all bank book entries
+        if (bankBookEntries.length > 0) {
+            const dbEntries = bankBookEntries.map(entry => entry.toDbFormat());
+            
+            const { data, error } = await supabase
+                .from('bank_book_entries')
+                .insert(dbEntries)
+                .select();
+
+            if (error) {
+                console.error("Error creating bank book entries from payment operations:", error);
+                throw new Error(`Failed to create bank book entries: ${error.message}`);
+            }
+
+            console.log(`Created ${data.length} bank book entries from payment operation results`);
+            return data.map(BankBookEntry.fromDbFormat);
+        }
+
+        return [];
+
+    } catch (error) {
+        console.error('Error in createBankBookEntriesFromPaymentOperations:', error);
+        throw error;
+    }
 }
