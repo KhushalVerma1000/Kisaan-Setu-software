@@ -110,7 +110,7 @@ const loadInvoices = useCallback(async (showSuccessToast = false) => {
     if (response.invoices) {
       setAllInvoices(response.invoices || []); // Store all invoices
       setTotalCount(response.total || 0);
-
+      console.log(response.invoices)
       if (showSuccessToast) {
         toast.success(`Loaded ${response.invoices.length} invoices successfully`);
       }

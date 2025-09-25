@@ -17,6 +17,7 @@ import { PurchaseVoucherAPI } from "@/server/features/purchase/infrastructure/ap
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { fetchLedgerAccountsAsync, selectAllLedgerAccounts, selectLedgerAccountsError, selectLedgerAccountsLoading } from "@/store/slices/ledgerAccountSlice";
 import { PurchaseVoucherPDFService } from "@/server/services/pdf/PurchaseVoucherPDFService";
+import { toast } from "react-toastify";
 
 // Purchase Voucher interface matching your API structure
 interface PurchaseVoucher {
@@ -93,6 +94,7 @@ export default function PurchaseVoucherPage() {
     try {
       const response = await PurchaseVoucherAPI.getAll({fpoId });
       setPurchaseVouchers(response.data || []);
+      console.log(response.data)
     } catch (error) {
       console.error("Error loading purchase vouchers:", error);
       setError("Failed to load purchase vouchers");
@@ -230,6 +232,7 @@ export default function PurchaseVoucherPage() {
     } catch (error) {
       console.error('Error deleting voucher:', error);
       setError("Failed to delete voucher");
+      toast.error((error as Error).message)
     }
   }, [loadStats]);
 

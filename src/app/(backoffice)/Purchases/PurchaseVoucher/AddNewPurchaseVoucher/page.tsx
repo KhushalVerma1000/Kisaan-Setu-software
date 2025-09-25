@@ -514,14 +514,14 @@ const AddPurchaseVoucherPage: React.FC = () => {
 
   const handleSubmitForApproval = async () => {
     // Show info toast about approval submission
-    toast.info('Preparing to submit for approval...', {
-      position: "top-right",
-      autoClose: 2000,
-      hideProgressBar: false,
-      closeOnClick: true,
-      pauseOnHover: true,
-      draggable: true,
-    });
+    // toast.info('Preparing to submit for approval...', {
+    //   position: "top-right",
+    //   autoClose: 2000,
+    //   hideProgressBar: false,
+    //   closeOnClick: true,
+    //   pauseOnHover: true,
+    //   draggable: true,
+    // });
 
     await saveToAPI('approved');
   };
