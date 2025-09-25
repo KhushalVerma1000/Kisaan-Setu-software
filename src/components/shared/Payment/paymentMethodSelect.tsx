@@ -20,7 +20,14 @@ export interface PaymentMethodValue {
   name: string;
 }
 
-interface PaymentMethodSelectProps {
+export interface PaymentMethodBooksValue {
+  type: PaymentMethodType;
+  id: string | null; // cashbook ID for cash, bankbook ID for bank_transfer (null if no book)
+  name: string;
+  bankAccountId?: string; // bank account ID for reference
+}
+
+interface PaymentMethodSelectProps<T extends boolean = false> {
   /**
    * The FPO ID to fetch bank accounts for
    */
@@ -29,12 +36,17 @@ interface PaymentMethodSelectProps {
   /**
    * The selected payment method
    */
-  value?: PaymentMethodValue | null;
+  value?: T extends true ? PaymentMethodBooksValue | null : PaymentMethodValue | null;
   
   /**
    * Callback when selection changes
    */
-  onValueChange: (paymentMethod: PaymentMethodValue | null) => void;
+  onValueChange: (paymentMethod: T extends true ? PaymentMethodBooksValue | null : PaymentMethodValue | null) => void;
+  
+  /**
+   * Return book IDs (cashbook for cash, bankbook for bank_transfer)
+   */
+  books?: T;
   
   /**
    * Label for the select input
@@ -97,10 +109,11 @@ interface PaymentMethodSelectProps {
   includeBankTransfer?: boolean;
 }
 
-export const PaymentMethodSelect: React.FC<PaymentMethodSelectProps> = ({
+export const PaymentMethodSelect = <T extends boolean = false>({
   fpoId,
   value,
   onValueChange,
+  books,
   label = "Payment Method",
   placeholder = "Select payment method",
   required = false,
@@ -113,13 +126,12 @@ export const PaymentMethodSelect: React.FC<PaymentMethodSelectProps> = ({
   showCount = true,
   includeCash = true,
   includeBankTransfer = true,
-}) => {
+}: PaymentMethodSelectProps<T>) => {
   const [isOpen, setIsOpen] = useState(false);
 
-  // Use the custom hook
+  // Use the consolidated payment methods hook
   const { 
-    cashbookId, 
-    bankAccounts, 
+    paymentOptions,
     loading, 
     error: hookError, 
     refetch 
@@ -127,59 +139,73 @@ export const PaymentMethodSelect: React.FC<PaymentMethodSelectProps> = ({
     fpoId,
     autoFetch,
     enabled: !!fpoId,
+    includeBooks: !!books,
+    includeCash,
+    includeBankTransfer,
   });
-
-  // Build payment method options
-  const paymentMethodOptions: PaymentMethodOption[] = [];
-  
-  // Add cash option if cashbook is available and cash is enabled
-  if (includeCash && cashbookId) {
-    paymentMethodOptions.push({
-      type: 'cash',
-      id: cashbookId,
-      name: 'Cash',
-      displayName: 'Cash',
-    });
-  }
-
-  // Add bank account options if bank transfer is enabled
-  if (includeBankTransfer && bankAccounts.length > 0) {
-    bankAccounts.forEach(account => {
-      paymentMethodOptions.push({
-        type: 'bank_transfer',
-        id: account.id,
-        name: account.accountHolderName,
-        displayName: `${account.accountHolderName} (${account.accountNumber.slice(-4)})`,
-        bankName: account.bankName,
-      });
-    });
-  }
 
   // Handle selection
   const handleValueChange = (selectedValue: string) => {
     if (!selectedValue) {
-      onValueChange(null);
+      onValueChange(null as T extends true ? PaymentMethodBooksValue | null : PaymentMethodValue | null);
       return;
     }
     
-    const selectedOption = paymentMethodOptions.find(option => 
+    const selectedOption = paymentOptions.find(option => 
       `${option.type}-${option.id}` === selectedValue
     );
     
     if (selectedOption) {
-      onValueChange({
-        type: selectedOption.type,
-        id: selectedOption.id,
-        name: selectedOption.name,
-      });
+      if (books) {
+        // Return books format
+        const booksValue: PaymentMethodBooksValue = {
+          type: selectedOption.type,
+          id: selectedOption.bookId || null,
+          name: selectedOption.name,
+          bankAccountId: selectedOption.bankAccountId,
+        };
+        onValueChange(booksValue as T extends true ? PaymentMethodBooksValue | null : PaymentMethodValue | null);
+      } else {
+        // Return standard format
+        const standardValue: PaymentMethodValue = {
+          type: selectedOption.type,
+          id: selectedOption.bankAccountId || selectedOption.id,
+          name: selectedOption.name,
+        };
+        onValueChange(standardValue as T extends true ? PaymentMethodBooksValue | null : PaymentMethodValue | null);
+      }
     } else {
-      onValueChange(null);
+      onValueChange(null as T extends true ? PaymentMethodBooksValue | null : PaymentMethodValue | null);
     }
   };
 
   // Get selected value for display
-  const selectedValue = value ? `${value.type}-${value.id}` : "";
-  const selectedOption = paymentMethodOptions.find(option => 
+  const getSelectedValue = () => {
+    if (!value) return "";
+    
+    if (books && 'bankAccountId' in value) {
+      // Books mode - find option by book ID or bank account ID
+      const option = paymentOptions.find(opt => {
+        if (value.id !== null) {
+          // Match by book ID
+          return opt.type === value.type && opt.bookId === value.id;
+        } else {
+          // Match by bank account ID when no book exists
+          return opt.type === value.type && opt.bankAccountId === value.bankAccountId;
+        }
+      });
+      return option ? `${option.type}-${option.id}` : "";
+    } else {
+      // Standard mode - find option by bank account ID
+      const option = paymentOptions.find(opt => 
+        opt.type === value.type && (opt.bankAccountId || opt.id) === value.id
+      );
+      return option ? `${option.type}-${option.id}` : "";
+    }
+  };
+
+  const selectedValue = getSelectedValue();
+  const selectedOption = paymentOptions.find(option => 
     `${option.type}-${option.id}` === selectedValue
   );
 
@@ -197,7 +223,7 @@ export const PaymentMethodSelect: React.FC<PaymentMethodSelectProps> = ({
   const getPlaceholderText = () => {
     if (!fpoId) return "Select FPO first";
     if (loading) return "Loading payment methods...";
-    if (paymentMethodOptions.length === 0) return "No payment methods available";
+    if (paymentOptions.length === 0) return "No payment methods available";
     return placeholder;
   };
 
@@ -304,7 +330,7 @@ export const PaymentMethodSelect: React.FC<PaymentMethodSelectProps> = ({
             )}
 
             {/* Empty State */}
-            {fpoId && !loading && !error && !hookError && paymentMethodOptions.length === 0 && (
+            {fpoId && !loading && !error && !hookError && paymentOptions.length === 0 && (
               <div className="text-center py-4 px-2 space-y-2">
                 <span className="text-sm text-muted-foreground">
                   No payment methods available
@@ -316,7 +342,7 @@ export const PaymentMethodSelect: React.FC<PaymentMethodSelectProps> = ({
                     onClick={handleRefresh}
                     className="text-xs"
                   >
-                    <RefreshCw className="h-3 w-3 " />
+                    <RefreshCw className="h-3 w-3" />
                     Refresh
                   </Button>
                 )}
@@ -324,15 +350,15 @@ export const PaymentMethodSelect: React.FC<PaymentMethodSelectProps> = ({
             )}
 
             {/* Payment Method Options */}
-            {!loading && paymentMethodOptions.length > 0 && (
+            {!loading && paymentOptions.length > 0 && (
               <>
                 {/* Cash Section */}
-                {includeCash && paymentMethodOptions.some(option => option.type === 'cash') && (
+                {includeCash && paymentOptions.some(option => option.type === 'cash') && (
                   <>
                     <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
                       Cash Payment
                     </div>
-                    {paymentMethodOptions
+                    {paymentOptions
                       .filter(option => option.type === 'cash')
                       .map((option) => (
                         <SelectItem 
@@ -350,37 +376,42 @@ export const PaymentMethodSelect: React.FC<PaymentMethodSelectProps> = ({
                 )}
 
                 {/* Bank Transfer Section */}
-                {includeBankTransfer && paymentMethodOptions.some(option => option.type === 'bank_transfer') && (
+                {includeBankTransfer && paymentOptions.some(option => option.type === 'bank_transfer') && (
                   <>
-                    {includeCash && paymentMethodOptions.some(option => option.type === 'cash') && (
+                    {includeCash && paymentOptions.some(option => option.type === 'cash') && (
                       <div className="border-t my-1" />
                     )}
                     <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
                       Bank Transfer
                     </div>
-                    {paymentMethodOptions
+                    {paymentOptions
                       .filter(option => option.type === 'bank_transfer')
-                      .map((option) => (
-                        <SelectItem 
-                          key={`${option.type}-${option.id}`}
-                          value={`${option.type}-${option.id}`}
-                          className="cursor-pointer"
-                        >
-                          <div className="flex items-center justify-between w-full">
-                            <div className="flex items-center gap-2">
-                              {getPaymentMethodIcon(option.type)}
-                              <div className="flex flex-col">
-                                <span className="font-medium">{option.name}</span>
-                                {option.bankName && (
-                                  <span className="text-xs text-muted-foreground">
-                                    {option.bankName}
-                                  </span>
-                                )}
+                      .map((option) => {
+                        const hasBook = !!option.bookId;
+                        
+                        return (
+                          <SelectItem 
+                            key={`${option.type}-${option.id}`}
+                            value={`${option.type}-${option.id}`}
+                            className="cursor-pointer"
+                            disabled={books && !hasBook}
+                          >
+                            <div className="flex items-center justify-between w-full">
+                              <div className="flex items-center gap-2">
+                                {getPaymentMethodIcon(option.type)}
+                                <div className="flex flex-col">
+                                  <span className="font-medium">{option.name}</span>
+                                  {option.bankName && (
+                                    <span className="text-xs text-muted-foreground">
+                                      {option.bankName}
+                                    </span>
+                                  )}
+                                </div>
                               </div>
                             </div>
-                          </div>
-                        </SelectItem>
-                      ))}
+                          </SelectItem>
+                        );
+                      })}
                   </>
                 )}
               </>
@@ -418,9 +449,9 @@ export const PaymentMethodSelect: React.FC<PaymentMethodSelectProps> = ({
       )}
 
       {/* Helper Text */}
-      {fpoId && paymentMethodOptions.length > 0 && !loading && showCount && (
+      {fpoId && paymentOptions.length > 0 && !loading && showCount && (
         <p className="text-xs text-muted-foreground">
-          {paymentMethodOptions.length} payment method{paymentMethodOptions.length !== 1 ? 's' : ''} available
+          {paymentOptions.length} payment method{paymentOptions.length !== 1 ? 's' : ''} available
           {includeCash && !includeBankTransfer && ' (cash only)'}
           {!includeCash && includeBankTransfer && ' (bank transfer only)'}
         </p>
