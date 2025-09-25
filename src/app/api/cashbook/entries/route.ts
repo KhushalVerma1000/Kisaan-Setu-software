@@ -30,7 +30,6 @@ export async function GET(request: NextRequest) {
     const endDateObj = endDate ? new Date(endDate) : undefined;
 
     const entries = await getCashBookEntries(cashBookId)(startDateObj, endDateObj);
-
     return NextResponse.json({ 
       success: true, 
       data: entries 
