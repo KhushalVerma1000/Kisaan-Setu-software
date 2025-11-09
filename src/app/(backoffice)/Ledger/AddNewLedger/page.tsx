@@ -29,6 +29,15 @@ import { toast } from 'react-toastify';
 import { useAppSelector } from "@/store/hooks";
 import { LedgerGroup, LedgerGroupInterface } from "@/server/features/ledger/core/entities/LedgerGroup";
 
+interface BankDetails {
+  accountNumber: string;
+  accountHolderName?: string;
+  ifscCode: string;
+  BankName?: string;
+  accountType: 'Regular' | 'OD' | 'CC';
+  upiId?: string;
+}
+
 interface LedgerFormData {
   name: string;
   groupName: string;
@@ -39,6 +48,7 @@ interface LedgerFormData {
   phoneNumber: string;
   state: string;
   gstNumber: string;
+  bankDetails?: BankDetails;
 }
 
 interface HierarchicalGroup {
@@ -55,6 +65,17 @@ const INDIAN_STATES = [
   "Telangana", "Tripura", "Uttar Pradesh", "Uttarakhand", "West Bengal",
   "Andaman and Nicobar Islands", "Chandigarh", "Dadra and Nagar Haveli and Daman and Diu",
   "Delhi", "Jammu and Kashmir", "Ladakh", "Lakshadweep", "Puducherry"
+];
+
+const INDIAN_BANKS = [
+  "State Bank of India", "HDFC Bank", "ICICI Bank", "Axis Bank", "Kotak Mahindra Bank",
+  "Punjab National Bank", "Bank of Baroda", "Canara Bank", "Union Bank of India",
+  "IndusInd Bank", "IDBI Bank", "Yes Bank", "Bank of India", "Central Bank of India",
+  "Indian Bank", "UCO Bank", "Bank of Maharashtra", "Punjab & Sind Bank",
+  "Indian Overseas Bank", "Bandhan Bank", "Federal Bank", "RBL Bank",
+  "South Indian Bank", "Karur Vysya Bank", "Tamilnad Mercantile Bank",
+  "Dhanlaxmi Bank", "City Union Bank", "IDFC First Bank", "Jammu & Kashmir Bank",
+  "DCB Bank", "Other"
 ];
 
 export default function AddLedgerPage() {
@@ -79,30 +100,30 @@ export default function AddLedgerPage() {
     groupName: "",
     openingDate: "",
     amount: 0,
-    amountType: "Cr",
+    amountType: "Dr",
     address: "",
     phoneNumber: "",
     state: "",
-    gstNumber: ""
+    gstNumber: "",
+    bankDetails: undefined
   });
 
+  // Check if selected group is a bank account group
+  const isBankAccountGroup = (groupName: string): boolean => {
+    return groupName === "Bank Accounts" || groupName === "Bank OD A/c";
+  };
+
   const buildHierarchy = (groups: LedgerGroup[]): HierarchicalGroup[] => {
-    // console.log('Building hierarchy with groups:', groups);
-    
-    // Create a map for quick lookup
     const groupMap = new Map<string, LedgerGroup>();
     groups.forEach(group => {
         groupMap.set(group.group, group);
     });
 
-    // Find root groups (groups without parent or with null/undefined parent)
     const rootGroups = groups.filter(group => 
         !group.parentgroup || group.parentgroup === null || group.parentgroup === undefined
     );
 
-    // Recursive function to build hierarchy
     const buildChildren = (parentGroup: LedgerGroup, level: number = 0): HierarchicalGroup => {
-        // Find direct children of this group
         const children = groups
             .filter(group => group.parentgroup === parentGroup.group)
             .sort((a, b) => a.group.localeCompare(b.group))
@@ -115,12 +136,10 @@ export default function AddLedgerPage() {
         };
     };
 
-    // Build hierarchy starting from root groups
     const hierarchy = rootGroups
         .sort((a, b) => a.group.localeCompare(b.group))
         .map(rootGroup => buildChildren(rootGroup, 0));
 
-    // console.log('Built hierarchy:', hierarchy);
     return hierarchy;
   };
 
@@ -129,7 +148,6 @@ export default function AddLedgerPage() {
     
     const flatten = (items: HierarchicalGroup[]) => {
         items.forEach(item => {
-            // Create proper indentation with visual hierarchy
             const indent = "  ".repeat(item.level);
             const connector = item.level > 0 ? "├─ " : "";
             const displayName = `${indent}${connector}${item.group.group}`;
@@ -139,7 +157,6 @@ export default function AddLedgerPage() {
                 displayName: displayName
             });
             
-            // Recursively flatten children
             if (item.children.length > 0) {
                 flatten(item.children);
             }
@@ -162,6 +179,35 @@ export default function AddLedgerPage() {
     );
   };
 
+  // Validate IFSC code
+  const validateIFSC = (ifscCode: string): boolean => {
+    const ifscRegex = /^[A-Z]{4}0[A-Z0-9]{6}$/;
+    return ifscRegex.test(ifscCode);
+  };
+
+  // Get bank name from IFSC code
+  const getBankFromIFSC = (ifscCode: string): string | null => {
+    if (!validateIFSC(ifscCode)) return null;
+    
+    const bankCodes: { [key: string]: string } = {
+      'SBIN': 'State Bank of India',
+      'HDFC': 'HDFC Bank',
+      'ICIC': 'ICICI Bank',
+      'UTIB': 'Axis Bank',
+      'KKBK': 'Kotak Mahindra Bank',
+      'PUNB': 'Punjab National Bank',
+      'BARB': 'Bank of Baroda',
+      'CNRB': 'Canara Bank',
+      'UBIN': 'Union Bank of India',
+      'INDB': 'IndusInd Bank',
+      'IDIB': 'IDBI Bank',
+      'YESB': 'Yes Bank',
+    };
+    
+    const bankCode = ifscCode.substring(0, 4);
+    return bankCodes[bankCode] || null;
+  };
+
   // Load initial data
   useEffect(() => {
     if (fpoId) {
@@ -170,15 +216,37 @@ export default function AddLedgerPage() {
   }, [fpoId]);
 
   useEffect(() => {
-    // console.log('Groups changed, building hierarchy. Groups count:', ledgerGroups.length);
     if (ledgerGroups.length > 0) {
       const hierarchy = buildHierarchy(ledgerGroups);
-      // console.log('Setting hierarchy:', hierarchy);
       setHierarchicalGroups(hierarchy);
     } else {
       setHierarchicalGroups([]);
     }
   }, [ledgerGroups]);
+
+  // Initialize bank details when bank group is selected
+  useEffect(() => {
+    if (isBankAccountGroup(formData.groupName)) {
+      if (!formData.bankDetails) {
+        setFormData(prev => ({
+          ...prev,
+          bankDetails: {
+            accountNumber: "",
+            ifscCode: "",
+            accountType: "Regular",
+          }
+        }));
+      }
+    } else {
+      // Remove bank details if group is changed to non-bank
+      if (formData.bankDetails) {
+        setFormData(prev => ({
+          ...prev,
+          bankDetails: undefined
+        }));
+      }
+    }
+  }, [formData.groupName]);
 
   const loadLedgerGroups = async () => {
     setLoadingGroups(true);
@@ -187,34 +255,25 @@ export default function AddLedgerPage() {
         
         if (response.ok) {
             const allGroups = await response.json();
-            // console.log('Raw API response:', allGroups);
             
-            // Map the response to LedgerGroup instances
             const ledgerGroupInstances = allGroups.map((group: any) => {
-                // console.log('Processing group:', group);
-                
-                // Check if the group data has the expected structure
                 if (!group.group) {
                     console.error('Invalid group data:', group);
                     return null;
                 }
                 
-                // Create LedgerGroup instance with proper parameter mapping
                 return new LedgerGroup(
-                    group.group,           // group name
-                    group.parentgroup,     // parent group (can be null/undefined)
-                    group.id,              // id
-                    group.fpo_id,          // fpo_id 
-                    group.isDefault || false // isDefault (with fallback)
+                    group.group,
+                    group.parentgroup,
+                    group.id,
+                    group.fpo_id,
+                    group.isDefault || false
                 );
-            }).filter(Boolean); // Remove any null entries
+            }).filter(Boolean);
             
-            // console.log('Mapped LedgerGroup instances:', ledgerGroupInstances);
             setLedgerGroups(ledgerGroupInstances);
         } else {
             console.error('Failed to load ledger groups, status:', response.status);
-            const errorText = await response.text();
-            console.error('Error response:', errorText);
             setLedgerGroups([]);
         }
     } catch (error) {
@@ -232,10 +291,57 @@ export default function AddLedgerPage() {
     }));
   };
 
+  const handleBankDetailsChange = (field: keyof BankDetails, value: any) => {
+    setFormData(prev => ({
+      ...prev,
+      bankDetails: {
+        ...prev.bankDetails!,
+        [field]: value
+      }
+    }));
+  };
+
+  const handleIFSCChange = (ifscCode: string) => {
+    const upperIFSC = ifscCode.toUpperCase();
+    handleBankDetailsChange('ifscCode', upperIFSC);
+    
+    // Auto-detect bank name from IFSC
+    if (upperIFSC.length === 11) {
+      const detectedBank = getBankFromIFSC(upperIFSC);
+      if (detectedBank) {
+        handleBankDetailsChange('BankName', detectedBank);
+        // toast.success(`Detected: ${detectedBank}`);
+      }
+    }
+  };
+
+  const validateBankDetails = (): { valid: boolean; errors: string[] } => {
+    const errors: string[] = [];
+    
+    if (isBankAccountGroup(formData.groupName) && formData.bankDetails) {
+      if (!formData.bankDetails.accountNumber) {
+        errors.push('Account number is required');
+      }
+      if (!formData.bankDetails.ifscCode) {
+        errors.push('IFSC code is required');
+      } else if (!validateIFSC(formData.bankDetails.ifscCode)) {
+        errors.push('Invalid IFSC code format');
+      }
+      if (!formData.bankDetails.accountType) {
+        errors.push('Account type is required');
+      }
+    }
+    
+    return {
+      valid: errors.length === 0,
+      errors
+    };
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // Validation
+    // Basic validation
     if (!formData.name.trim()) {
       toast.error("Ledger name is required");
       return;
@@ -251,10 +357,18 @@ export default function AddLedgerPage() {
       return;
     }
 
+    // Bank details validation
+    if (isBankAccountGroup(formData.groupName)) {
+      const bankValidation = validateBankDetails();
+      if (!bankValidation.valid) {
+        toast.error(bankValidation.errors[0]);
+        return;
+      }
+    }
+
     setLoading(true);
 
     try {
-      // FIX: Prepare data according to the API expectations
       const requestData = {
         name: formData.name.trim(),
         groupName: formData.groupName,
@@ -262,11 +376,11 @@ export default function AddLedgerPage() {
         amountType: formData.amountType,
         address: formData.address.trim() || undefined,
         phoneNumber: formData.phoneNumber.trim() || undefined,
-        fpoId: fpoId, 
-        // Additional fields that might be useful but not required
+        fpoId: fpoId,
         openingDate: formData.openingDate || undefined,
         state: formData.state || undefined,
         gstNumber: formData.gstNumber.trim() || undefined,
+        bankDetails: formData.bankDetails || undefined,
       };
 
       console.log('Sending request data:', requestData);
@@ -293,15 +407,13 @@ export default function AddLedgerPage() {
         groupName: "",
         openingDate: "",
         amount: 0,
-        amountType: "Cr",
+        amountType: "Dr",
         address: "",
         phoneNumber: "",
         state: "",
-        gstNumber: ""
+        gstNumber: "",
+        bankDetails: undefined
       });
-
-      // Optional: Navigate back or to ledger list
-      // router.push('/ledger');
 
     } catch (error) {
       console.error('Error creating ledger:', error);
@@ -318,13 +430,11 @@ export default function AddLedgerPage() {
       return;
     }
 
-    // Check if group name already exists
     if (isGroupNameExists(newGroup.group.trim())) {
       toast.error("Group name already exists");
       return;
     }
 
-    // Prevent adding default groups
     if (isDefaultGroup(newGroup.group.trim())) {
       toast.error("Cannot add default group. This group already exists in the system.");
       return;
@@ -344,13 +454,8 @@ export default function AddLedgerPage() {
       });
 
       if (response.ok) {
-        // Reload groups to get the updated list
         await loadLedgerGroups();
-        
-        // Set the newly created group as selected
         setFormData(prev => ({ ...prev, groupName: newGroup.group.trim() }));
-        
-        // Reset form and close dialog
         setNewGroup({ group: "", parentGroup: "" });
         setShowGroupDialog(false);
         toast.success("Group added successfully!");
@@ -364,10 +469,8 @@ export default function AddLedgerPage() {
     }
   };
 
-  // Get flattened hierarchy for group selection
   const flattenedGroups = flattenHierarchy(hierarchicalGroups);
 
-  // Show loading or error state if fpoId is not available
   if (!fpoId) {
     return (
       <div className="flex items-center justify-center h-96">
@@ -569,65 +672,162 @@ export default function AddLedgerPage() {
             </CardContent>
           </Card>
 
-          {/* Additional Information */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Additional Information</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="address">Address</Label>
-                <Textarea
-                  id="address"
-                  value={formData.address}
-                  onChange={(e) => handleInputChange("address", e.target.value)}
-                  placeholder="Enter address"
-                  rows={3}
-                />
-              </div>
+          {/* Bank Details - Only show for Bank Accounts */}
+          {isBankAccountGroup(formData.groupName) && formData.bankDetails && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Bank Account Details</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="accountNumber">
+                      Account Number <span className="text-red-500">*</span>
+                    </Label>
+                    <Input
+                      id="accountNumber"
+                      value={formData.bankDetails.accountNumber}
+                      onChange={(e) => handleBankDetailsChange("accountNumber", e.target.value)}
+                      placeholder="Enter account number"
+                      required
+                    />
+                  </div>
 
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="accountHolderName">Account Holder Name</Label>
+                    <Input
+                      id="accountHolderName"
+                      value={formData.bankDetails.accountHolderName || ""}
+                      onChange={(e) => handleBankDetailsChange("accountHolderName", e.target.value)}
+                      placeholder="As per bank records"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="ifscCode">
+                      IFSC Code <span className="text-red-500">*</span>
+                    </Label>
+                    <Input
+                      id="ifscCode"
+                      value={formData.bankDetails.ifscCode}
+                      onChange={(e) => handleIFSCChange(e.target.value)}
+                      placeholder="e.g., HDFC0001234"
+                      maxLength={11}
+                      required
+                    />
+                    {formData.bankDetails.ifscCode && !validateIFSC(formData.bankDetails.ifscCode) && (
+                      <p className="text-xs text-red-500">Invalid IFSC format (should be like ABCD0123456)</p>
+                    )}
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="BankName">Bank Name</Label>
+                    <Input
+                      id="BankName"
+                      value={formData.bankDetails.BankName || ""}
+                      onChange={(e) => handleBankDetailsChange("BankName", e.target.value)}
+                      placeholder="Auto-detected from IFSC or enter manually"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="accountType">
+                      Account Type <span className="text-red-500">*</span>
+                    </Label>
+                    <Select
+                      value={formData.bankDetails.accountType}
+                      onValueChange={(value) => handleBankDetailsChange("accountType", value)}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Regular">Regular Account</SelectItem>
+                        <SelectItem value="OD">Overdraft (OD)</SelectItem>
+                        <SelectItem value="CC">Cash Credit (CC)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="upiId">UPI ID</Label>
+                    <Input
+                      id="upiId"
+                      value={formData.bankDetails.upiId || ""}
+                      onChange={(e) => handleBankDetailsChange("upiId", e.target.value)}
+                      placeholder="e.g., yourfpo@hdfcbank"
+                    />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Additional Information - Only show for non-bank accounts */}
+          {!isBankAccountGroup(formData.groupName) && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Additional Information</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="phoneNumber">Phone Number</Label>
-                  <Input
-                    id="phoneNumber"
-                    value={formData.phoneNumber}
-                    onChange={(e) => handleInputChange("phoneNumber", e.target.value)}
-                    placeholder="Enter phone number"
+                  <Label htmlFor="address">Address</Label>
+                  <Textarea
+                    id="address"
+                    value={formData.address}
+                    onChange={(e) => handleInputChange("address", e.target.value)}
+                    placeholder="Enter address"
+                    rows={3}
                   />
                 </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="state">State</Label>
-                  <Select
-                    value={formData.state}
-                    onValueChange={(value) => handleInputChange("state", value)}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="--Select State--" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {INDIAN_STATES.map((state) => (
-                        <SelectItem key={state} value={state}>
-                          {state}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="phoneNumber">Phone Number</Label>
+                    <Input
+                      id="phoneNumber"
+                      value={formData.phoneNumber}
+                      onChange={(e) => handleInputChange("phoneNumber", e.target.value)}
+                      placeholder="Enter phone number"
+                    />
+                  </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="gstNumber">GST Number</Label>
-                <Input
-                  id="gstNumber"
-                  value={formData.gstNumber}
-                  onChange={(e) => handleInputChange("gstNumber", e.target.value)}
-                  placeholder="Enter the GSTIN"
-                />
-              </div>
-            </CardContent>
-          </Card>
+                  <div className="space-y-2">
+                    <Label htmlFor="state">State</Label>
+                    <Select
+                      value={formData.state}
+                      onValueChange={(value) => handleInputChange("state", value)}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="--Select State--" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {INDIAN_STATES.map((state) => (
+                          <SelectItem key={state} value={state}>
+                            {state}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="gstNumber">GST Number</Label>
+                  <Input
+                    id="gstNumber"
+                    value={formData.gstNumber}
+                    onChange={(e) => handleInputChange("gstNumber", e.target.value)}
+                    placeholder="Enter the GSTIN"
+                  />
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           {/* Final Actions */}
           <div className="flex flex-col sm:flex-row justify-end gap-2 pt-6">
