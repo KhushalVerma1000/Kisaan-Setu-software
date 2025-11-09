@@ -1,5 +1,4 @@
-// pages/bank-book/index.tsx or app/bank-book/page.tsx (depending on your Next.js version)
-'use client'; // Add this if using App Router
+'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { toast } from 'react-toastify';
@@ -31,7 +30,6 @@ import {
   Filter,
   Download,
   RefreshCw,
-  Calendar,
   IndianRupee,
   ArrowUpCircle,
   ArrowDownCircle,
@@ -41,266 +39,301 @@ import {
   AlertCircle,
   Info
 } from 'lucide-react';
-
-import { BankBookAPI } from '@/server/features/bankbookSystm/infrastructure/apiHelper/bankbookApi';
-import { BankAccountsService, useBankAccounts } from '@/server/features/fpo/infrastructure/apiHelper/BankAccountsService';
-import { BankDetail } from '@/server/features/fpo/core/entities/BankDetail';
-import BankSelectionModal from '@/components/bankbook/BankSelectionModal';
 import { useAppSelector } from '@/store/hooks';
+import { DatePicker } from '@/components/ui/datepicker';
 
-interface BankAccount extends BankDetail {
-  currentBalance?: number;
-  lastUpdated?: string;
+interface BankDetails {
+  accountNumber: string;
+  accountHolderName?: string;
+  ifscCode: string;
+  BankName?: string;
+  accountType: 'Regular' | 'OD' | 'CC';
+  upiId?: string;
 }
 
-interface BankBook {
+interface LedgerAccount {
   id: string;
-  bankAccountId: string;
-  fpoId: string;
+  name: string;
+  groupName: string;
   openingBalance: number;
+  balanceType: 'Dr' | 'Cr';
   openingDate: string;
-  currentBalance: number;
-  bankAccount?: BankAccount;
+  fpoId: string;
+  phoneNumber?: string | null;
+  address?: string | null;
+  state?: string | null;
+  gstNumber?: string | null;
+  bankDetails?: BankDetails;
 }
 
-interface BankBookEntry {
+interface LedgerEntry {
   id: string;
+  ledgerAccountId: string;
+  date: string;
   amount: number;
   type: 'Dr' | 'Cr';
-  date: string;
-  transactionType: string;
-  paymentMethod?: string;
-  partyName?: string;
-  documentNumber?: string;
-  additionalInfo?: string;
-  primaryDescription?: string;
-  secondaryDescription?: string;
-  chequeNumber?: string;
-  referenceNumber?: string;
-  runningBalance?: number;
-  balanceType?: string;
+  primaryDescription: string;
+  secondaryDescription?: string | null;
+  referenceDescription?: string | null;
+  documentId?: string | null;
+  documentType: string;
+  documentNumber?: string | null;
+  ledgerReference?: string | null;
+  isOpeningBalance: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface StatementEntry {
+  entry: LedgerEntry;
+  runningBalance: number;
+  runningBalanceType: 'Dr' | 'Cr';
+}
+
+interface LedgerStatement {
+  ledgerAccount: LedgerAccount;
+  statement: StatementEntry[];
+  currentBalance: {
+    balance: number;
+    balanceType: 'Dr' | 'Cr';
+  };
+}
+
+interface APIError {
+  error: string;
+  details?: string;
 }
 
 const BankBookPage: React.FC = () => {
   // Get current user and FPO ID
   const user = useAppSelector((state) => state.user);
-  const fpoIdOfUser = user.fpoId;
-
-  // Use the custom hook for bank accounts
-  const {
-    bankAccounts,
-    loading: bankAccountsLoading,
-    error: bankAccountsError,
-    refetch: refetchBankAccounts
-  } = useBankAccounts();
+  const fpoId = user.fpoId || '';
 
   // State Management
   const [isLoading, setIsLoading] = useState(true);
-  const [showBankSelection, setShowBankSelection] = useState(false);
-  const [selectedBankBook, setSelectedBankBook] = useState<BankBook | null>(null);
-  const [entries, setEntries] = useState<BankBookEntry[]>([]);
-  const [filteredEntries, setFilteredEntries] = useState<BankBookEntry[]>([]);
+  const [isLoadingStatement, setIsLoadingStatement] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [bankAccounts, setBankAccounts] = useState<LedgerAccount[]>([]);
+  const [selectedAccount, setSelectedAccount] = useState<LedgerAccount | null>(null);
+  const [ledgerStatement, setLedgerStatement] = useState<LedgerStatement | null>(null);
+  const [filteredEntries, setFilteredEntries] = useState<StatementEntry[]>([]);
   
   // Filter states
   const [searchTerm, setSearchTerm] = useState('');
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
-  const [transactionTypeFilter, setTransactionTypeFilter] = useState('all');
+  const [startDate, setStartDate] = useState<Date | undefined>(undefined);
+  const [endDate, setEndDate] = useState<Date | undefined>(undefined);
+  const [documentTypeFilter, setDocumentTypeFilter] = useState('all');
   const [entryTypeFilter, setEntryTypeFilter] = useState('all');
 
-  // Move initializeBankBook to useCallback to fix dependency warning
-  const initializeBankBook = useCallback(async () => {
-    if (!fpoIdOfUser) {
+  // Fetch bank accounts (ledgers with group name "Bank Accounts")
+  const fetchBankAccounts = useCallback(async () => {
+    if (!fpoId) {
       toast.error('FPO ID not found. Please log in again.');
       setIsLoading(false);
       return;
     }
 
+    setIsLoading(true);
+    setError(null);
+    
     try {
-      setIsLoading(true);
-
-      if (bankAccounts.length === 0) {
-        toast.error('No bank accounts found. Please add a bank account first.');
-        setIsLoading(false);
-        return;
-      }
-
-      // Fetch bank books for FPO
-      const bankBooks = await BankBookAPI.getBankBooks(fpoIdOfUser);
+      const response = await fetch(`/api/ledger/ledgerAccount?fpo_id=${fpoId}&group_name=Bank Accounts`);
       
-      if (bankBooks.length === 0) {
-        // No bank books exist, show bank selection to create one
-        setShowBankSelection(true);
-        toast.info('No bank books found. Please select a bank account to create a bank book.');
-      } else if (bankBooks.length === 1) {
-        // Only one bank book, select it automatically
-        const bankBookWithAccount = {
-          ...bankBooks[0],
-          bankAccount: bankAccounts.find(acc => acc.id === bankBooks[0].bankAccountId)
-        };
-        await selectBankBook(bankBookWithAccount);
-      } else {
-        // Multiple bank books, show selection modal
-        setShowBankSelection(true);
+      if (!response.ok) {
+        const errorData: APIError = await response.json();
+        throw new Error(errorData.details || errorData.error || 'Failed to fetch bank accounts');
       }
-    } catch (error) {
-      console.error('Error initializing page:', error);
-      toast.error('Failed to load bank book data');
+      
+      const data: LedgerAccount[] = await response.json();
+      setBankAccounts(data);
+      
+      // Auto-select first account if only one exists
+      if (data.length === 1) {
+        setSelectedAccount(data[0]);
+        await loadLedgerStatement(data[0].id);
+      } else if (data.length === 0) {
+        toast.info('No bank accounts found. Please add a bank account first.');
+      }
+      
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'An unexpected error occurred';
+      setError(errorMessage);
+      console.error('Error fetching bank accounts:', err);
+      toast.error(`Failed to fetch bank accounts: ${errorMessage}`);
     } finally {
       setIsLoading(false);
     }
-  }, [bankAccounts, fpoIdOfUser]);
+  }, [fpoId]);
 
-  const selectBankBook = async (bankBook: BankBook) => {
+  // Load ledger statement for selected account
+  const loadLedgerStatement = async (ledgerId: string, start?: Date, end?: Date) => {
+    setIsLoadingStatement(true);
     try {
-      setSelectedBankBook(bankBook);
-      await loadBankBookEntries(bankBook.id);
-      setShowBankSelection(false);
-      toast.success(`Bank book loaded for ${bankBook.bankAccount?.bankName}`);
+      const params = new URLSearchParams({
+        ledgerAccountId: ledgerId
+      });
+      
+      if (start) {
+        params.append('startDate', start.toISOString().split('T')[0]);
+      }
+      if (end) {
+        params.append('endDate', end.toISOString().split('T')[0]);
+      }
+
+      console.log('Fetching statement with params:', params.toString());
+
+      const response = await fetch(`/api/ledger/ledger-entries/statement?${params.toString()}`);
+      
+      if (!response.ok) {
+        const errorData: APIError = await response.json();
+        throw new Error(errorData.details || errorData.error || 'Failed to fetch statement');
+      }
+      
+      const data: LedgerStatement = await response.json();
+      console.log('Statement data received:', data);
+      
+      setLedgerStatement(data);
+      setFilteredEntries(data.statement);
     } catch (error) {
-      console.error('Error selecting bank book:', error);
-      toast.error('Failed to load bank book entries');
+      console.error('Error loading statement:', error);
+      toast.error('Failed to load bank account statement');
+      setLedgerStatement(null);
+      setFilteredEntries([]);
+    } finally {
+      setIsLoadingStatement(false);
     }
   };
 
-  const handleBankSelection = async (bankAccount: BankAccount) => {
-    if (!fpoIdOfUser) {
-      toast.error('FPO ID not found. Please log in again.');
+  // Initialize page
+  useEffect(() => {
+    if (fpoId) {
+      fetchBankAccounts();
+    }
+  }, [fpoId, fetchBankAccounts]);
+
+  // Apply filters
+  useEffect(() => {
+    if (!ledgerStatement) {
+      setFilteredEntries([]);
       return;
     }
 
-    try {
-      // Check if bank book exists for this account
-      const bankBooks = await BankBookAPI.getBankBooks(fpoIdOfUser);
-      const existingBankBook = bankBooks.find((bb: BankBook) => bb.bankAccountId === bankAccount.id);
-
-      if (existingBankBook) {
-        const bankBookWithAccount = {
-          ...existingBankBook,
-          bankAccount: bankAccount
-        };
-        await selectBankBook(bankBookWithAccount);
-      } else {
-        // Create new bank book
-        const newBankBook = await BankBookAPI.createBankBook({
-          bankAccountId: bankAccount.id,
-          fpoId: fpoIdOfUser,
-          openingBalance: bankAccount.currentBalance || 0,
-          openingDate: new Date().toISOString().split('T')[0]
-        });
-        
-        const bankBookWithAccount = {
-          ...newBankBook,
-          bankAccount: bankAccount
-        };
-        
-        await selectBankBook(bankBookWithAccount);
-        toast.success('Bank book created successfully');
-      }
-    } catch (error) {
-      console.error('Error handling bank selection:', error);
-      toast.error('Failed to create or load bank book');
-    }
-  };
-
-  const loadBankBookEntries = async (bankBookId: string, start?: string, end?: string) => {
-    try {
-      const statement = await BankBookAPI.getStatement(bankBookId, start, end);
-      setEntries(statement.entries);
-      setFilteredEntries(statement.entries);
-    } catch (error) {
-      console.error('Error loading entries:', error);
-      toast.error('Failed to load bank book entries');
-    }
-  };
-
-  // Initialize page - moved hook to top level
-  useEffect(() => {
-    if (!bankAccountsLoading && !bankAccountsError && fpoIdOfUser) {
-      initializeBankBook();
-    }
-  }, [bankAccountsLoading, bankAccountsError, bankAccounts, initializeBankBook, fpoIdOfUser]);
-
-  // Apply filters - moved hook to top level
-  useEffect(() => {
-    let filtered = [...entries];
+    let filtered = [...ledgerStatement.statement];
 
     // Search filter
     if (searchTerm) {
       const lowercaseSearch = searchTerm.toLowerCase();
-      filtered = filtered.filter(entry =>
-        entry.primaryDescription?.toLowerCase().includes(lowercaseSearch) ||
-        entry.secondaryDescription?.toLowerCase().includes(lowercaseSearch) ||
-        entry.additionalInfo?.toLowerCase().includes(lowercaseSearch) ||
-        entry.partyName?.toLowerCase().includes(lowercaseSearch) ||
-        entry.documentNumber?.toLowerCase().includes(lowercaseSearch) ||
-        entry.chequeNumber?.toLowerCase().includes(lowercaseSearch) ||
-        entry.referenceNumber?.toLowerCase().includes(lowercaseSearch)
+      filtered = filtered.filter(item =>
+        item.entry.primaryDescription?.toLowerCase().includes(lowercaseSearch) ||
+        item.entry.secondaryDescription?.toLowerCase().includes(lowercaseSearch) ||
+        item.entry.referenceDescription?.toLowerCase().includes(lowercaseSearch) ||
+        item.entry.documentNumber?.toLowerCase().includes(lowercaseSearch) ||
+        item.entry.documentType?.toLowerCase().includes(lowercaseSearch)
       );
     }
 
-    // Date filters
-    if (startDate) {
-      filtered = filtered.filter(entry => new Date(entry.date) >= new Date(startDate));
-    }
-    if (endDate) {
-      filtered = filtered.filter(entry => new Date(entry.date) <= new Date(endDate));
-    }
-
-    // Transaction type filter
-    if (transactionTypeFilter && transactionTypeFilter !== 'all') {
-      filtered = filtered.filter(entry => entry.transactionType === transactionTypeFilter);
+    // Document type filter
+    if (documentTypeFilter && documentTypeFilter !== 'all') {
+      filtered = filtered.filter(item => item.entry.documentType === documentTypeFilter);
     }
 
     // Entry type filter (Dr/Cr)
     if (entryTypeFilter && entryTypeFilter !== 'all') {
-      filtered = filtered.filter(entry => entry.type === entryTypeFilter);
+      filtered = filtered.filter(item => item.entry.type === entryTypeFilter);
     }
 
     setFilteredEntries(filtered);
-  }, [entries, searchTerm, startDate, endDate, transactionTypeFilter, entryTypeFilter]);
+  }, [ledgerStatement, searchTerm, documentTypeFilter, entryTypeFilter]);
+
+  // Handle account selection
+  const handleAccountSelect = async (accountId: string) => {
+    const account = bankAccounts.find(acc => acc.id === accountId);
+    if (account) {
+      setSelectedAccount(account);
+      await loadLedgerStatement(account.id, startDate, endDate);
+      toast.success(`Selected ${account.name}`);
+    }
+  };
+
+  // Calculate totals from filtered entries
+  const calculateTotals = () => {
+    const totalDebit = filteredEntries.reduce((sum, item) => 
+      item.entry.type === 'Dr' ? sum + item.entry.amount : sum, 0
+    );
+    const totalCredit = filteredEntries.reduce((sum, item) => 
+      item.entry.type === 'Cr' ? sum + item.entry.amount : sum, 0
+    );
+    return { totalDebit, totalCredit };
+  };
 
   const formatAmount = (amount: number) => {
     return new Intl.NumberFormat('en-IN', {
       style: 'currency',
       currency: 'INR',
       minimumFractionDigits: 2,
-    }).format(amount);
+    }).format(Math.abs(amount));
   };
 
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-IN');
+    return new Date(dateString).toLocaleDateString('en-IN', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric'
+    });
+  };
+
+  const formatAccountNumber = (accountNumber: string) => {
+    if (!accountNumber) return '';
+    if (accountNumber.length <= 4) return accountNumber;
+    return `****${accountNumber.slice(-4)}`;
   };
 
   const handleRefresh = async () => {
-    if (selectedBankBook) {
-      await loadBankBookEntries(selectedBankBook.id, startDate, endDate);
-      await refetchBankAccounts(); // Refresh bank accounts as well
-      toast.success('Bank book refreshed');
+    await fetchBankAccounts();
+    if (selectedAccount) {
+      await loadLedgerStatement(selectedAccount.id, startDate, endDate);
     }
+    toast.success('Bank book refreshed');
   };
 
   const handleExport = async () => {
-    if (selectedBankBook) {
-      try {
-        await BankBookAPI.exportStatementAsJSON(selectedBankBook.id, startDate, endDate);
-        toast.success('Bank book exported successfully');
-      } catch (error) {
-        toast.error('Failed to export bank book');
-      }
+    if (!selectedAccount || !ledgerStatement) return;
+    
+    try {
+      // TODO: Implement PDF export functionality
+      toast.info('Export functionality coming soon');
+    } catch (error) {
+      toast.error('Failed to export bank statement');
     }
   };
 
   const clearFilters = () => {
     setSearchTerm('');
-    setStartDate('');
-    setEndDate('');
-    setTransactionTypeFilter('all');
+    setStartDate(undefined);
+    setEndDate(undefined);
+    setDocumentTypeFilter('all');
     setEntryTypeFilter('all');
+    if (selectedAccount) {
+      loadLedgerStatement(selectedAccount.id);
+    }
+  };
+
+  // Get unique document types from statement
+  const getDocumentTypes = () => {
+    if (!ledgerStatement) return [];
+    const types = new Set(ledgerStatement.statement.map(item => item.entry.documentType));
+    return Array.from(types).filter(Boolean);
+  };
+
+  // Format document type for display
+  const formatDocumentType = (type: string) => {
+    return type.split('_').map(word => 
+      word.charAt(0).toUpperCase() + word.slice(1)
+    ).join(' ');
   };
 
   // Early return for missing FPO ID
-  if (!fpoIdOfUser) {
+  if (!fpoId) {
     return (
       <div className="container mx-auto p-6">
         <Alert variant="destructive">
@@ -314,29 +347,29 @@ const BankBookPage: React.FC = () => {
   }
 
   // Loading state
-  if (isLoading || bankAccountsLoading) {
+  if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto"></div>
-          <p className="mt-4 text-muted-foreground">Loading bank book...</p>
+          <p className="mt-4 text-muted-foreground">Loading bank accounts...</p>
         </div>
       </div>
     );
   }
 
   // Error state
-  if (bankAccountsError) {
+  if (error) {
     return (
       <div className="container mx-auto p-6">
         <Alert variant="destructive">
           <AlertCircle className="h-4 w-4" />
           <AlertDescription>
-            Error loading bank accounts: {bankAccountsError}
+            Error loading bank accounts: {error}
           </AlertDescription>
         </Alert>
         <div className="mt-4">
-          <Button onClick={refetchBankAccounts}>
+          <Button onClick={fetchBankAccounts}>
             <RefreshCw className="w-4 h-4 mr-2" />
             Retry
           </Button>
@@ -353,9 +386,9 @@ const BankBookPage: React.FC = () => {
           <Building2 className="w-16 h-16 mx-auto text-muted-foreground mb-4" />
           <h2 className="text-2xl font-bold mb-2">No Bank Accounts Found</h2>
           <p className="text-muted-foreground mb-6">
-            You need to add at least one bank account before creating a bank book.
+            You need to add at least one bank account before viewing the bank book.
           </p>
-          <Button onClick={() => {/* Navigate to bank accounts page */}}>
+          <Button onClick={() => window.location.href = '/add-bank-account'}>
             <Plus className="w-4 h-4 mr-2" />
             Add Bank Account
           </Button>
@@ -363,6 +396,8 @@ const BankBookPage: React.FC = () => {
       </div>
     );
   }
+
+  const { totalDebit, totalCredit } = calculateTotals();
 
   return (
     <div className="container mx-auto p-6 space-y-6">
@@ -373,34 +408,61 @@ const BankBookPage: React.FC = () => {
             <Building2 className="w-8 h-8" />
             Bank Book
           </h1>
-          {selectedBankBook?.bankAccount && (
+          {selectedAccount && (
             <div className="mt-1 space-y-1">
               <p className="text-muted-foreground">
-                {selectedBankBook.bankAccount.bankName} - {BankAccountsService.formatAccountNumber(selectedBankBook.bankAccount.accountNumber)}
+                {selectedAccount.bankDetails?.BankName} - {formatAccountNumber(selectedAccount.bankDetails?.accountNumber || '')}
               </p>
               <p className="text-sm text-muted-foreground">
-                Account Holder: {selectedBankBook.bankAccount.accountHolderName}
+                Account Holder: {selectedAccount.bankDetails?.accountHolderName}
               </p>
             </div>
           )}
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => setShowBankSelection(true)}>
-            <Building2 className="w-4 h-4 mr-2" />
-            Change Bank
-          </Button>
-          <Button variant="outline" onClick={handleRefresh}>
-            <RefreshCw className="w-4 h-4 mr-2" />
+          <Button variant="outline" onClick={handleRefresh} disabled={isLoadingStatement}>
+            <RefreshCw className={`w-4 h-4 mr-2 ${isLoadingStatement ? 'animate-spin' : ''}`} />
             Refresh
           </Button>
-          <Button variant="outline" onClick={handleExport}>
+          <Button variant="outline" onClick={handleExport} disabled={!selectedAccount || !ledgerStatement}>
             <Download className="w-4 h-4 mr-2" />
             Export
+          </Button>
+          <Button onClick={() => window.location.href = '/add-bank-account'}>
+            <Plus className="w-4 h-4 mr-2" />
+            Add Account
           </Button>
         </div>
       </div>
 
-      {selectedBankBook && (
+      {/* Account Selection */}
+      {bankAccounts.length > 1 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Select Bank Account</CardTitle>
+            <CardDescription>Choose a bank account to view transactions</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Select 
+              value={selectedAccount?.id || ''} 
+              onValueChange={handleAccountSelect}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select a bank account" />
+              </SelectTrigger>
+              <SelectContent>
+                {bankAccounts.map((account) => (
+                  <SelectItem key={account.id} value={account.id}>
+                    {account.name} - {account.bankDetails?.BankName}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </CardContent>
+        </Card>
+      )}
+
+      {selectedAccount && (
         <>
           {/* Balance Summary */}
           <Card>
@@ -415,25 +477,31 @@ const BankBookPage: React.FC = () => {
                 <div className="text-center">
                   <p className="text-sm text-muted-foreground">Opening Balance</p>
                   <p className="text-2xl font-bold">
-                    {formatAmount(selectedBankBook.openingBalance)}
+                    {formatAmount(selectedAccount.openingBalance)}
                   </p>
+                  <Badge variant="outline" className="mt-1">
+                    {selectedAccount.balanceType}
+                  </Badge>
                 </div>
                 <div className="text-center">
                   <p className="text-sm text-muted-foreground">Current Balance</p>
-                  <p className={`text-2xl font-bold ${selectedBankBook.currentBalance >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                    {formatAmount(selectedBankBook.currentBalance)}
+                  <p className={`text-2xl font-bold ${ledgerStatement?.currentBalance.balanceType === 'Dr' ? 'text-green-600' : 'text-red-600'}`}>
+                    {ledgerStatement ? formatAmount(ledgerStatement.currentBalance.balance) : formatAmount(selectedAccount.openingBalance)}
                   </p>
+                  <Badge variant="outline" className="mt-1">
+                    {ledgerStatement ? ledgerStatement.currentBalance.balanceType : selectedAccount.balanceType}
+                  </Badge>
                 </div>
                 <div className="text-center">
                   <p className="text-sm text-muted-foreground">Opening Date</p>
                   <p className="text-lg font-semibold">
-                    {formatDate(selectedBankBook.openingDate)}
+                    {formatDate(selectedAccount.openingDate)}
                   </p>
                 </div>
                 <div className="text-center">
                   <p className="text-sm text-muted-foreground">Account Type</p>
-                  <Badge variant={selectedBankBook.bankAccount?.isPrimary ? 'default' : 'secondary'}>
-                    {selectedBankBook.bankAccount?.isPrimary ? 'Primary' : 'Secondary'}
+                  <Badge variant="secondary">
+                    {selectedAccount.bankDetails?.accountType || 'Regular'}
                   </Badge>
                 </div>
               </div>
@@ -470,35 +538,45 @@ const BankBookPage: React.FC = () => {
                 </div>
                 
                 <div>
-                  <Label htmlFor="start-date">Start Date</Label>
-                  <Input
-                    id="start-date"
-                    type="date"
-                    value={startDate}
-                    onChange={(e) => setStartDate(e.target.value)}
+                  <DatePicker
+                    date={startDate}
+                    onDateChange={(date) => {
+                      setStartDate(date);
+                      if (selectedAccount && date) {
+                        loadLedgerStatement(selectedAccount.id, date, endDate);
+                      }
+                    }}
+                    label="Start Date"
+                    placeholder="Select start date"
                   />
                 </div>
                 
                 <div>
-                  <Label htmlFor="end-date">End Date</Label>
-                  <Input
-                    id="end-date"
-                    type="date"
-                    value={endDate}
-                    onChange={(e) => setEndDate(e.target.value)}
+                  <DatePicker
+                    date={endDate}
+                    onDateChange={(date) => {
+                      setEndDate(date);
+                      if (selectedAccount && date) {
+                        loadLedgerStatement(selectedAccount.id, startDate, date);
+                      }
+                    }}
+                    label="End Date"
+                    placeholder="Select end date"
                   />
                 </div>
 
                 <div>
-                  <Label htmlFor="transaction-type">Transaction Type</Label>
-                  <Select value={transactionTypeFilter} onValueChange={setTransactionTypeFilter}>
+                  <Label htmlFor="document-type">Document Type</Label>
+                  <Select value={documentTypeFilter} onValueChange={setDocumentTypeFilter}>
                     <SelectTrigger>
                       <SelectValue placeholder="All Types" />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">All Types</SelectItem>
-                      {BankBookAPI.getTransactionTypes().map((type) => (
-                        <SelectItem key={type} value={type}>{type}</SelectItem>
+                      {getDocumentTypes().map((type) => (
+                        <SelectItem key={type} value={type}>
+                          {formatDocumentType(type)}
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -522,19 +600,16 @@ const BankBookPage: React.FC = () => {
           </Card>
 
           {/* Summary Stats */}
-          {filteredEntries.length > 0 && (
+          {ledgerStatement && (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <Card>
                 <CardContent className="p-4">
                   <div className="flex items-center gap-2">
                     <ArrowUpCircle className="w-5 h-5 text-green-600" />
                     <div>
-                      <p className="text-sm text-muted-foreground">Total Credits</p>
+                      <p className="text-sm text-muted-foreground">Total Debits</p>
                       <p className="text-lg font-semibold text-green-600">
-                        {formatAmount(filteredEntries
-                          .filter(e => e.type === 'Cr')
-                          .reduce((sum, e) => sum + e.amount, 0)
-                        )}
+                        {formatAmount(totalDebit)}
                       </p>
                     </div>
                   </div>
@@ -546,12 +621,9 @@ const BankBookPage: React.FC = () => {
                   <div className="flex items-center gap-2">
                     <ArrowDownCircle className="w-5 h-5 text-red-600" />
                     <div>
-                      <p className="text-sm text-muted-foreground">Total Debits</p>
+                      <p className="text-sm text-muted-foreground">Total Credits</p>
                       <p className="text-lg font-semibold text-red-600">
-                        {formatAmount(filteredEntries
-                          .filter(e => e.type === 'Dr')
-                          .reduce((sum, e) => sum + e.amount, 0)
-                        )}
+                        {formatAmount(totalCredit)}
                       </p>
                     </div>
                   </div>
@@ -580,7 +652,7 @@ const BankBookPage: React.FC = () => {
               <div className="flex items-center justify-between">
                 <CardTitle>Bank Book Entries</CardTitle>
                 <Badge variant="secondary">
-                  {filteredEntries.length} of {entries.length} entries
+                  {filteredEntries.length} {ledgerStatement && `of ${ledgerStatement.statement.length}`} entries
                 </Badge>
               </div>
               <CardDescription>
@@ -588,105 +660,117 @@ const BankBookPage: React.FC = () => {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Date</TableHead>
-                      <TableHead>Description</TableHead>
-                      <TableHead>Party</TableHead>
-                      <TableHead>Type</TableHead>
-                      <TableHead className="text-right">Debit</TableHead>
-                      <TableHead className="text-right">Credit</TableHead>
-                      <TableHead className="text-right">Balance</TableHead>
-                      <TableHead>Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredEntries.length === 0 ? (
+              {isLoadingStatement ? (
+                <div className="text-center py-8">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
+                  <p className="mt-2 text-muted-foreground">Loading statement...</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
                       <TableRow>
-                        <TableCell colSpan={8} className="text-center py-8">
-                          <div className="text-muted-foreground">
-                            {entries.length === 0 ? 'No entries found' : 'No entries match the current filters'}
-                          </div>
-                        </TableCell>
+                        <TableHead>Date</TableHead>
+                        <TableHead>Description</TableHead>
+                        <TableHead>Document Type</TableHead>
+                        <TableHead>Doc No.</TableHead>
+                        <TableHead className="text-right">Debit</TableHead>
+                        <TableHead className="text-right">Credit</TableHead>
+                        <TableHead className="text-right">Balance</TableHead>
+                        <TableHead>Actions</TableHead>
                       </TableRow>
-                    ) : (
-                      filteredEntries.map((entry) => (
-                        <TableRow key={entry.id}>
-                          <TableCell>{formatDate(entry.date)}</TableCell>
-                          <TableCell>
-                            <div>
-                              <p className="font-medium">{entry.transactionType}</p>
-                              {entry.additionalInfo && (
-                                <p className="text-sm text-muted-foreground">
-                                  {entry.additionalInfo}
-                                </p>
-                              )}
-                              {entry.documentNumber && (
-                                <p className="text-xs text-muted-foreground">
-                                  Doc: {entry.documentNumber}
-                                </p>
-                              )}
-                            </div>
-                          </TableCell>
-                          <TableCell>{entry.partyName || '-'}</TableCell>
-                          <TableCell>
-                            <Badge 
-                              variant={entry.type === 'Dr' ? 'default' : 'secondary'}
-                              className={entry.type === 'Dr' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' : 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'}
-                            >
-                              {entry.type === 'Dr' ? (
-                                <ArrowUpCircle className="w-3 h-3 mr-1" />
-                              ) : (
-                                <ArrowDownCircle className="w-3 h-3 mr-1" />
-                              )}
-                              {entry.type}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-right font-medium">
-                            {entry.type === 'Dr' ? formatAmount(entry.amount) : '-'}
-                          </TableCell>
-                          <TableCell className="text-right font-medium">
-                            {entry.type === 'Cr' ? formatAmount(entry.amount) : '-'}
-                          </TableCell>
-                          <TableCell className="text-right font-medium">
-                            <span className={entry.runningBalance && entry.runningBalance >= 0 ? 'text-green-600' : 'text-red-600'}>
-                              {entry.runningBalance ? formatAmount(entry.runningBalance) : '-'}
-                            </span>
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex gap-1">
-                              <Button size="sm" variant="ghost" title="View Details">
-                                <Eye className="w-4 h-4" />
-                              </Button>
-                              <Button size="sm" variant="ghost" title="Edit Entry">
-                                <Edit className="w-4 h-4" />
-                              </Button>
-                              <Button size="sm" variant="ghost" title="Delete Entry">
-                                <Trash2 className="w-4 h-4" />
-                              </Button>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredEntries.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={8} className="text-center py-8">
+                            <div className="text-muted-foreground">
+                              {ledgerStatement?.statement.length === 0 ? 'No entries found' : 'No entries match the current filters'}
                             </div>
                           </TableCell>
                         </TableRow>
-                      ))
-                    )}
-                  </TableBody>
-                </Table>
-              </div>
+                      ) : (
+                        filteredEntries.map((item) => (
+                          <TableRow key={item.entry.id}>
+                            <TableCell className="whitespace-nowrap">{formatDate(item.entry.date)}</TableCell>
+                            <TableCell>
+                              <div className="max-w-xs">
+                                <p className="font-medium">{item.entry.primaryDescription}</p>
+                                {item.entry.secondaryDescription && (
+                                  <p className="text-sm text-muted-foreground truncate">
+                                    {item.entry.secondaryDescription}
+                                  </p>
+                                )}
+                                {item.entry.referenceDescription && (
+                                  <p className="text-xs text-muted-foreground truncate">
+                                    Ref: {item.entry.referenceDescription}
+                                  </p>
+                                )}
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant="outline" className={item.entry.isOpeningBalance ? 'bg-blue-50' : ''}>
+                                {formatDocumentType(item.entry.documentType)}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="font-mono text-sm">
+                              {item.entry.documentNumber || '-'}
+                            </TableCell>
+                            <TableCell className="text-right font-medium text-green-600">
+                              {item.entry.type === 'Dr' ? formatAmount(item.entry.amount) : '-'}
+                            </TableCell>
+                            <TableCell className="text-right font-medium text-red-600">
+                              {item.entry.type === 'Cr' ? formatAmount(item.entry.amount) : '-'}
+                            </TableCell>
+                            <TableCell className="text-right font-medium">
+                              <div className="flex flex-col items-end">
+                                <span className={item.runningBalanceType === 'Dr' ? 'text-green-600' : 'text-red-600'}>
+                                  {formatAmount(item.runningBalance)}
+                                </span>
+                                <Badge variant="outline" className="text-xs mt-1">
+                                  {item.runningBalanceType}
+                                </Badge>
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex gap-1">
+                                <Button 
+                                  size="sm" 
+                                  variant="ghost" 
+                                  title="View Details"
+                                  disabled={item.entry.isOpeningBalance}
+                                >
+                                  <Eye className="w-4 h-4" />
+                                </Button>
+                                <Button 
+                                  size="sm" 
+                                  variant="ghost" 
+                                  title="Edit Entry"
+                                  disabled={item.entry.isOpeningBalance}
+                                >
+                                  <Edit className="w-4 h-4" />
+                                </Button>
+                                <Button 
+                                  size="sm" 
+                                  variant="ghost" 
+                                  title="Delete Entry"
+                                  disabled={item.entry.isOpeningBalance}
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
             </CardContent>
           </Card>
         </>
       )}
-
-      {/* Bank Selection Modal */}
-      <BankSelectionModal
-        isOpen={showBankSelection}
-        onClose={() => setShowBankSelection(false)}
-        bankAccounts={bankAccounts}
-        onSelectBank={handleBankSelection}
-        isLoading={isLoading}
-      />
     </div>
   );
 };
