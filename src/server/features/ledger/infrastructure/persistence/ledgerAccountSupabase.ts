@@ -113,6 +113,9 @@ export async function createNewLedgerAccount(ledgerAccountParameter: LedgerAccou
 
         if (accountError) {
             console.error("Error creating new ledger account", accountError);
+            if (accountError.stack){
+                console.error(accountError.stack);
+            }
             throw new Error(accountError.message);
         }
 

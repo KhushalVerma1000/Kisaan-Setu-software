@@ -77,6 +77,7 @@ export async function POST(request: NextRequest) {
             gstNumber: body.gstNumber?.trim() || undefined,
             openingDate: openingDate,
             state: body.state || undefined,
+            bankDetails:body.bankDetails || undefined
         };
 
         const newLedgerAccount = await createNewLedgerAccount(newLedgerAccountData);
