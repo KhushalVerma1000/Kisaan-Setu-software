@@ -20,6 +20,9 @@ export interface LedgerAccountInterface {
     openingDate?: Date;
     state: string; 
     bankDetails?: bankDetails;
+
+     isSystemLedger?: boolean;
+    ledgerCode?: string | null;
 }
 
 export class LedgerAccount implements LedgerAccountInterface {
@@ -35,11 +38,18 @@ export class LedgerAccount implements LedgerAccountInterface {
         public fpoId?: string,
         public gstNumber?: string,
         public openingDate?: Date,
-        public bankDetails?: bankDetails
+        public bankDetails?: bankDetails,
+        public isSystemLedger: boolean = false, 
+        public ledgerCode?: string | null  
     ) {
         // Validate bankDetails is only set for Bank Accounts group
         if (bankDetails && groupName !== 'Bank Accounts') {
             throw new Error('bankDetails can only be set for ledgers in "Bank Accounts" group');
+        }
+
+           // Validate system ledgers have codes
+        if (isSystemLedger && !ledgerCode) {
+            throw new Error('System ledgers must have a ledger_code');
         }
     }
 
@@ -69,7 +79,9 @@ export class LedgerAccount implements LedgerAccountInterface {
             fpo_id: this.fpoId,
             gst_number: this.gstNumber,
             opening_date: this.openingDate,
-            state: this.state
+            state: this.state,
+             is_system_ledger: this.isSystemLedger, 
+            ledger_code: this.ledgerCode  
         };
 
         // Only include bank_details if it's a Bank Account (JSONB field, no conversion needed)
@@ -98,7 +110,9 @@ export class LedgerAccount implements LedgerAccountInterface {
             ledgerAccountData.fpoId,
             ledgerAccountData.gstNumber,
             ledgerAccountData.openingDate,
-            ledgerAccountData.bankDetails
+            ledgerAccountData.bankDetails,
+               ledgerAccountData.isSystemLedger || false, 
+            ledgerAccountData.ledgerCode || null  
         );
     }
 
@@ -123,10 +137,28 @@ export class LedgerAccount implements LedgerAccountInterface {
             dbRow.fpo_id,
             dbRow.gst_number,
             dbRow.opening_date ? new Date(dbRow.opening_date) : undefined,
-            bankDetails
+            bankDetails,
+            dbRow.is_system_ledger || false, 
+            dbRow.ledger_code || null  
         );
     }
 
+      // NEW METHOD: Check if this is a system ledger
+    isSystem(): boolean {
+        return this.isSystemLedger === true;
+    }
+
+    // NEW METHOD: Check if this ledger can be deleted
+    canDelete(): boolean {
+        return !this.isSystemLedger;
+    }
+
+    // NEW METHOD: Check if this ledger can be renamed
+    canRename(): boolean {
+        // System ledgers can be renamed by users if needed
+        // But the code remains constant for application logic
+        return true;
+    }
     // Helper method to get bank details summary
     getBankDetailsSummary(): string | null {
         if (!this.isBankAccount() || !this.bankDetails) {

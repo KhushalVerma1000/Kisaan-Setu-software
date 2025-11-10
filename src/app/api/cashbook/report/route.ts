@@ -1,43 +1,59 @@
-
 // /app/api/cashbook/report/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import { getCashBook } from '@/server/features/cashbookSystem/infrastructure/persistence/CashBookSupabase';
-import { getCashBookEntries, getCashFlowSummary } from '@/server/features/cashbookSystem/infrastructure/persistence/CashBookEntrySupabase';
+import { getAllUserAssociatedLedgerAccount } from '@/server/features/ledger/infrastructure/persistence/ledgerAccountSupabase';
+import { getLedgerWithStatement } from '@/server/features/ledger/infrastructure/persistence/ledgerEntrySupabase';
 
-// GET /api/cashbook/report - Get cashbook report with running balance
+// GET /api/cashbook/report - Get cash-in-hand ledger report with running balance
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const cashBookId = searchParams.get('cashBookId');
     const fpoId = searchParams.get('fpoId');
+    const ledgerAccountId = searchParams.get('ledgerAccountId');
     const startDate = searchParams.get('startDate');
     const endDate = searchParams.get('endDate');
     const reportType = searchParams.get('type') || 'statement'; // 'statement' or 'summary'
 
-    // Need either cashBookId or fpoId
-    if (!cashBookId && !fpoId) {
+    // Need either ledgerAccountId or fpoId
+    if (!ledgerAccountId && !fpoId) {
       return NextResponse.json(
-        { error: 'Either cashBookId or fpoId is required' },
+        { error: 'Either ledgerAccountId or fpoId is required' },
         { status: 400 }
       );
     }
 
-    let targetCashBookId = cashBookId;
+    let targetLedgerAccountId: string | null = ledgerAccountId;
 
-    // If fpoId provided, get cashbook
-    if (!targetCashBookId && fpoId) {
-      const cashbook = await getCashBook()(fpoId);
-      if (!cashbook) {
+    // If only fpoId provided, get the Cash-in-Hand ledger account
+    if (!targetLedgerAccountId && fpoId) {
+      const cashAccounts = await getAllUserAssociatedLedgerAccount(fpoId, 'Cash-in-Hand');
+      
+      if (!cashAccounts || cashAccounts.length === 0) {
         return NextResponse.json(
-          { error: 'Cashbook not found for FPO' },
+          { error: 'Cash-in-Hand ledger account not found for FPO' },
           { status: 404 }
         );
       }
-      targetCashBookId = cashbook.id!;
+      
+      // Get the first Cash-in-Hand account
+      targetLedgerAccountId = cashAccounts[0].id!;
+    }
+
+    if (!targetLedgerAccountId) {
+      return NextResponse.json(
+        { error: 'Cash ledger account not found' },
+        { status: 404 }
+      );
     }
 
     const startDateObj = startDate ? new Date(startDate) : undefined;
     const endDateObj = endDate ? new Date(endDate) : undefined;
+
+    // Get ledger with statement using the persistence function
+    const ledgerData = await getLedgerWithStatement(
+      targetLedgerAccountId,
+      startDateObj,
+      endDateObj
+    );
 
     if (reportType === 'summary') {
       // Return summary report
@@ -48,14 +64,29 @@ export async function GET(request: NextRequest) {
         );
       }
 
-      const summary = await getCashFlowSummary(targetCashBookId!, startDateObj, endDateObj);
-      
-      if (!summary) {
-        return NextResponse.json(
-          { error: 'Failed to generate summary report' },
-          { status: 500 }
-        );
-      }
+      // Calculate summary metrics
+      const cashIn = ledgerData.statement
+        .filter(s => s.entry.type === 'Dr' && !s.entry.isOpeningBalance)
+        .reduce((sum, s) => sum + s.entry.amount, 0);
+
+      const cashOut = ledgerData.statement
+        .filter(s => s.entry.type === 'Cr' && !s.entry.isOpeningBalance)
+        .reduce((sum, s) => sum + s.entry.amount, 0);
+
+      const summary = {
+        openingBalance: {
+          amount: ledgerData.ledgerAccount.openingBalance,
+          type: ledgerData.ledgerAccount.balanceType
+        },
+        closingBalance: {
+          amount: ledgerData.currentBalance.balance,
+          type: ledgerData.currentBalance.balanceType
+        },
+        totalCashIn: cashIn,
+        totalCashOut: cashOut,
+        netCashFlow: cashIn - cashOut,
+        entryCount: ledgerData.statement.filter(s => !s.entry.isOpeningBalance).length
+      };
 
       return NextResponse.json({ 
         success: true, 
@@ -65,43 +96,23 @@ export async function GET(request: NextRequest) {
             startDate: startDateObj,
             endDate: endDateObj
           },
+          ledgerAccount: {
+            id: ledgerData.ledgerAccount.id,
+            name: ledgerData.ledgerAccount.name,
+            groupName: ledgerData.ledgerAccount.groupName
+          },
           ...summary
         }
       });
     } else {
-      if (!fpoId) {
-        return NextResponse.json(
-          { error: 'FPO ID is required for detailed statement' },
-          { status: 400 }
-        );
-      }
       // Return detailed statement with running balance
-      const cashbook = await getCashBook()(fpoId);
-      if (!cashbook) {
-        return NextResponse.json(
-          { error: 'Cashbook not found' },
-          { status: 404 }
-        );
-      }
+      const totalCashIn = ledgerData.statement
+        .filter(s => s.entry.type === 'Dr' && !s.entry.isOpeningBalance)
+        .reduce((sum, s) => sum + s.entry.amount, 0);
 
-      // Get entries and add them to cashbook
-      const entries = await getCashBookEntries(targetCashBookId!)(startDateObj, endDateObj);
-      cashbook.entries = entries;
-
-      // Get statement with running balance
-      const statement = cashbook.getStatementWithRunningBalance(startDateObj, endDateObj);
-    // console.log("========this is cashbook entry format =======",statement)
-
-      // Calculate summary metrics
-      const totalCashIn = entries
-        .filter(e => e.type === 'Dr' && !e.isOpeningBalance)
-        .reduce((sum, e) => sum + e.amount, 0);
-
-      const totalCashOut = entries
-        .filter(e => e.type === 'Cr' && !e.isOpeningBalance)
-        .reduce((sum, e) => sum + e.amount, 0);
-
-      const currentBalance = cashbook.getCurrentBalanceWithSign();
+      const totalCashOut = ledgerData.statement
+        .filter(s => s.entry.type === 'Cr' && !s.entry.isOpeningBalance)
+        .reduce((sum, s) => sum + s.entry.amount, 0);
 
       return NextResponse.json({ 
         success: true, 
@@ -111,21 +122,51 @@ export async function GET(request: NextRequest) {
             startDate: startDateObj,
             endDate: endDateObj
           },
-          openingBalance: cashbook.openingBalance,
-          currentBalance: currentBalance.balance,
-          isNegativeBalance: currentBalance.isNegative,
+          ledgerAccount: {
+            id: ledgerData.ledgerAccount.id,
+            name: ledgerData.ledgerAccount.name,
+            groupName: ledgerData.ledgerAccount.groupName
+          },
+          openingBalance: {
+            amount: ledgerData.ledgerAccount.openingBalance,
+            type: ledgerData.ledgerAccount.balanceType
+          },
+          currentBalance: {
+            amount: ledgerData.currentBalance.balance,
+            type: ledgerData.currentBalance.balanceType
+          },
           totalCashIn,
           totalCashOut,
           netCashFlow: totalCashIn - totalCashOut,
-          entryCount: entries.length,
-          statement
+          entryCount: ledgerData.statement.filter(s => !s.entry.isOpeningBalance).length,
+          statement: ledgerData.statement.map(s => ({
+            entry: {
+              id: s.entry.id,
+              date: s.entry.date,
+              amount: s.entry.amount,
+              type: s.entry.type,
+              primaryDescription: s.entry.primaryDescription,
+              secondaryDescription: s.entry.secondaryDescription,
+              referenceDescription: s.entry.referenceDescription,
+              ledgerReference: s.entry.ledgerReference,
+              documentNumber: s.entry.documentNumber,
+              documentType: s.entry.documentType,
+              documentId: s.entry.documentId,
+              isOpeningBalance: s.entry.isOpeningBalance
+            },
+            runningBalance: s.runningBalance,
+            runningBalanceType: s.runningBalanceType
+          }))
         }
       });
     }
   } catch (error) {
     console.error('Error in GET /api/cashbook/report:', error);
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { 
+        error: 'Internal server error',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      },
       { status: 500 }
     );
   }
