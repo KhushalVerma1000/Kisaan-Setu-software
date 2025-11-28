@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useAppDispatch, useAppSelector } from '@/store/hooks';
 import { fetchLedgerAccountsAsync, selectAllLedgerAccounts, selectLedgerAccountsLoading, selectLedgerAccountsError } from '@/store/slices/ledgerAccountSlice';
 import { LedgerAccount } from '@/server/features/ledger/core/entities/Ledger';
+import { SYSTEM_LEDGER_CODES } from '@/constants/systemLedgerCodes';
 import { toast } from 'react-toastify';
 import {
   Select,
@@ -15,81 +16,60 @@ import { Loader2, AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface LedgerAccountSelectProps {
-  /**
-   * The selected ledger account ID
-   */
   value?: string;
-  
-  /**
-   * Callback when selection changes
-   */
   onValueChange: (ledgerAccount: LedgerAccount | null) => void;
-  
-  /**
-   * Label for the select input
-   */
   label?: string;
-  
-  /**
-   * Placeholder text
-   */
   placeholder?: string;
-  
-  /**
-   * Whether the field is required
-   */
   required?: boolean;
-  
-  /**
-   * Whether the field is disabled
-   */
   disabled?: boolean;
-  
-  /**
-   * Custom className for styling
-   */
+  editable?: boolean; // NEW: Toggle between editable select and read-only display
   className?: string;
-  
-  /**
-   * Filter ledger accounts by balance type
-   */
   balanceType?: 'Dr' | 'Cr';
-  
-  /**
-   * Filter ledger accounts by group name
-   */
-  groupName?: string;
-  
-  /**
-   * Show error state
-   */
+  groupName?: string; // Deprecated: use groupNames instead
+  groupNames?: string[]; // Array of group names to filter
   error?: string;
-  
-  /**
-   * Size variant
-   */
   size?: 'sm' | 'md' | 'lg';
-  
-  /**
-   * Auto-fetch data on mount
-   */
   autoFetch?: boolean;
-
-  /**
-   * Show balance type in trigger
-   */
   showBalanceType?: boolean;
-
-  /**
-   * Show group name in dropdown
-   */
   showGroupName?: boolean;
-
-  /**
-   * Show opening balance in dropdown
-   */
   showOpeningBalance?: boolean;
+  hideCalculationLedgers?: boolean;
 }
+
+// System ledgers that users commonly use in manual voucher entries
+const TRANSACTIONAL_SYSTEM_LEDGERS = new Set<string>([
+  SYSTEM_LEDGER_CODES.CASH,
+  SYSTEM_LEDGER_CODES.PETTY_CASH,
+  SYSTEM_LEDGER_CODES.CAPITAL,
+  SYSTEM_LEDGER_CODES.DRAWINGS,
+  SYSTEM_LEDGER_CODES.FREIGHT,
+  SYSTEM_LEDGER_CODES.PACKING,
+  SYSTEM_LEDGER_CODES.LOADING,
+  SYSTEM_LEDGER_CODES.BANK_CHARGES,
+  SYSTEM_LEDGER_CODES.INTEREST_BANK,
+  SYSTEM_LEDGER_CODES.DISCOUNT_ALLOWED,
+  SYSTEM_LEDGER_CODES.DISCOUNT_RECEIVED,
+]);
+
+// System ledgers that should be HIDDEN from manual entry selection
+const CALCULATION_SYSTEM_LEDGERS = new Set<string>([
+  SYSTEM_LEDGER_CODES.SALES,
+  SYSTEM_LEDGER_CODES.SALES_RETURN,
+  SYSTEM_LEDGER_CODES.PURCHASE,
+  SYSTEM_LEDGER_CODES.PURCHASE_RETURN,
+  SYSTEM_LEDGER_CODES.GST_INPUT_CGST,
+  SYSTEM_LEDGER_CODES.GST_INPUT_SGST,
+  SYSTEM_LEDGER_CODES.GST_INPUT_IGST,
+  SYSTEM_LEDGER_CODES.GST_OUTPUT_CGST,
+  SYSTEM_LEDGER_CODES.GST_OUTPUT_SGST,
+  SYSTEM_LEDGER_CODES.GST_OUTPUT_IGST,
+  SYSTEM_LEDGER_CODES.TDS_PAYABLE,
+  SYSTEM_LEDGER_CODES.TCS_PAYABLE,
+  SYSTEM_LEDGER_CODES.TDS_RECEIVABLE,
+  SYSTEM_LEDGER_CODES.ROUNDING_OFF,
+  SYSTEM_LEDGER_CODES.PROFIT_LOSS,
+  SYSTEM_LEDGER_CODES.RETAINED_EARNINGS,
+]);
 
 export const LedgerAccountSelect: React.FC<LedgerAccountSelectProps> = ({
   value,
@@ -98,15 +78,18 @@ export const LedgerAccountSelect: React.FC<LedgerAccountSelectProps> = ({
   placeholder = "-- Select Ledger Account --",
   required = false,
   disabled = false,
+  editable = true, // NEW: Default to editable mode
   className,
   balanceType,
   groupName,
+  groupNames,
   error,
   size = 'md',
   autoFetch = true,
-  showBalanceType = true,
+  showBalanceType = false,
   showGroupName = true,
   showOpeningBalance = false,
+  hideCalculationLedgers = true,
 }) => {
   const dispatch = useAppDispatch();
   const ledgerAccounts = useAppSelector(selectAllLedgerAccounts);
@@ -132,16 +115,31 @@ export const LedgerAccountSelect: React.FC<LedgerAccountSelectProps> = ({
       account.id !== ''
     );
     
+    // Filter out calculation system ledgers if hideCalculationLedgers is true
+    if (hideCalculationLedgers) {
+      filtered = filtered.filter(account => {
+        if (!account.isSystemLedger || !account.ledgerCode) {
+          return true;
+        }
+        return TRANSACTIONAL_SYSTEM_LEDGERS.has(account.ledgerCode);
+      });
+    }
+    
     if (balanceType) {
       filtered = filtered.filter(account => account.balanceType === balanceType);
     }
     
-    if (groupName) {
+    // Handle both single groupName and multiple groupNames
+    if (groupNames && groupNames.length > 0) {
+      filtered = filtered.filter(account => 
+        account.groupName && groupNames.includes(account.groupName)
+      );
+    } else if (groupName) {
       filtered = filtered.filter(account => account.groupName === groupName);
     }
     
     return filtered.sort((a, b) => a.name.localeCompare(b.name));
-  }, [ledgerAccounts, balanceType, groupName]);
+  }, [ledgerAccounts, balanceType, groupName, groupNames, hideCalculationLedgers]);
 
   // Handle selection
   const handleValueChange = (accountId: string) => {
@@ -193,6 +191,78 @@ export const LedgerAccountSelect: React.FC<LedgerAccountSelectProps> = ({
     return text;
   };
 
+  // Get helper text for group filter
+  const getGroupFilterText = () => {
+    if (groupNames && groupNames.length > 0) {
+      return groupNames.length === 1 
+        ? `(${groupNames[0]} group)` 
+        : `(${groupNames.length} groups)`;
+    } else if (groupName) {
+      return `(${groupName} group)`;
+    }
+    return '';
+  };
+
+  // NEW: Render read-only view when editable is false
+  if (!editable) {
+    return (
+      <div className={cn("space-y-2", className)}>
+        {/* Label */}
+        {label && (
+          <Label className="text-sm font-medium text-muted-foreground">
+            {label}
+          </Label>
+        )}
+
+        {/* Read-only Display */}
+        <div className={cn(
+          "w-full px-3 py-2 border border-input bg-muted/30 rounded-md",
+          sizeClasses[size],
+          "flex items-center"
+        )}>
+          {loading ? (
+            <div className="flex items-center gap-2 text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              <span className="text-sm">Loading...</span>
+            </div>
+          ) : selectedAccount ? (
+            <div className="flex flex-col w-full min-w-0">
+              {/* Account name with balance type */}
+              <div className="flex items-center justify-between w-full">
+                <span className="font-medium truncate">
+                  {getDisplayText(selectedAccount)}
+                </span>
+                {showOpeningBalance && selectedAccount.openingBalance !== undefined && (
+                  <span className="text-xs text-muted-foreground ml-2">
+                    ₹{selectedAccount.openingBalance.toLocaleString()}
+                  </span>
+                )}
+              </div>
+              
+              {/* Group name as secondary info */}
+              {showGroupName && selectedAccount.groupName && (
+                <span className="text-xs text-muted-foreground truncate">
+                  {selectedAccount.groupName}
+                </span>
+              )}
+            </div>
+          ) : (
+            <span className="text-sm text-muted-foreground">{placeholder}</span>
+          )}
+        </div>
+
+        {/* Error Message */}
+        {error && (
+          <p className="text-sm text-red-500 flex items-center gap-1">
+            <AlertCircle className="h-3 w-3" />
+            {error}
+          </p>
+        )}
+      </div>
+    );
+  }
+
+  // Default editable select view
   return (
     <div className={cn("space-y-2", className)}>
       {/* Label */}
@@ -315,7 +385,7 @@ export const LedgerAccountSelect: React.FC<LedgerAccountSelectProps> = ({
         <p className="text-xs text-muted-foreground">
           {filteredAccounts.length} account{filteredAccounts.length !== 1 ? 's' : ''} available
           {balanceType && ` (${balanceType} accounts)`}
-          {groupName && ` (${groupName} group)`}
+          {getGroupFilterText()}
         </p>
       )}
     </div>

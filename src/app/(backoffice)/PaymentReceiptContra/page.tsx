@@ -1,631 +1,651 @@
 "use client";
 
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
-import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator } from "@/components/ui/breadcrumb";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Calendar } from "@/components/ui/calendar";
-import { useState, useCallback, useMemo, useEffect } from "react";
-import { useHeaderButtons } from "@/hooks/useHeaderButtons";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { Search, Plus, Eye, Edit, Trash2, MoreHorizontal, Calendar as CalendarIcon, ChevronDown, Download } from "lucide-react";
 import { format } from "date-fns";
+import { 
+  Plus, 
+  FileDown, 
+  MoreHorizontal, 
+  Eye, 
+  Edit, 
+  Trash2, 
+  Search
+} from "lucide-react";
+import { useHeaderButtons } from "@/hooks/useHeaderButtons";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import DateRangePicker from "@/components/shared/date/dateRangePicker";
+import { 
+  Table, 
+  TableBody, 
+  TableCell, 
+  TableHead, 
+  TableHeader, 
+  TableRow 
+} from "@/components/ui/table";
 
-// Transaction data structure
-interface Transaction {
-  id: string;
-  transactionNumber: string;
-  type: 'Payment' | 'Receipt' | 'Contra';
-  partyName: string;
-  amount: number;
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Badge } from "@/components/ui/badge";
+import { toast } from "react-toastify";
+import ExcelJS from 'exceljs';
+import { saveAs } from 'file-saver';
+import { useAppSelector } from "@/store/hooks";
+
+interface LedgerEntry {
+  ledgerAccountId: string;
   date: string;
-  paymentMode: string;
-  status: 'Draft' | 'Approved' | 'Cancelled';
-  reference?: string;
-  description?: string;
+  amount: number;
+  type: "Dr" | "Cr";
+  primaryDescription: string;
+  id: string;
+  documentId: string;
+  documentType: string;
+  documentNumber: string;
+  secondaryDescription: string;
+  referenceDescription: string;
+  ledgerReference: string | null;
+  isOpeningBalance: boolean;
+  createdAt: string;
+  updatedAt: string;
 }
 
-export default function PaymentReceiptContraPage() {
+interface Voucher {
+  voucherNumber: string;
+  voucherType: string;
+  date: string;
+  fpoId: string;
+  description: string;
+  id: string;
+  notes: string;
+  isReversalEntry: boolean;
+  originalVoucherId: string | null;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+  ledgerEntryIds: string[];
+  lineItems: any[];
+  ledgerEntries?: LedgerEntry[];
+}
+
+interface VoucherData {
+  voucher: Voucher;
+  ledgerEntries: LedgerEntry[];
+}
+
+export default function VouchersPage() {
   const router = useRouter();
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [searchTerm, setSearchTerm] = useState("");
-  const [itemsPerPage, setItemsPerPage] = useState("25");
-  const [isLoading, setIsLoading] = useState(false);
-  const [currentPage, setCurrentPage] = useState(1);
   
-  // Filter states
-  const [fromDate, setFromDate] = useState<Date | undefined>(new Date(2025, 3, 1)); // April 1, 2025
-  const [toDate, setToDate] = useState<Date | undefined>(new Date(2026, 2, 31)); // March 31, 2026
-  const [showFromCalendar, setShowFromCalendar] = useState(false);
-  const [showToCalendar, setShowToCalendar] = useState(false);
+  const user = useAppSelector((state) => state.user);
+  const fpoIdOfUser = user.fpoId || "";
+  const fpoId = fpoIdOfUser;
 
-  // Sample transaction data
-  const sampleTransactions: Transaction[] = [
-    {
-      id: "1",
-      transactionNumber: "PAY-2025-001",
-      type: "Payment",
-      partyName: "ABC Farm Supplies",
-      amount: 15000,
-      date: "2025-04-15",
-      paymentMode: "Bank Transfer",
-      status: "Approved",
-      reference: "TXN123456",
-      description: "Payment for fertilizers"
-    },
-    {
-      id: "2",
-      transactionNumber: "REC-2025-002",
-      type: "Receipt",
-      partyName: "Green Valley Co-op",
-      amount: 8500,
-      date: "2025-04-18",
-      paymentMode: "Cash",
-      status: "Approved",
-      reference: "REC789012",
-      description: "Receipt for seeds supply"
-    },
-    {
-      id: "3",
-      transactionNumber: "CON-2025-003",
-      type: "Contra",
-      partyName: "Bank Transfer",
-      amount: 25000,
-      date: "2025-04-20",
-      paymentMode: "Bank Transfer",
-      status: "Approved",
-      reference: "CON345678",
-      description: "Fund transfer between accounts"
-    },
-    {
-      id: "4",
-      transactionNumber: "PAY-2025-004",
-      type: "Payment",
-      partyName: "Rural Supply Chain",
-      amount: 12000,
-      date: "2025-04-22",
-      paymentMode: "Cheque",
-      status: "Draft",
-      reference: "CHQ901234",
-      description: "Payment for equipment"
-    },
-    {
-      id: "5",
-      transactionNumber: "REC-2025-005",
-      type: "Receipt",
-      partyName: "Farmers United Ltd",
-      amount: 18500,
-      date: "2025-04-25",
-      paymentMode: "UPI",
-      status: "Approved",
-      reference: "UPI567890",
-      description: "Receipt for crop purchase"
+  // Voucher type filter
+  const [voucherType, setVoucherType] = useState<"payment" | "receipt" | "contra">("payment");
+
+  // Date range state - initialized to current month
+  const [dateRange, setDateRange] = useState<{from: Date | undefined; to: Date | undefined}>(() => {
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    endOfMonth.setHours(23, 59, 59, 999);
+    return { from: startOfMonth, to: endOfMonth };
+  });
+  
+  const [searchTerm, setSearchTerm] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"all" | "balanced" | "unbalanced">("all");
+  const [isExporting, setIsExporting] = useState(false);
+  
+  // State for API data
+  const [vouchersData, setVouchersData] = useState<VoucherData[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Alert dialog state
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [voucherToDelete, setVoucherToDelete] = useState<{ id: string; number: string } | null>(null);
+
+  const startDate = useMemo(() => dateRange?.from?.toISOString(), [dateRange?.from]);
+  const endDate = useMemo(() => dateRange?.to?.toISOString(), [dateRange?.to]);
+
+  // Helper functions (replacing utils)
+  const calculateDisplayAmount = (voucher: Voucher): number => {
+    if (!voucher.ledgerEntries || voucher.ledgerEntries.length === 0) {
+      return 0;
     }
-  ];
+    // Sum all debit amounts
+    return voucher.ledgerEntries
+      .filter(entry => entry.type === 'Dr')
+      .reduce((sum, entry) => sum + entry.amount, 0);
+  };
 
-  // Header button functionalities
+  const formatAmount = (amount: number): string => {
+    return new Intl.NumberFormat('en-IN', {
+      style: 'currency',
+      currency: 'INR',
+      minimumFractionDigits: 2,
+    }).format(amount);
+  };
+
+  const getVoucherStatus = (voucher: Voucher): 'balanced' | 'unbalanced' => {
+    if (!voucher.ledgerEntries || voucher.ledgerEntries.length === 0) {
+      return 'unbalanced';
+    }
+    
+    const totalDebit = voucher.ledgerEntries
+      .filter(entry => entry.type === 'Dr')
+      .reduce((sum, entry) => sum + entry.amount, 0);
+      
+    const totalCredit = voucher.ledgerEntries
+      .filter(entry => entry.type === 'Cr')
+      .reduce((sum, entry) => sum + entry.amount, 0);
+    
+    return Math.abs(totalDebit - totalCredit) < 0.01 ? 'balanced' : 'unbalanced';
+  };
+
+  // Fetch vouchers from API
+  const fetchVouchers = useCallback(async () => {
+    if (!fpoId || !startDate || !endDate) return;
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const params = new URLSearchParams({
+        fpoId,
+        startDate,
+        endDate,
+        voucherType,
+      });
+
+      const response = await fetch(`/api/vouchers?${params}`);
+      const result = await response.json();
+      console.log(result)
+
+      if (result.success) {
+        setVouchersData(result.data || []);
+      } else {
+        setError(result.error || "Failed to fetch vouchers");
+        toast.error(result.error || "Failed to fetch vouchers");
+      }
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : "Failed to fetch vouchers";
+      setError(errorMessage);
+      toast.error(errorMessage);
+    } finally {
+      setLoading(false);
+    }
+  }, [fpoId, startDate, endDate, voucherType]);
+
+  // Fetch vouchers when filters change
+  useEffect(() => {
+    fetchVouchers();
+  }, [fetchVouchers]);
+
+  // Delete voucher function
+  const deleteVoucher = async (id: string) => {
+    try {
+      const response = await fetch(`/api/vouchers/${id}`, {
+        method: 'DELETE',
+      });
+      const result = await response.json();
+
+      if (result.success) {
+        // Refresh the vouchers list
+        await fetchVouchers();
+        return { success: true };
+      } else {
+        return { success: false, error: result.error };
+      }
+    } catch (err) {
+      return { success: false, error: err instanceof Error ? err.message : "Failed to delete voucher" };
+    }
+  };
+
+  // Transform API data to match the expected voucher format
+  const vouchers = useMemo(() => {
+    return vouchersData.map(item => ({
+      ...item.voucher,
+      ledgerEntries: item.ledgerEntries,
+    }));
+  }, [vouchersData]);
+
+  // Navigation handlers
   const handleAddPayment = useCallback(() => {
-    console.log("Add Payment clicked");
-    router.push('/dashboard/accounts/payments/new');
+    router.push("/PaymentReceiptContra/Payment/add");
   }, [router]);
 
   const handleAddReceipt = useCallback(() => {
-    console.log("Add Receipt clicked");
-    router.push('/dashboard/accounts/receipts/new');
+    router.push("PaymentReceiptContra/Receipt/add");
   }, [router]);
 
   const handleAddContra = useCallback(() => {
-    console.log("Add Contra clicked");
-    router.push('/dashboard/accounts/contra/new');
+    router.push("/PaymentReceiptContra/Contra/add");
   }, [router]);
 
-  const handleExportExcel = useCallback(() => {
-    console.log("Export Excel clicked");
-    // Implement Excel export functionality
+  const handleView = useCallback((id: string) => {
+    const routes = {
+      payment: `/PaymentReceiptContra/Payment/view/${id}`,
+      receipt: `/PaymentReceiptContra/Receipt/view/${id}`,
+      contra: `/PaymentReceiptContra/Contra/view/${id}`
+    };
+    router.push(routes[voucherType]);
+  }, [router, voucherType]);
+
+  const handleEdit = useCallback((id: string) => {
+    const routes = {
+      payment: `/PaymentReceiptContra/Payment/edit/${id}`,
+      receipt: `/PaymentReceiptContra/Receipt/edit/${id}`,
+      contra: `/PaymentReceiptContra/Contra/edit/${id}`
+    };
+    router.push(routes[voucherType]);
+  }, [router, voucherType]);
+
+  const handleDeleteClick = useCallback((id: string, voucherNumber: string) => {
+    setVoucherToDelete({ id, number: voucherNumber });
+    setDeleteDialogOpen(true);
   }, []);
 
-  // Search and filter functionality
-  const handleSearch = useCallback((value: string) => {
-    setSearchTerm(value);
-    setCurrentPage(1);
-  }, []);
+  const handleDeleteConfirm = useCallback(async () => {
+    if (!voucherToDelete) return;
 
-  const handleSubmit = useCallback(() => {
-    console.log("Submit filters:", {
-      fromDate,
-      toDate,
-      searchTerm
+    const voucherTypeLabel = voucherType.charAt(0).toUpperCase() + voucherType.slice(1);
+    
+    try {
+      const response = await deleteVoucher(voucherToDelete.id);
+      if (response.success) {
+        toast.success(`${voucherTypeLabel} voucher deleted successfully`);
+        setDeleteDialogOpen(false);
+        setVoucherToDelete(null);
+      } else {
+        toast.error(response.error || `Failed to delete ${voucherTypeLabel} voucher`);
+      }
+    } catch (error) {
+      toast.error(`Failed to delete ${voucherTypeLabel} voucher`);
+    }
+  }, [voucherToDelete, voucherType]);
+
+  const filteredData = useMemo(() => {
+    if (!vouchers) return [];
+
+    return vouchers.filter(voucher => {
+      const matchesSearch = 
+        voucher.voucherNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (voucher.description || '').toLowerCase().includes(searchTerm.toLowerCase());
+        
+      const voucherStatus = getVoucherStatus(voucher);
+      const matchesStatus = statusFilter === "all" || voucherStatus === statusFilter;
+      
+      return matchesSearch && matchesStatus;
     });
+  }, [vouchers, searchTerm, statusFilter]);
+
+  const summaryStats = useMemo(() => {
+    const totalVouchers = filteredData.length;
+    const totalAmount = filteredData.reduce((sum, voucher) => 
+      sum + calculateDisplayAmount(voucher), 0
+    );
+    const balancedVouchers = filteredData.filter(v => 
+      getVoucherStatus(v) === 'balanced'
+    ).length;
     
-    setIsLoading(true);
+    return { totalVouchers, totalAmount, balancedVouchers };
+  }, [filteredData]);
+
+  const handleExport = useCallback(async () => {
+    if (filteredData.length === 0) {
+      toast.error("No data to export");
+      return;
+    }
+
+    setIsExporting(true);
     
-    // Simulate API call with filters
-    setTimeout(() => {
-      let filtered = sampleTransactions;
-      
-      // Apply date range filter
-      if (fromDate && toDate) {
-        filtered = filtered.filter(txn => {
-          const txnDate = new Date(txn.date);
-          return txnDate >= fromDate && txnDate <= toDate;
+    try {
+      const workbook = new ExcelJS.Workbook();
+      const voucherTypeLabel = voucherType.charAt(0).toUpperCase() + voucherType.slice(1);
+      const worksheet = workbook.addWorksheet(`${voucherTypeLabel} Vouchers`);
+
+      worksheet.columns = [
+        { header: 'Voucher Number', key: 'voucherNumber', width: 20 },
+        { header: 'Date', key: 'date', width: 15 },
+        { header: 'Narration', key: 'narration', width: 40 },
+        { header: 'Total Amount', key: 'totalAmount', width: 15 },
+        { header: 'Status', key: 'status', width: 15 },
+      ];
+
+      worksheet.getRow(1).font = { bold: true };
+      worksheet.getRow(1).fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FFE0E0E0' }
+      };
+
+      filteredData.forEach(voucher => {
+        worksheet.addRow({
+          voucherNumber: voucher.voucherNumber,
+          date: format(new Date(voucher.date), 'dd/MM/yyyy'),
+          narration: voucher.description || '',
+          totalAmount: calculateDisplayAmount(voucher),
+          status: getVoucherStatus(voucher),
         });
-      }
+      });
+
+      worksheet.columns.forEach(column => {
+        if (column.key !== 'narration') {
+          column.width = Math.max(column.width || 10, 12);
+        }
+      });
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { 
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
+      });
+      saveAs(blob, `${voucherType}_vouchers_${format(new Date(), 'yyyy-MM-dd')}.xlsx`);
       
-      // Apply search filter
-      if (searchTerm.trim()) {
-        filtered = filtered.filter(txn =>
-          txn.partyName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          txn.transactionNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          txn.type.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          txn.paymentMode.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          (txn.description && txn.description.toLowerCase().includes(searchTerm.toLowerCase()))
-        );
-      }
-      
-      setTransactions(filtered);
-      setIsLoading(false);
-    }, 500);
-  }, [fromDate, toDate, searchTerm]);
-
-  const handleResetDate = useCallback(() => {
-    setFromDate(new Date(2025, 3, 1));
-    setToDate(new Date(2026, 2, 31));
-  }, []);
-
-  // Header buttons configuration
-  const headerButtons = useMemo(() => [
-    { 
-      label: "Add Payment", 
-      onClick: handleAddPayment 
-    },
-    { 
-      label: "Add Receipt", 
-      onClick: handleAddReceipt 
-    },
-    { 
-      label: "Add Contra", 
-      onClick: handleAddContra 
-    },
-    { 
-      label: "Export Excel", 
-      onClick: handleExportExcel 
+      toast.success("Export completed successfully");
+    } catch (error) {
+      console.error("Export error:", error);
+      toast.error("Failed to export data");
+    } finally {
+      setIsExporting(false);
     }
-  ], [handleAddPayment, handleAddReceipt, handleAddContra, handleExportExcel]);
+  }, [filteredData, voucherType]);
 
-  useHeaderButtons(headerButtons);
+  // Header buttons - Add buttons for payment, receipt, and contra only
+  const headerbuttons = useMemo(() => [
+    {
+      label: "Add Payment",
+      onClick: handleAddPayment,
+      icon: <Plus className="h-4 w-4" />,
+    },
+    {
+      label: "Add Receipt",
+      onClick: handleAddReceipt,
+      icon: <Plus className="h-4 w-4" />,
+    },
+    {
+      label: "Add Contra",
+      onClick: handleAddContra,
+      icon: <Plus className="h-4 w-4" />,
+    },
+    {
+      label: isExporting ? "Exporting..." : "Export Excel",
+      onClick: handleExport,
+      disabled: isExporting || loading,
+      icon: <FileDown className="h-4 w-4" />,
+    },
+  ], [handleAddPayment, handleAddReceipt, handleAddContra, handleExport, isExporting, loading]);
 
-  // Get status color classes
-  const getStatusColor = (status: Transaction['status']) => {
-    switch (status) {
-      case 'Draft': return 'bg-gray-100 text-gray-800 hover:bg-gray-200';
-      case 'Approved': return 'bg-green-100 text-green-800 hover:bg-green-200';
-      case 'Cancelled': return 'bg-red-100 text-red-800 hover:bg-red-200';
-      default: return 'bg-gray-100 text-gray-800 hover:bg-gray-200';
-    }
+  useHeaderButtons(headerbuttons);
+
+  const getVoucherTitle = () => {
+    const titles = {
+      payment: "Payment Vouchers",
+      receipt: "Receipt Vouchers",
+      contra: "Contra Vouchers"
+    };
+    return titles[voucherType];
   };
-
-  // Get type color classes
-  const getTypeColor = (type: Transaction['type']) => {
-    switch (type) {
-      case 'Payment': return 'bg-red-100 text-red-800 hover:bg-red-200';
-      case 'Receipt': return 'bg-green-100 text-green-800 hover:bg-green-200';
-      case 'Contra': return 'bg-blue-100 text-blue-800 hover:bg-blue-200';
-      default: return 'bg-gray-100 text-gray-800 hover:bg-gray-200';
-    }
-  };
-
-  // Pagination logic
-  const itemsPerPageNum = parseInt(itemsPerPage);
-  const totalPages = Math.ceil(transactions.length / itemsPerPageNum);
-  const startIndex = (currentPage - 1) * itemsPerPageNum;
-  const endIndex = startIndex + itemsPerPageNum;
-  const currentTransactions = transactions.slice(startIndex, endIndex);
-
-  // Delete transaction handler
-  const handleDeleteTransaction = (transactionId: string) => {
-    console.log('Delete transaction:', transactionId);
-    setTransactions(prev => prev.filter(txn => txn.id !== transactionId));
-  };
-
-  // Load initial data
-  useEffect(() => {
-    handleSubmit();
-  }, []);
 
   return (
-    <div className="space-y-4 md:space-y-6 p-4 md:p-6">
-      {/* Breadcrumb */}
-      <Breadcrumb>
-        <BreadcrumbList>
-          <BreadcrumbItem>
-            <BreadcrumbLink href="/dashboard">Dashboard</BreadcrumbLink>
-          </BreadcrumbItem>
-          <BreadcrumbSeparator />
-          <BreadcrumbItem>
-            <BreadcrumbLink href="/dashboard/accounts">Accounts</BreadcrumbLink>
-          </BreadcrumbItem>
-          <BreadcrumbSeparator />
-          <BreadcrumbItem>
-            <BreadcrumbPage>Payment/Receipt/Contra</BreadcrumbPage>
-          </BreadcrumbItem>
-        </BreadcrumbList>
-      </Breadcrumb>
+    <div className="space-y-6 p-4 md:p-6">
+      {/* Summary Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">
+              Total Vouchers
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <div className="text-2xl font-bold">{summaryStats.totalVouchers}</div>
+          </CardContent>
+        </Card>
+        
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">
+              Total Amount
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <div className="text-2xl font-bold">
+              {formatAmount(summaryStats.totalAmount)}
+            </div>
+          </CardContent>
+        </Card>
+        
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">
+              Balanced Vouchers
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <div className="text-2xl font-bold text-green-600">
+              {summaryStats.balancedVouchers}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
 
       {/* Filters Card */}
       <Card>
-        <CardContent className="p-4 md:p-6">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
-            {/* From Date */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-gray-700">From Date</label>
-              <Popover open={showFromCalendar} onOpenChange={setShowFromCalendar}>
-                <PopoverTrigger asChild>
-                  <Button
-                    variant="outline"
-                    className="w-full justify-start text-left font-normal"
-                  >
-                    <CalendarIcon className="mr-2 h-4 w-4" />
-                    {fromDate ? format(fromDate, "MM/dd/yyyy") : "Pick a date"}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0" align="start">
-                  <Calendar
-                    mode="single"
-                    selected={fromDate}
-                    onSelect={(date) => {
-                      setFromDate(date);
-                      setShowFromCalendar(false);
-                    }}
-                    initialFocus
-                  />
-                </PopoverContent>
-              </Popover>
+        <CardHeader>
+          <CardTitle className="text-lg font-semibold">Filters</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+            {/* Date Range Picker */}
+            <div className="space-y-2 lg:col-span-2">
+              <label className="text-sm font-medium block">Date Range</label>
+              <DateRangePicker
+                dateRange={dateRange}
+                onDateRangeChange={setDateRange}
+                showStandardFilters={false}
+                showFinancialYears={true}
+                placeholder="Select date range"
+                resetToCurrentMonth={true}
+                numberOfMonths={2}
+              />
             </div>
 
-            {/* To Date */}
+            {/* Voucher Type Filter */}
             <div className="space-y-2">
-              <label className="text-sm font-medium text-gray-700">To Date</label>
-              <Popover open={showToCalendar} onOpenChange={setShowToCalendar}>
-                <PopoverTrigger asChild>
-                  <Button
-                    variant="outline"
-                    className="w-full justify-start text-left font-normal"
-                  >
-                    <CalendarIcon className="mr-2 h-4 w-4" />
-                    {toDate ? format(toDate, "MM/dd/yyyy") : "Pick a date"}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0" align="start">
-                  <Calendar
-                    mode="single"
-                    selected={toDate}
-                    onSelect={(date) => {
-                      setToDate(date);
-                      setShowToCalendar(false);
-                    }}
-                    initialFocus
-                  />
-                </PopoverContent>
-              </Popover>
+              <label className="text-sm font-medium">Voucher Type</label>
+              <Select 
+                value={voucherType} 
+                onValueChange={(value) => setVoucherType(value as "payment" | "receipt" | "contra")}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="payment">Payment</SelectItem>
+                  <SelectItem value="receipt">Receipt</SelectItem>
+                  <SelectItem value="contra">Contra</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
 
-            {/* Submit Button */}
-            <Button 
-              onClick={handleSubmit}
-              disabled={isLoading}
-              className="w-full"
-            >
-              {isLoading ? "Loading..." : "Submit"}
-            </Button>
+            {/* Status Filter */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Status</label>
+              <Select 
+                value={statusFilter} 
+                onValueChange={(value) => setStatusFilter(value as "all" | "balanced" | "unbalanced")}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Status</SelectItem>
+                  <SelectItem value="balanced">Balanced</SelectItem>
+                  <SelectItem value="unbalanced">Unbalanced</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
 
-            {/* Reset Date Button */}
-            <Button 
-              variant="outline"
-              onClick={handleResetDate}
-              className="w-full"
-            >
-              Reset Date
-            </Button>
+            {/* Search */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Search</label>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search vouchers..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-10"
+                />
+              </div>
+            </div>
           </div>
         </CardContent>
       </Card>
 
-      {/* Table Controls */}
-      <div className="flex flex-col sm:flex-row gap-4 sm:items-center sm:justify-between">
-        <div className="flex items-center gap-2">
-          <Select value={itemsPerPage} onValueChange={setItemsPerPage}>
-            <SelectTrigger className="w-20">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="25">25</SelectItem>
-              <SelectItem value="50">50</SelectItem>
-              <SelectItem value="100">100</SelectItem>
-            </SelectContent>
-          </Select>
-          <span className="text-sm text-muted-foreground">items/page</span>
-        </div>
-        
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
-          <Input 
-            className="pl-10 w-full sm:w-80" 
-            placeholder="Search..." 
-            value={searchTerm}
-            onChange={(e) => handleSearch(e.target.value)}
-          />
-        </div>
-      </div>
-
-      {/* Table Card */}
+      {/* Vouchers Table */}
       <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <CardTitle className="text-lg font-semibold">{getVoucherTitle()}</CardTitle>
+          {dateRange.from && dateRange.to && (
+            <div className="text-sm text-muted-foreground">
+              Showing: {format(dateRange.from, "MMM dd, yyyy")} - {format(dateRange.to, "MMM dd, yyyy")}
+            </div>
+          )}
+        </CardHeader>
         <CardContent className="p-0">
-          {isLoading ? (
+          {loading ? (
             <div className="p-10 text-center">
               <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-              <p className="mt-2 text-muted-foreground">Loading transactions...</p>
+              <p className="mt-2 text-muted-foreground">Loading {voucherType} vouchers...</p>
             </div>
-          ) : currentTransactions.length > 0 ? (
-            <>
-              {/* Desktop Table */}
-              <div className="hidden md:block overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Transaction Number</TableHead>
-                      <TableHead>Type</TableHead>
-                      <TableHead>Party Name</TableHead>
-                      <TableHead>Amount</TableHead>
-                      <TableHead>Date</TableHead>
-                      <TableHead>Payment Mode</TableHead>
-                      <TableHead>Reference</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {currentTransactions.map((transaction) => (
-                      <TableRow key={transaction.id}>
-                        <TableCell className="font-medium text-primary">
-                          {transaction.transactionNumber}
-                        </TableCell>
-                        <TableCell>
-                          <Badge className={getTypeColor(transaction.type)}>
-                            {transaction.type}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>{transaction.partyName}</TableCell>
-                        <TableCell>₹{transaction.amount.toLocaleString('en-IN')}</TableCell>
-                        <TableCell>{new Date(transaction.date).toLocaleDateString('en-IN')}</TableCell>
-                        <TableCell>{transaction.paymentMode}</TableCell>
-                        <TableCell>{transaction.reference || '-'}</TableCell>
-                        <TableCell>
-                          <Badge className={getStatusColor(transaction.status)}>
-                            {transaction.status}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" className="h-8 w-8 p-0">
-                                <MoreHorizontal className="h-4 w-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem
-                                onClick={() => router.push(`/dashboard/accounts/transactions/${transaction.id}`)}
-                              >
-                                <Eye className="mr-2 h-4 w-4" />
-                                View
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                onClick={() => router.push(`/dashboard/accounts/transactions/${transaction.id}/edit`)}
-                              >
-                                <Edit className="mr-2 h-4 w-4" />
-                                Edit
-                              </DropdownMenuItem>
-                              <AlertDialog>
-                                <AlertDialogTrigger asChild>
-                                  <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
-                                    <Trash2 className="mr-2 h-4 w-4" />
-                                    Delete
-                                  </DropdownMenuItem>
-                                </AlertDialogTrigger>
-                                <AlertDialogContent>
-                                  <AlertDialogHeader>
-                                    <AlertDialogTitle>Are you sure?</AlertDialogTitle>
-                                    <AlertDialogDescription>
-                                      This action cannot be undone. This will permanently delete the transaction.
-                                    </AlertDialogDescription>
-                                  </AlertDialogHeader>
-                                  <AlertDialogFooter>
-                                    <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                    <AlertDialogAction onClick={() => handleDeleteTransaction(transaction.id)}>
-                                      Delete
-                                    </AlertDialogAction>
-                                  </AlertDialogFooter>
-                                </AlertDialogContent>
-                              </AlertDialog>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-
-              {/* Mobile Cards */}
-              <div className="md:hidden space-y-4 p-4">
-                {currentTransactions.map((transaction) => (
-                  <Card key={transaction.id} className="p-4">
-                    <div className="space-y-3">
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <p className="font-medium text-primary">{transaction.transactionNumber}</p>
-                          <p className="text-sm text-muted-foreground">{transaction.partyName}</p>
-                        </div>
-                        <div className="flex flex-col gap-1">
-                          <Badge className={getTypeColor(transaction.type)}>
-                            {transaction.type}
-                          </Badge>
-                          <Badge className={getStatusColor(transaction.status)}>
-                            {transaction.status}
-                          </Badge>
-                        </div>
-                      </div>
-                      
-                      <div className="grid grid-cols-2 gap-4 text-sm">
-                        <div>
-                          <span className="text-muted-foreground">Amount:</span>
-                          <p className="font-medium">₹{transaction.amount.toLocaleString('en-IN')}</p>
-                        </div>
-                        <div>
-                          <span className="text-muted-foreground">Date:</span>
-                          <p>{new Date(transaction.date).toLocaleDateString('en-IN')}</p>
-                        </div>
-                        <div>
-                          <span className="text-muted-foreground">Payment Mode:</span>
-                          <p>{transaction.paymentMode}</p>
-                        </div>
-                        <div>
-                          <span className="text-muted-foreground">Reference:</span>
-                          <p>{transaction.reference || '-'}</p>
-                        </div>
-                      </div>
-                      
-                      {transaction.description && (
-                        <div className="text-sm">
-                          <span className="text-muted-foreground">Description:</span>
-                          <p>{transaction.description}</p>
-                        </div>
-                      )}
-                      
-                      <div className="flex gap-2 pt-2">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => router.push(`/dashboard/accounts/transactions/${transaction.id}`)}
-                          className="flex-1"
+          ) : filteredData.length > 0 ? (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Voucher No</TableHead>
+                    <TableHead>Date</TableHead>
+                    <TableHead>Narration</TableHead>
+                    <TableHead>Amount</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredData.map((voucher) => (
+                    <TableRow key={voucher.id} className="hover:bg-muted/50">
+                      <TableCell className="font-medium">
+                        {voucher.voucherNumber}
+                      </TableCell>
+                      <TableCell>
+                        {format(new Date(voucher.date), "dd/MM/yyyy")}
+                      </TableCell>
+                      <TableCell className="max-w-xs truncate">
+                        {voucher.description || 'No description'}
+                      </TableCell>
+                      <TableCell className="font-medium">
+                        {formatAmount(calculateDisplayAmount(voucher))}
+                      </TableCell>
+                      <TableCell>
+                        <Badge 
+                          variant={getVoucherStatus(voucher) === 'balanced' ? 'default' : 'destructive'}
                         >
-                          <Eye className="h-4 w-4 mr-1" />
-                          View
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => router.push(`/dashboard/accounts/transactions/${transaction.id}/edit`)}
-                          className="flex-1"
-                        >
-                          <Edit className="h-4 w-4 mr-1" />
-                          Edit
-                        </Button>
-                        <AlertDialog>
-                          <AlertDialogTrigger asChild>
-                            <Button size="sm" variant="outline">
-                              <Trash2 className="h-4 w-4" />
+                          {getVoucherStatus(voucher) === 'balanced' ? 'Balanced' : 'Unbalanced'}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="sm">
+                              <MoreHorizontal className="h-4 w-4" />
                             </Button>
-                          </AlertDialogTrigger>
-                          <AlertDialogContent>
-                            <AlertDialogHeader>
-                              <AlertDialogTitle>Are you sure?</AlertDialogTitle>
-                              <AlertDialogDescription>
-                                This action cannot be undone. This will permanently delete the transaction.
-                              </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter>
-                              <AlertDialogCancel>Cancel</AlertDialogCancel>
-                              <AlertDialogAction onClick={() => handleDeleteTransaction(transaction.id)}>
-                                Delete
-                              </AlertDialogAction>
-                            </AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>
-                      </div>
-                    </div>
-                  </Card>
-                ))}
-              </div>
-            </>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => voucher.id && handleView(voucher.id)}>
+                              <Eye className="mr-2 h-4 w-4" />
+                              View
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => voucher.id && handleEdit(voucher.id)}>
+                              <Edit className="mr-2 h-4 w-4" />
+                              Edit
+                            </DropdownMenuItem>
+                            <DropdownMenuItem 
+                              onClick={() => voucher.id && handleDeleteClick(voucher.id, voucher.voucherNumber)}
+                              className="text-red-600"
+                            >
+                              <Trash2 className="mr-2 h-4 w-4" />
+                              Delete
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
           ) : (
             <div className="p-16 text-center">
-              <div className="text-6xl text-gray-300 mb-4">💳</div>
-              <h3 className="text-xl font-medium text-gray-500 mb-2">No Record Found!!</h3>
-              <p className="text-gray-400 mb-6">
-                {searchTerm ? 
-                  "No transactions found matching your search criteria" : 
-                  "No transactions available in the selected date range."
-                }
+              <div className="text-6xl text-gray-300 mb-4">📄</div>
+              <h3 className="text-xl font-medium text-gray-500 mb-2">
+                No {getVoucherTitle()} Found
+              </h3>
+              <p className="text-gray-400 mb-4">
+                Try adjusting your filters or add a new {voucherType} voucher.
               </p>
-              {!searchTerm && (
-                <div className="flex flex-wrap gap-2 justify-center">
-                  <Button onClick={handleAddPayment}>
-                    <Plus className="h-4 w-4 mr-2" />
-                    Add Payment
-                  </Button>
-                  <Button onClick={handleAddReceipt} variant="outline">
-                    <Plus className="h-4 w-4 mr-2" />
-                    Add Receipt
-                  </Button>
-                  <Button onClick={handleAddContra} variant="outline">
-                    <Plus className="h-4 w-4 mr-2" />
-                    Add Contra
-                  </Button>
-                </div>
-              )}
             </div>
           )}
         </CardContent>
       </Card>
 
-      {/* Pagination */}
-      {transactions.length > itemsPerPageNum && (
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-              <div className="text-sm text-muted-foreground">
-                Showing {startIndex + 1} to {Math.min(endIndex, transactions.length)} of {transactions.length} results
-              </div>
-              <div className="flex gap-2">
-                <Button 
-                  variant="outline" 
-                  size="sm"
-                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                  disabled={currentPage === 1}
-                >
-                  Previous
-                </Button>
-                <div className="flex gap-1">
-                  {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
-                    <Button
-                      key={page}
-                      variant={currentPage === page ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => setCurrentPage(page)}
-                    >
-                      {page}
-                    </Button>
-                  ))}
-                </div>
-                <Button 
-                  variant="outline" 
-                  size="sm"
-                  onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                  disabled={currentPage === totalPages}
-                >
-                  Next
-                </Button>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete the {voucherType} voucher{" "}
+              <span className="font-semibold">{voucherToDelete?.number}</span>.
+              This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setVoucherToDelete(null)}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteConfirm}
+              className="bg-red-600 hover:bg-red-700"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

@@ -1,3 +1,12 @@
+interface bankDetails{
+    accountNumber: string;
+    accountHolderName?: string;
+    ifscCode: string;
+    BankName?: string;
+    accountType: 'Regular' | 'OD' | 'CC';
+    upiId?: string; 
+}
+
 export interface LedgerAccountInterface {
     id?: string;
     name: string;
@@ -9,7 +18,11 @@ export interface LedgerAccountInterface {
     fpoId?: string;
     gstNumber?: string;
     openingDate?: Date;
-    state?: string;
+    state: string; 
+    bankDetails?: bankDetails;
+
+     isSystemLedger?: boolean;
+    ledgerCode?: string | null;
 }
 
 export class LedgerAccount implements LedgerAccountInterface {
@@ -18,18 +31,44 @@ export class LedgerAccount implements LedgerAccountInterface {
         public groupName: string,
         public openingBalance: number,
         public balanceType: 'Dr' | 'Cr',
+        public state: string,
         public id?: string,
         public phoneNumber?: string,
         public address?: string,
         public fpoId?: string,
         public gstNumber?: string,
         public openingDate?: Date,
-        public state?: string
-    ) {}
+        public bankDetails?: bankDetails,
+        public isSystemLedger: boolean = false, 
+        public ledgerCode?: string | null  
+    ) {
+        // Validate bankDetails is only set for Bank Accounts group
+        if (bankDetails && groupName !== 'Bank Accounts') {
+            throw new Error('bankDetails can only be set for ledgers in "Bank Accounts" group');
+        }
+
+           // Validate system ledgers have codes
+        if (isSystemLedger && !ledgerCode) {
+            throw new Error('System ledgers must have a ledger_code');
+        }
+    }
+
+    // Method to validate and set bank details
+    setBankDetails(bankDetails: bankDetails): void {
+        if (this.groupName !== 'Bank Accounts') {
+            throw new Error('bankDetails can only be set for ledgers in "Bank Accounts" group');
+        }
+        this.bankDetails = bankDetails;
+    }
+
+    // Method to check if ledger is a bank account
+    isBankAccount(): boolean {
+        return this.groupName === 'Bank Accounts';
+    }
 
     // Method to convert to database format
     toDbFormat(): any {
-        return {
+        const dbFormat: any = {
             id: this.id,
             name: this.name,
             group_name: this.groupName,
@@ -40,41 +79,93 @@ export class LedgerAccount implements LedgerAccountInterface {
             fpo_id: this.fpoId,
             gst_number: this.gstNumber,
             opening_date: this.openingDate,
-            state: this.state
+            state: this.state,
+             is_system_ledger: this.isSystemLedger, 
+            ledger_code: this.ledgerCode  
         };
+
+        // Only include bank_details if it's a Bank Account (JSONB field, no conversion needed)
+        if (this.groupName === 'Bank Accounts' && this.bankDetails) {
+            dbFormat.bank_details = this.bankDetails;
+        }
+
+        return dbFormat;
     }
 
     static fromInterface(ledgerAccountData: LedgerAccountInterface): LedgerAccount {
+        // Validate bankDetails before creating instance
+        if (ledgerAccountData.bankDetails && ledgerAccountData.groupName !== 'Bank Accounts') {
+            throw new Error('bankDetails can only be set for ledgers in "Bank Accounts" group');
+        }
+
         return new LedgerAccount(
             ledgerAccountData.name,
             ledgerAccountData.groupName,
             ledgerAccountData.openingBalance,
             ledgerAccountData.balanceType,
+            ledgerAccountData.state,
             ledgerAccountData.id,
             ledgerAccountData.phoneNumber,
             ledgerAccountData.address,
             ledgerAccountData.fpoId,
             ledgerAccountData.gstNumber,
             ledgerAccountData.openingDate,
-            ledgerAccountData.state
+            ledgerAccountData.bankDetails,
+               ledgerAccountData.isSystemLedger || false, 
+            ledgerAccountData.ledgerCode || null  
         );
     }
 
     // Static method to create from database format
     static fromDbFormat(dbRow: any): LedgerAccount {
+        let bankDetails: bankDetails | undefined = undefined;
+
+        // Only parse bank_details if it's a Bank Account (JSONB field, already an object)
+        if (dbRow.group_name === 'Bank Accounts' && dbRow.bank_details) {
+            bankDetails = dbRow.bank_details;
+        }
+
         return new LedgerAccount(
             dbRow.name,
             dbRow.group_name,
             dbRow.opening_balance,
             dbRow.balance_type,
+            dbRow.state,
             dbRow.id,
             dbRow.phone_number,
             dbRow.address,
             dbRow.fpo_id,
             dbRow.gst_number,
             dbRow.opening_date ? new Date(dbRow.opening_date) : undefined,
-            dbRow.state
+            bankDetails,
+            dbRow.is_system_ledger || false, 
+            dbRow.ledger_code || null  
         );
+    }
+
+      // NEW METHOD: Check if this is a system ledger
+    isSystem(): boolean {
+        return this.isSystemLedger === true;
+    }
+
+    // NEW METHOD: Check if this ledger can be deleted
+    canDelete(): boolean {
+        return !this.isSystemLedger;
+    }
+
+    // NEW METHOD: Check if this ledger can be renamed
+    canRename(): boolean {
+        // System ledgers can be renamed by users if needed
+        // But the code remains constant for application logic
+        return true;
+    }
+    // Helper method to get bank details summary
+    getBankDetailsSummary(): string | null {
+        if (!this.isBankAccount() || !this.bankDetails) {
+            return null;
+        }
+
+        return `${this.bankDetails.BankName || 'Bank'} - ${this.bankDetails.accountNumber} (${this.bankDetails.accountType})`;
     }
 }
 
@@ -87,18 +178,18 @@ export interface LedgerEntryInterface {
     type: 'Dr' | 'Cr';
     
     // Document Reference System
-    documentId?: string;        // Reference to source document (invoice_id, voucher_id, etc.)
-    documentType?: string;      // 'invoice', 'voucher', 'payment', 'purchase', etc.
-    documentNumber?: string;    // Human-readable document number
+    documentId?: string;
+    documentType?: string;
+    documentNumber?: string;
     
     // Rich Description System
-    primaryDescription: string; // Main description (e.g., "Payment In", "Invoice", "Purchase")
-    secondaryDescription?: string; // User notes/additional context
-    referenceDescription?: string; // Reference info (e.g., "Invoice #3")
-    ledgerReference?: string;   // Related ledger name for cross-references
+    primaryDescription: string;
+    secondaryDescription?: string;
+    referenceDescription?: string;
+    ledgerReference?: string;
     
     // Additional Metadata
-    isOpeningBalance?: boolean; // Flag for opening balance entries
+    isOpeningBalance?: boolean;
     createdAt?: Date;
     updatedAt?: Date;
 }
@@ -122,7 +213,7 @@ export class LedgerEntry implements LedgerEntryInterface {
         public updatedAt?: Date
     ) {}
 
-    // Get formatted description like in your image
+    // Get formatted description
     getFormattedDescription(): string {
         let description = this.primaryDescription;
         
@@ -186,21 +277,16 @@ export class LedgerEntry implements LedgerEntryInterface {
 
 // Universal Transaction Entry Builder
 export interface UniversalTransactionData {
-    // Core transaction data
     ledgerAccountId: string;
     amount: number;
     type: 'Dr' | 'Cr';
     date: Date;
-    
-    // Description components
-    transactionType: string;    // "Invoice", "Payment In", "Purchase Voucher", etc.
-    relatedLedgerName?: string; // Customer/Supplier ledger name (goes to ledgerReference)
-    documentNumber?: string;    // Invoice #, Voucher #, etc. (goes to referenceDescription)
-    notes?: string;             // User-provided notes (goes to secondaryDescription)
-    
-    // Document reference
+    transactionType: string;
+    relatedLedgerName?: string;
+    documentNumber?: string;
+    notes?: string;
     documentId?: string;
-    documentType?: string;      // 'invoice', 'voucher', 'payment', etc.
+    documentType?: string;
 }
 
 // Ledger with Running Balance
@@ -221,7 +307,6 @@ export class Ledger {
         startDate?: Date,
         endDate?: Date
     ): LedgerStatementEntry[] {
-        // Filter entries by date range if provided
         let entries = this.ledgerEntries;
         if (startDate && endDate) {
             entries = entries.filter(entry => 
@@ -229,7 +314,6 @@ export class Ledger {
             );
         }
 
-        // Sort by date
         const sortedEntries = [...entries].sort((a, b) => 
             a.date.getTime() - b.date.getTime()
         );
@@ -238,13 +322,11 @@ export class Ledger {
         let runningBalance = 0;
         const currentBalanceType = this.ledgerAccount.balanceType;
 
-        // Start with opening balance (if no date filter or includes opening date)
         if (!startDate || startDate <= this.ledgerAccount.openingDate!) {
             runningBalance = this.ledgerAccount.openingBalance;
         }
 
         sortedEntries.forEach(entry => {
-            // Skip opening balance entry in calculation if we already included it
             if (entry.isOpeningBalance && (!startDate || startDate <= this.ledgerAccount.openingDate!)) {
                 statement.push({
                     entry,
@@ -255,14 +337,12 @@ export class Ledger {
                 return;
             }
 
-            // Calculate running balance
             if (this.ledgerAccount.balanceType === 'Dr') {
                 runningBalance += entry.type === 'Dr' ? entry.amount : -entry.amount;
             } else {
                 runningBalance += entry.type === 'Cr' ? entry.amount : -entry.amount;
             }
 
-            // Determine balance type
             const balanceType = runningBalance >= 0 ? this.ledgerAccount.balanceType : 
                               (this.ledgerAccount.balanceType === 'Dr' ? 'Cr' : 'Dr');
 
@@ -281,7 +361,7 @@ export class Ledger {
         let balance = this.ledgerAccount.openingBalance;
         
         this.ledgerEntries.forEach(entry => {
-            if (entry.isOpeningBalance) return; // Skip opening balance entry
+            if (entry.isOpeningBalance) return;
             
             if (this.ledgerAccount.balanceType === 'Dr') {
                 balance += entry.type === 'Dr' ? entry.amount : -entry.amount;
@@ -312,11 +392,10 @@ export class Ledger {
 
 // Utility function to create universal transaction entry
 export function createUniversalLedgerEntry(data: UniversalTransactionData): LedgerEntry {
-    // Build rich description structure
     const primaryDescription = data.transactionType;
-    const secondaryDescription = data.notes || undefined; // User notes go here
-    const referenceDescription = data.documentNumber || undefined; // Document reference
-    const ledgerReference = data.relatedLedgerName || undefined; // Related ledger name
+    const secondaryDescription = data.notes || undefined;
+    const referenceDescription = data.documentNumber || undefined;
+    const ledgerReference = data.relatedLedgerName || undefined;
 
     return new LedgerEntry(
         data.ledgerAccountId,
@@ -324,13 +403,13 @@ export function createUniversalLedgerEntry(data: UniversalTransactionData): Ledg
         data.amount,
         data.type,
         primaryDescription,
-        undefined, // id
+        undefined,
         data.documentId,
         data.documentType,
         data.documentNumber,
-        secondaryDescription, // This stores user notes
-        referenceDescription, // Document reference
-        ledgerReference // Related ledger name
+        secondaryDescription,
+        referenceDescription,
+        ledgerReference
     );
 }
 
@@ -344,13 +423,13 @@ export function createOpeningBalanceEntry(
         ledgerAccount.openingBalance,
         ledgerAccount.balanceType,
         'Opening Balance',
-        undefined, // id
-        undefined, // documentId
-        'opening_balance', // documentType
-        undefined, // documentNumber
-        undefined, // secondaryDescription (no notes for opening balance)
-        undefined, // referenceDescription
-        undefined, // ledgerReference
-        true // isOpeningBalance
+        undefined,
+        undefined,
+        'opening_balance',
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        true
     );
 }

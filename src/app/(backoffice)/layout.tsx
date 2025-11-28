@@ -1,4 +1,5 @@
 import { Geist, Geist_Mono } from "next/font/google"
+// src/app/layout.tsx (root)
 import "../globals.css"
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar"
 import { AppSidebar } from "@/components/app-sidebar"

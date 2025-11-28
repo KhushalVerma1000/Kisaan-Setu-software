@@ -23,22 +23,32 @@ export async function getLedgerNameById(ledgerId: string): Promise<string | null
     }
 }
 
-export async function getAllUserAssociatedLedgerAccount(fpo_id: string): Promise<LedgerAccount[]> {
+export async function getAllUserAssociatedLedgerAccount(
+    fpo_id: string, 
+    groupName?: string
+): Promise<LedgerAccount[]> {
     const supabase = await createClient();
     try {
-        const { data, error } = await supabase
+        let query = supabase
             .from('ledger_account')
             .select('*')
-            .eq('fpo_id', fpo_id)
+            .eq('fpo_id', fpo_id);
+        
+        // Add group name filter if provided
+        if (groupName) {
+            query = query.eq('group_name', groupName);
+        }
+        
+        const { data, error } = await query;
+        
         if (error) {
-            throw new Error(error.message)
+            throw new Error(error.message);
         }
-        else {
-            return data.map(LedgerAccount.fromDbFormat)
-        }
+        
+        return data.map(LedgerAccount.fromDbFormat);
     } catch (error) {
-        console.error('Error in fetching  Ledger Accounts', error);
-        throw error
+        console.error('Error in fetching Ledger Accounts', error);
+        throw error;
     }
 }
 
@@ -113,6 +123,9 @@ export async function createNewLedgerAccount(ledgerAccountParameter: LedgerAccou
 
         if (accountError) {
             console.error("Error creating new ledger account", accountError);
+            if (accountError.stack){
+                console.error(accountError.stack);
+            }
             throw new Error(accountError.message);
         }
 
