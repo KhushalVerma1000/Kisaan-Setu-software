@@ -267,7 +267,7 @@ export class StatementPDFService extends BasePDFService {
     
     const leftColumn = this.margin + 5;
     const rightColumn = this.pageWidth / 2 + 10;
-    let detailY = currentY + 16;
+    const detailY = currentY + 16;
 
     // Left column
     this.doc.text(`Opening Balance: ${this.formatCurrency(Math.abs(openingBalance))}`, leftColumn, detailY);

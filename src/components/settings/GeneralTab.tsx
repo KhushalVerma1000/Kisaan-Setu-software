@@ -258,7 +258,7 @@ export default function GeneralTab({
             <Input value={form.ceoName} onChange={e => handleChange("ceoName", e.target.value)} />
           </div>
           <div>
-            <DatePicker date={form.incorporationDate} setDate={d => handleChange("incorporationDate", d)} label="Company Incorporation Date *" />
+            <DatePicker date={form.incorporationDate} onDateChange={d => handleChange("incorporationDate", d)} label="Company Incorporation Date *" />
           </div>
           <div className="space-y-1">
             <Label>Address</Label>

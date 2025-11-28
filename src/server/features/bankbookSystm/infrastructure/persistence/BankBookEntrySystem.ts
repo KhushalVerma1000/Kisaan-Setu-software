@@ -842,161 +842,161 @@ export async function createBankBookEntriesFromPaymentOperations(
 }
 
 // REPLACE the existing createBankBookEntriesFromVoucher function:
-export async function createBankBookEntriesFromVoucher(
-    voucher: Voucher,
-    bankLedgerAccountId?: string // NEW PARAMETER
-): Promise<{
-    bankEntries: BankBookEntry[];
-    ledgerEntries: LedgerEntry[]; // NEW RETURN
-}> {
-    const supabase = await createClient();
+// export async function createBankBookEntriesFromVoucher(
+//     voucher: Voucher,
+//     bankLedgerAccountId?: string // NEW PARAMETER
+// ): Promise<{
+//     bankEntries: BankBookEntry[];
+//     ledgerEntries: LedgerEntry[]; // NEW RETURN
+// }> {
+//     const supabase = await createClient();
     
-    try {
-        const bankBookEntries: BankBookEntry[] = [];
-        const ledgerEntries: LedgerEntry[] = [];
+//     try {
+//         const bankBookEntries: BankBookEntry[] = [];
+//         const ledgerEntries: LedgerEntry[] = [];
         
-        if (voucher.voucherType === 'payment' && voucher.paymentMode === 'bank') {
-            const paymentVoucher = voucher as PaymentVoucher;
-            if (!paymentVoucher.bankBookId) {
-                throw new Error('Bank book ID is required for bank payment vouchers');
-            }
+//         if (voucher.voucherType === 'payment' && voucher.paymentMode === 'bank') {
+//             const paymentVoucher = voucher as PaymentVoucher;
+//             if (!paymentVoucher.bankBookId) {
+//                 throw new Error('Bank book ID is required for bank payment vouchers');
+//             }
             
-            const bankEntry = new BankBookEntry(
-                undefined, // id
-                paymentVoucher.bankBookId,
-                paymentVoucher.date,
-                paymentVoucher.getTotalAmount(),
-                'Cr', // Bank balance decreasing
-                'Payment Out',
-                `Payment Voucher #${paymentVoucher.voucherNumber}`,
-                paymentVoucher.chequeNumber ? 'Cheque' : 'Bank Transfer',
-                paymentVoucher.id,
-                'payment_voucher',
-                paymentVoucher.voucherNumber,
-                paymentVoucher.description,
-                `Total Amount: ₹${paymentVoucher.getTotalAmount().toLocaleString()}`,
-                `Voucher-${paymentVoucher.id}`,
-                paymentVoucher.chequeNumber,
-                undefined, // referenceNumber
-                false
-            );
-            bankBookEntries.push(bankEntry);
-        }
+//             const bankEntry = new BankBookEntry(
+//                 undefined, // id
+//                 paymentVoucher.bankBookId,
+//                 paymentVoucher.date,
+//                 paymentVoucher.getTotalAmount(),
+//                 'Cr', // Bank balance decreasing
+//                 'Payment Out',
+//                 `Payment Voucher #${paymentVoucher.voucherNumber}`,
+//                 paymentVoucher.chequeNumber ? 'Cheque' : 'Bank Transfer',
+//                 paymentVoucher.id,
+//                 'payment_voucher',
+//                 paymentVoucher.voucherNumber,
+//                 paymentVoucher.description,
+//                 `Total Amount: ₹${paymentVoucher.getTotalAmount().toLocaleString()}`,
+//                 `Voucher-${paymentVoucher.id}`,
+//                 paymentVoucher.chequeNumber,
+//                 undefined, // referenceNumber
+//                 false
+//             );
+//             bankBookEntries.push(bankEntry);
+//         }
         
-        if (voucher.voucherType === 'receipt' && voucher.receiptMode === 'bank') {
-            const receiptVoucher = voucher as ReceiptVoucher;
-            if (!receiptVoucher.bankBookId) {
-                throw new Error('Bank book ID is required for bank receipt vouchers');
-            }
+//         if (voucher.voucherType === 'receipt' && voucher.receiptMode === 'bank') {
+//             const receiptVoucher = voucher as ReceiptVoucher;
+//             if (!receiptVoucher.bankBookId) {
+//                 throw new Error('Bank book ID is required for bank receipt vouchers');
+//             }
             
-            const bankEntry = new BankBookEntry(
-                undefined, // id
-                receiptVoucher.bankBookId,
-                receiptVoucher.date,
-                receiptVoucher.getTotalAmount(),
-                'Dr', // Bank balance increasing
-                'Payment In',
-                `Receipt Voucher #${receiptVoucher.voucherNumber}`,
-                receiptVoucher.chequeNumber ? 'Cheque' : 'Bank Transfer',
-                receiptVoucher.id,
-                'receipt_voucher',
-                receiptVoucher.voucherNumber,
-                receiptVoucher.description,
-                `Total Amount: ₹${receiptVoucher.getTotalAmount().toLocaleString()}`,
-                `Voucher-${receiptVoucher.id}`,
-                receiptVoucher.chequeNumber,
-                undefined, // referenceNumber
-                false
-            );
-            bankBookEntries.push(bankEntry);
-        }
+//             const bankEntry = new BankBookEntry(
+//                 undefined, // id
+//                 receiptVoucher.bankBookId,
+//                 receiptVoucher.date,
+//                 receiptVoucher.getTotalAmount(),
+//                 'Dr', // Bank balance increasing
+//                 'Payment In',
+//                 `Receipt Voucher #${receiptVoucher.voucherNumber}`,
+//                 receiptVoucher.chequeNumber ? 'Cheque' : 'Bank Transfer',
+//                 receiptVoucher.id,
+//                 'receipt_voucher',
+//                 receiptVoucher.voucherNumber,
+//                 receiptVoucher.description,
+//                 `Total Amount: ₹${receiptVoucher.getTotalAmount().toLocaleString()}`,
+//                 `Voucher-${receiptVoucher.id}`,
+//                 receiptVoucher.chequeNumber,
+//                 undefined, // referenceNumber
+//                 false
+//             );
+//             bankBookEntries.push(bankEntry);
+//         }
         
-        if (voucher.voucherType === 'contra') {
-            const contraVoucher = voucher as ContraVoucher;
-            const transferAmount = contraVoucher.getTotalAmount();
+//         if (voucher.voucherType === 'contra') {
+//             const contraVoucher = voucher as ContraVoucher;
+//             const transferAmount = contraVoucher.getTotalAmount();
             
-            // From bank account
-            if (contraVoucher.fromAccount === 'bank' && contraVoucher.fromBankBookId) {
-                const fromEntry = new BankBookEntry(
-                    undefined, // id
-                    contraVoucher.fromBankBookId,
-                    contraVoucher.date,
-                    transferAmount,
-                    'Cr', // Bank balance decreasing
-                    'Bank Transfer Out',
-                    `Contra Voucher #${contraVoucher.voucherNumber} - Transfer Out`,
-                    'Internal Transfer',
-                    contraVoucher.id,
-                    'contra_voucher',
-                    contraVoucher.voucherNumber,
-                    `Transfer to ${contraVoucher.toAccount}: ${contraVoucher.description}`,
-                    `Transfer Amount: ₹${transferAmount.toLocaleString()}`,
-                    `Voucher-${contraVoucher.id}`,
-                    undefined, // chequeNumber
-                    undefined, // referenceNumber
-                    false
-                );
-                bankBookEntries.push(fromEntry);
-            }
+//             // From bank account
+//             if (contraVoucher.fromAccount === 'bank' && contraVoucher.fromBankBookId) {
+//                 const fromEntry = new BankBookEntry(
+//                     undefined, // id
+//                     contraVoucher.fromBankBookId,
+//                     contraVoucher.date,
+//                     transferAmount,
+//                     'Cr', // Bank balance decreasing
+//                     'Bank Transfer Out',
+//                     `Contra Voucher #${contraVoucher.voucherNumber} - Transfer Out`,
+//                     'Internal Transfer',
+//                     contraVoucher.id,
+//                     'contra_voucher',
+//                     contraVoucher.voucherNumber,
+//                     `Transfer to ${contraVoucher.toAccount}: ${contraVoucher.description}`,
+//                     `Transfer Amount: ₹${transferAmount.toLocaleString()}`,
+//                     `Voucher-${contraVoucher.id}`,
+//                     undefined, // chequeNumber
+//                     undefined, // referenceNumber
+//                     false
+//                 );
+//                 bankBookEntries.push(fromEntry);
+//             }
             
-            // To bank account
-            if (contraVoucher.toAccount === 'bank' && contraVoucher.toBankBookId) {
-                const toEntry = new BankBookEntry(
-                    undefined, // id
-                    contraVoucher.toBankBookId,
-                    contraVoucher.date,
-                    transferAmount,
-                    'Dr', // Bank balance increasing
-                    'Bank Transfer In',
-                    `Contra Voucher #${contraVoucher.voucherNumber} - Transfer In`,
-                    'Internal Transfer',
-                    contraVoucher.id,
-                    'contra_voucher',
-                    contraVoucher.voucherNumber,
-                    `Transfer from ${contraVoucher.fromAccount}: ${contraVoucher.description}`,
-                    `Transfer Amount: ₹${transferAmount.toLocaleString()}`,
-                    `Voucher-${contraVoucher.id}`,
-                    undefined, // chequeNumber
-                    undefined, // referenceNumber
-                    false
-                );
-                bankBookEntries.push(toEntry);
-            }
-        }
+//             // To bank account
+//             if (contraVoucher.toAccount === 'bank' && contraVoucher.toBankBookId) {
+//                 const toEntry = new BankBookEntry(
+//                     undefined, // id
+//                     contraVoucher.toBankBookId,
+//                     contraVoucher.date,
+//                     transferAmount,
+//                     'Dr', // Bank balance increasing
+//                     'Bank Transfer In',
+//                     `Contra Voucher #${contraVoucher.voucherNumber} - Transfer In`,
+//                     'Internal Transfer',
+//                     contraVoucher.id,
+//                     'contra_voucher',
+//                     contraVoucher.voucherNumber,
+//                     `Transfer from ${contraVoucher.fromAccount}: ${contraVoucher.description}`,
+//                     `Transfer Amount: ₹${transferAmount.toLocaleString()}`,
+//                     `Voucher-${contraVoucher.id}`,
+//                     undefined, // chequeNumber
+//                     undefined, // referenceNumber
+//                     false
+//                 );
+//                 bankBookEntries.push(toEntry);
+//             }
+//         }
         
-        // Bulk insert bank book entries
-        if (bankBookEntries.length > 0) {
-            const createdBankEntries = await createMultipleBankBookEntries(bankBookEntries)();
+//         // Bulk insert bank book entries
+//         if (bankBookEntries.length > 0) {
+//             const createdBankEntries = await createMultipleBankBookEntries(bankBookEntries)();
             
-            // Create corresponding ledger entries if bankLedgerAccountId provided
-            if (bankLedgerAccountId) {
-                for (const bankEntry of createdBankEntries) {
-                    const ledgerEntry = await createLedgerEntry({
-                        ledgerAccountId: bankLedgerAccountId,
-                        date: bankEntry.date,
-                        amount: bankEntry.amount,
-                        type: bankEntry.type,
-                        primaryDescription: bankEntry.primaryDescription,
-                        documentId: bankEntry.documentId,
-                        documentType: bankEntry.documentType,
-                        documentNumber: bankEntry.documentNumber,
-                        secondaryDescription: bankEntry.secondaryDescription,
-                        referenceDescription: bankEntry.referenceDescription,
-                        ledgerReference: bankEntry.ledgerReference,
-                        isOpeningBalance: false
-                    });
-                    ledgerEntries.push(ledgerEntry);
-                }
-                console.log(`Created ${ledgerEntries.length} Bank Ledger entries from voucher`);
-            }
+//             // Create corresponding ledger entries if bankLedgerAccountId provided
+//             if (bankLedgerAccountId) {
+//                 for (const bankEntry of createdBankEntries) {
+//                     const ledgerEntry = await createLedgerEntry({
+//                         ledgerAccountId: bankLedgerAccountId,
+//                         date: bankEntry.date,
+//                         amount: bankEntry.amount,
+//                         type: bankEntry.type,
+//                         primaryDescription: bankEntry.primaryDescription,
+//                         documentId: bankEntry.documentId,
+//                         documentType: bankEntry.documentType,
+//                         documentNumber: bankEntry.documentNumber,
+//                         secondaryDescription: bankEntry.secondaryDescription,
+//                         referenceDescription: bankEntry.referenceDescription,
+//                         ledgerReference: bankEntry.ledgerReference,
+//                         isOpeningBalance: false
+//                     });
+//                     ledgerEntries.push(ledgerEntry);
+//                 }
+//                 console.log(`Created ${ledgerEntries.length} Bank Ledger entries from voucher`);
+//             }
             
-            return { bankEntries: createdBankEntries, ledgerEntries };
-        }
+//             return { bankEntries: createdBankEntries, ledgerEntries };
+//         }
         
-        return { bankEntries: [], ledgerEntries: [] };
+//         return { bankEntries: [], ledgerEntries: [] };
         
-    } catch (error) {
-        console.error('Error creating bank book entries from voucher:', error);
-        throw error;
-    }
-}
+//     } catch (error) {
+//         console.error('Error creating bank book entries from voucher:', error);
+//         throw error;
+//     }
+// }
