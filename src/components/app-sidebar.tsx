@@ -8,7 +8,7 @@ import {
   ReceiptIndianRupee, ShoppingCart, Layers, ChartBar, CircleUserRound, WalletCards, BookOpen, LogOut,
   LayoutDashboard, ChevronDown, ChevronRight, FileText, Plus, Eye, Edit, TrendingUp, Package, LucideIcon,
   Wallet2, Wallet, NotebookPen, Truck, BanknoteArrowDown, Notebook, Recycle, BanknoteArrowUpIcon,
-  Ticket, TicketsIcon, ShoppingBasket, Settings, Users, BlocksIcon, Tags, FileBox,
+   TicketsIcon, ShoppingBasket, Settings, Users, BlocksIcon, Tags, FileBox,
   Quote, Copyright,
   Landmark
 } from "lucide-react";
@@ -24,6 +24,7 @@ import {
   AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle,
   AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction
 } from "@/components/ui/alert-dialog";
+import Link from "next/link";
 
 function cn(...classes: (string | boolean | undefined)[]) {
   return classes.filter(Boolean).join(" ");
@@ -156,10 +157,10 @@ const supabase = createClient()
                                     "text-emerald-600 hover:text-emerald-900 hover:bg-emerald-50",
                                     pathname === subItem.url && "text-emerald-900 underline font-medium"
                                   )}>
-                                    <a href={subItem.url} className="flex items-center gap-3">
+                                    <Link prefetch={true} href={subItem.url} className="flex items-center gap-3">
                                       <subItem.icon className="h-4 w-4" />
                                       <span>{subItem.title}</span>
-                                    </a>
+                                    </Link>
                                   </SidebarMenuSubButton>
                                 </SidebarMenuSubItem>
                               ))}
@@ -177,10 +178,10 @@ const supabase = createClient()
                               <span>{item.title}</span>
                             </button>
                           ) : (
-                            <a href={item.url}>
+                            <Link prefetch={true} href={item.url}>
                               <item.icon className="h-5 w-5 text-emerald-700" />
                               <span>{item.title}</span>
-                            </a>
+                            </Link>
                           )}
                         </SidebarMenuButton>
                       )}
