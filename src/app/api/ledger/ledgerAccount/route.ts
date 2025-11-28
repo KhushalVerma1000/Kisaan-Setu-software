@@ -7,7 +7,7 @@ export async function GET(request: NextRequest) {
     try {
         const { searchParams } = new URL(request.url);
         const fpoId = searchParams.get('fpo_id');
-
+        const groupName = searchParams.get('group_name' ) || undefined;
         if (!fpoId) {
             return NextResponse.json(
                 { error: 'FPO ID is required' },
@@ -15,7 +15,7 @@ export async function GET(request: NextRequest) {
             );
         }
 
-        const ledgerAccounts = await getAllUserAssociatedLedgerAccount(fpoId);
+        const ledgerAccounts = await getAllUserAssociatedLedgerAccount(fpoId ,groupName);
         
         return NextResponse.json(ledgerAccounts, { status: 200 });
     } catch (error) {

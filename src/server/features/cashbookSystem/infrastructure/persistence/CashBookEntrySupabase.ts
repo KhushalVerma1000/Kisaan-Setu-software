@@ -1,6 +1,8 @@
 import { PaymentOperationResult } from "@/server/features/Payment/infrastructure/persistence/paymentSupabase";
 import { CashBookEntry } from "../../core/entities/CashbookSystem";
 import { createClient } from "@/utils/supabase/server";
+import { Voucher, PaymentVoucher, ReceiptVoucher, ContraVoucher } from "@/server/features/vouchers/core/entities/VoucherSystem";
+
 
 export function getCashBookEntries(cashBookId: string) {
   return async (startDate?: Date, endDate?: Date): Promise<CashBookEntry[]> => {
@@ -438,17 +440,77 @@ export async function getCashFlowSummary(
 
 
 
+
+
+
+
+
+
+
+
+import { createLedgerEntry } from "@/server/features/ledger/infrastructure/persistence/ledgerEntrySupabase";
+import { LedgerEntry } from "@/server/features/ledger/core/entities/Ledger";
+
+/**
+ * Creates Cash Book Entry with corresponding Ledger Entry
+ */
+export async function createCashBookEntryWithLedger(
+    cashBookEntry: CashBookEntry,
+    cashLedgerAccountId: string
+): Promise<{ 
+    cashEntry: CashBookEntry; 
+    ledgerEntry: LedgerEntry;
+}> {
+    try {
+        // Step 1: Create cash book entry
+        const createdCashEntry = await createCashBookEntry(cashBookEntry)();
+        
+        if (!createdCashEntry) {
+            throw new Error('Failed to create cash book entry');
+        }
+
+        // Step 2: Create corresponding ledger entry
+        const ledgerEntry = await createLedgerEntry({
+            ledgerAccountId: cashLedgerAccountId,
+            date: cashBookEntry.date,
+            amount: cashBookEntry.amount,
+            type: cashBookEntry.type,
+            primaryDescription: cashBookEntry.primaryDescription,
+            documentId: cashBookEntry.documentId,
+            documentType: cashBookEntry.documentType,
+            documentNumber: cashBookEntry.documentNumber,
+            secondaryDescription: cashBookEntry.secondaryDescription,
+            referenceDescription: cashBookEntry.referenceDescription,
+            ledgerReference: cashBookEntry.ledgerReference,
+            isOpeningBalance: cashBookEntry.isOpeningBalance
+        });
+
+        console.log(`Created synchronized Cash Book and Ledger entry: ₹${cashBookEntry.amount} (${cashBookEntry.type})`);
+
+        return { 
+            cashEntry: createdCashEntry, 
+            ledgerEntry 
+        };
+    } catch (error) {
+        console.error('Error in createCashBookEntryWithLedger:', error);
+        throw error;
+    }
+}
+
 // Function to create cash book entry from PaymentOperationResult
 export async function createCashBookEntryFromPaymentOperation(
     paymentResult: PaymentOperationResult,
-    partyName?: string
-): Promise<CashBookEntry> {
+    partyName?: string,
+    cashLedgerAccountId?: string // NEW PARAMETER
+): Promise<{
+    cashEntry: CashBookEntry;
+    ledgerEntry?: LedgerEntry; // NEW RETURN
+}> {
     const supabase = await createClient();
     
     try {
         const { payment, paymentDocument, newPaidAmount, remainingAmount, statusChanged } = paymentResult;
 
-        // Validate that this is a cash payment
         if (payment.method !== 'cash') {
             throw new Error('Payment method must be cash for cash book entries');
         }
@@ -457,58 +519,49 @@ export async function createCashBookEntryFromPaymentOperation(
             throw new Error('Cash book ID is required for cash payments');
         }
 
-        // Determine transaction type and entry type
         let transactionType: string;
         let entryType: 'Dr' | 'Cr';
         
         if (payment.isReversalPayment()) {
             transactionType = `Payment Reversal`;
-            // For reversals, flip the normal logic
             entryType = payment.type === 'payment_in' ? 'Cr' : 'Dr';
         } else {
             transactionType = payment.type === 'payment_in' ? 'Payment In' : 'Payment Out';
-            // Payment In = Debit to cash (money coming in)
-            // Payment Out = Credit to cash (money going out)
             entryType = payment.type === 'payment_in' ? 'Dr' : 'Cr';
         }
 
-        // Build comprehensive descriptions
         const partyInfo = partyName ? ` - ${partyName}` : '';
         const documentInfo = ` (${paymentDocument.documentType} #${paymentDocument.documentNumber})`;
-        
         const primaryDescription = `${transactionType}${partyInfo}${documentInfo}`;
         
-        // Secondary description with payment context
-        const operationContext = payment.isReversalPayment() ? 'Reversal of payment' : 'Payment';
+        const operationContext = payment.isReversalPayment() ? 'Reversal of payment' : 'Payment processing';
         const statusContext = statusChanged ? ` | Status: ${paymentDocument.paymentStatus}` : '';
         const secondaryDescription = `${operationContext}${statusContext}`;
         
-        // Reference description with financial details
         const balanceInfo = `Paid: ₹${newPaidAmount.toLocaleString()} / ₹${paymentDocument.totalDocumentAmount.toLocaleString()}`;
         const remainingInfo = remainingAmount > 0 
             ? ` | Outstanding: ₹${remainingAmount.toLocaleString()}` 
             : ' | Fully Settled';
         const referenceDescription = `${balanceInfo}${remainingInfo}`;
 
-        // Create cash book entry with correct parameter order matching CashBookEntry constructor
         const cashBookEntry = new CashBookEntry(
-            payment.cashbookId, // cashBookId
-            payment.date, // date
-            Math.abs(payment.amount), // amount
-            entryType, // type
-            transactionType, // transactionType
-            primaryDescription, // primaryDescription
-            undefined, // id
-            payment.id, // documentId (payment ID)
-            'payment', // documentType
-            paymentDocument.documentNumber, // documentNumber - use from PaymentDocument
-            secondaryDescription, // secondaryDescription
-            referenceDescription, // referenceDescription
-            `Payment-${payment.id}`, // ledgerReference
-            false // isOpeningBalance
+            payment.cashbookId,
+            payment.date,
+            Math.abs(payment.amount),
+            entryType,
+            transactionType,
+            primaryDescription,
+            undefined,
+            payment.id,
+            'payment',
+            paymentDocument.documentNumber,
+            secondaryDescription,
+            referenceDescription,
+            `Payment-${payment.id}`,
+            false
         );
 
-        // Insert the entry
+        // Create cash book entry
         const { data, error } = await supabase
             .from('cash_book_entries')
             .insert(cashBookEntry.toDbFormat())
@@ -520,8 +573,30 @@ export async function createCashBookEntryFromPaymentOperation(
             throw new Error(`Failed to create cash book entry: ${error.message}`);
         }
 
+        const createdCashEntry = CashBookEntry.fromDbFormat(data);
+
+        // Create corresponding ledger entry if cashLedgerAccountId provided
+        let ledgerEntry: LedgerEntry | undefined;
+        if (cashLedgerAccountId) {
+            ledgerEntry = await createLedgerEntry({
+                ledgerAccountId: cashLedgerAccountId,
+                date: cashBookEntry.date,
+                amount: cashBookEntry.amount,
+                type: cashBookEntry.type,
+                primaryDescription: cashBookEntry.primaryDescription,
+                documentId: cashBookEntry.documentId,
+                documentType: cashBookEntry.documentType,
+                documentNumber: cashBookEntry.documentNumber,
+                secondaryDescription: cashBookEntry.secondaryDescription,
+                referenceDescription: cashBookEntry.referenceDescription,
+                ledgerReference: cashBookEntry.ledgerReference,
+                isOpeningBalance: false
+            });
+            console.log(`Created Cash Ledger entry for payment ${payment.id}`);
+        }
+
         console.log(`Created cash book entry for payment ${payment.id} in cash book ${payment.cashbookId}`);
-        return CashBookEntry.fromDbFormat(data);
+        return { cashEntry: createdCashEntry, ledgerEntry };
 
     } catch (error) {
         console.error('Error in createCashBookEntryFromPaymentOperation:', error);
@@ -532,29 +607,31 @@ export async function createCashBookEntryFromPaymentOperation(
 // Batch function for processing multiple payment operation results
 export async function createCashBookEntriesFromPaymentOperations(
     paymentResults: PaymentOperationResult[],
-    partyNames?: Map<string, string>
-): Promise<CashBookEntry[]> {
+    partyNames?: Map<string, string>,
+    cashLedgerAccountId?: string // NEW PARAMETER
+): Promise<{
+    cashEntries: CashBookEntry[];
+    ledgerEntries: LedgerEntry[]; // NEW RETURN
+}> {
     const supabase = await createClient();
     
     try {
         const cashBookEntries: CashBookEntry[] = [];
+        const ledgerEntries: LedgerEntry[] = [];
         
-        // Filter and process only cash payments
         const cashPaymentResults = paymentResults.filter(result => 
             result.payment.method === 'cash' && result.payment.cashbookId
         );
 
         if (cashPaymentResults.length === 0) {
             console.log('No cash payments found in the results');
-            return [];
+            return { cashEntries: [], ledgerEntries: [] };
         }
  
-        // Process each cash payment result
         for (const paymentResult of cashPaymentResults) {
             const { payment, paymentDocument, newPaidAmount, remainingAmount, statusChanged } = paymentResult;
             const partyName = partyNames?.get(payment.partyLedgerAccountId);
             
-            // Determine transaction details
             let transactionType: string;
             let entryType: 'Dr' | 'Cr';
             
@@ -566,10 +643,8 @@ export async function createCashBookEntriesFromPaymentOperations(
                 entryType = payment.type === 'payment_in' ? 'Dr' : 'Cr';
             }
 
-            // Build descriptions
             const partyInfo = partyName ? ` - ${partyName}` : '';
             const documentInfo = ` (${paymentDocument.documentType} #${paymentDocument.documentNumber})`;
-            
             const primaryDescription = `${transactionType}${partyInfo}${documentInfo}`;
             
             const operationContext = payment.isReversalPayment() ? 'Reversal' : 'Payment';
@@ -580,28 +655,27 @@ export async function createCashBookEntriesFromPaymentOperations(
             const remainingInfo = remainingAmount > 0 ? ` | Due: ₹${remainingAmount.toLocaleString()}` : ' | Settled';
             const referenceDescription = `${balanceInfo}${remainingInfo}`;
 
-            // Create cash book entry with correct parameter order
             const cashBookEntry = new CashBookEntry(
-                payment.cashbookId!, // cashBookId
-                payment.date, // date
-                Math.abs(payment.amount), // amount
-                entryType, // type
-                transactionType, // transactionType
-                primaryDescription, // primaryDescription
-                undefined, // id
-                payment.id, // documentId
-                'payment', // documentType
-                paymentDocument.documentNumber, // documentNumber - use from PaymentDocument
-                secondaryDescription, // secondaryDescription
-                referenceDescription, // referenceDescription
-                `Payment-${payment.id}`, // ledgerReference
-                false // isOpeningBalance
+                payment.cashbookId!,
+                payment.date,
+                Math.abs(payment.amount),
+                entryType,
+                transactionType,
+                primaryDescription,
+                undefined,
+                payment.id,
+                'payment',
+                paymentDocument.documentNumber,
+                secondaryDescription,
+                referenceDescription,
+                `Payment-${payment.id}`,
+                false
             );
 
             cashBookEntries.push(cashBookEntry);
         }
 
-        // Bulk insert all cash book entries
+        // Bulk insert cash book entries
         if (cashBookEntries.length > 0) {
             const dbEntries = cashBookEntries.map(entry => entry.toDbFormat());
             
@@ -615,14 +689,189 @@ export async function createCashBookEntriesFromPaymentOperations(
                 throw new Error(`Failed to create cash book entries: ${error.message}`);
             }
 
+            const createdCashEntries = data.map(CashBookEntry.fromDbFormat);
+
+            // Create corresponding ledger entries if cashLedgerAccountId provided
+            if (cashLedgerAccountId) {
+                for (const cashEntry of createdCashEntries) {
+                    const ledgerEntry = await createLedgerEntry({
+                        ledgerAccountId: cashLedgerAccountId,
+                        date: cashEntry.date,
+                        amount: cashEntry.amount,
+                        type: cashEntry.type,
+                        primaryDescription: cashEntry.primaryDescription,
+                        documentId: cashEntry.documentId,
+                        documentType: cashEntry.documentType,
+                        documentNumber: cashEntry.documentNumber,
+                        secondaryDescription: cashEntry.secondaryDescription,
+                        referenceDescription: cashEntry.referenceDescription,
+                        ledgerReference: cashEntry.ledgerReference,
+                        isOpeningBalance: false
+                    });
+                    ledgerEntries.push(ledgerEntry);
+                }
+                console.log(`Created ${ledgerEntries.length} Cash Ledger entries`);
+            }
+
             console.log(`Created ${data.length} cash book entries from payment operation results`);
-            return data.map(CashBookEntry.fromDbFormat);
+            return { cashEntries: createdCashEntries, ledgerEntries };
         }
 
-        return [];
+        return { cashEntries: [], ledgerEntries: [] };
 
     } catch (error) {
         console.error('Error in createCashBookEntriesFromPaymentOperations:', error);
         throw error;
     }
 }
+// Function to create cash book entries from vouchers
+
+export async function createCashBookEntriesFromVoucher(
+    voucher: Voucher,
+    cashLedgerAccountId?: string // NEW PARAMETER
+): Promise<{
+    cashEntries: CashBookEntry[];
+    ledgerEntries: LedgerEntry[]; // NEW RETURN
+}> {
+    const supabase = await createClient();
+    
+    try {
+        const cashBookEntries: CashBookEntry[] = [];
+        const ledgerEntries: LedgerEntry[] = [];
+        
+        if (voucher.voucherType === 'payment' && voucher.paymentMode === 'cash') {
+            const paymentVoucher = voucher as PaymentVoucher;
+            if (!paymentVoucher.cashBookId) {
+                throw new Error('Cash book ID is required for cash payment vouchers');
+            }
+            
+            const cashEntry = new CashBookEntry(
+                paymentVoucher.cashBookId,
+                paymentVoucher.date,
+                paymentVoucher.getTotalAmount(),
+                'Cr',
+                'Payment Out',
+                `Payment Voucher #${paymentVoucher.voucherNumber}`,
+                undefined,
+                paymentVoucher.id,
+                'payment_voucher',
+                paymentVoucher.voucherNumber,
+                paymentVoucher.description,
+                `Total Amount: ₹${paymentVoucher.getTotalAmount().toLocaleString()}`,
+                `Voucher-${paymentVoucher.id}`,
+                false
+            );
+            cashBookEntries.push(cashEntry);
+        }
+        
+        if (voucher.voucherType === 'receipt' && voucher.receiptMode === 'cash') {
+            const receiptVoucher = voucher as ReceiptVoucher;
+            if (!receiptVoucher.cashBookId) {
+                throw new Error('Cash book ID is required for cash receipt vouchers');
+            }
+            
+            const cashEntry = new CashBookEntry(
+                receiptVoucher.cashBookId,
+                receiptVoucher.date,
+                receiptVoucher.getTotalAmount(),
+                'Dr',
+                'Payment In',
+                `Receipt Voucher #${receiptVoucher.voucherNumber}`,
+                undefined,
+                receiptVoucher.id,
+                'receipt_voucher',
+                receiptVoucher.voucherNumber,
+                receiptVoucher.description,
+                `Total Amount: ₹${receiptVoucher.getTotalAmount().toLocaleString()}`,
+                `Voucher-${receiptVoucher.id}`,
+                false
+            );
+            cashBookEntries.push(cashEntry);
+        }
+        
+        if (voucher.voucherType === 'contra') {
+            const contraVoucher = voucher as ContraVoucher;
+            const transferAmount = contraVoucher.getTotalAmount();
+            
+            if (contraVoucher.fromAccount === 'cash' && contraVoucher.fromCashBookId) {
+                const fromEntry = new CashBookEntry(
+                    contraVoucher.fromCashBookId,
+                    contraVoucher.date,
+                    transferAmount,
+                    'Cr',
+                    'Cash Transfer Out',
+                    `Contra Voucher #${contraVoucher.voucherNumber} - Transfer Out`,
+                    undefined,
+                    contraVoucher.id,
+                    'contra_voucher',
+                    contraVoucher.voucherNumber,
+                    `Transfer to ${contraVoucher.toAccount}: ${contraVoucher.description}`,
+                    `Transfer Amount: ₹${transferAmount.toLocaleString()}`,
+                    `Voucher-${contraVoucher.id}`,
+                    false
+                );
+                cashBookEntries.push(fromEntry);
+            }
+            
+            if (contraVoucher.toAccount === 'cash' && contraVoucher.toCashBookId) {
+                const toEntry = new CashBookEntry(
+                    contraVoucher.toCashBookId,
+                    contraVoucher.date,
+                    transferAmount,
+                    'Dr',
+                    'Cash Transfer In',
+                    `Contra Voucher #${contraVoucher.voucherNumber} - Transfer In`,
+                    undefined,
+                    contraVoucher.id,
+                    'contra_voucher',
+                    contraVoucher.voucherNumber,
+                    `Transfer from ${contraVoucher.fromAccount}: ${contraVoucher.description}`,
+                    `Transfer Amount: ₹${transferAmount.toLocaleString()}`,
+                    `Voucher-${contraVoucher.id}`,
+                    false
+                );
+                cashBookEntries.push(toEntry);
+            }
+        }
+        
+        // Bulk insert cash book entries
+        if (cashBookEntries.length > 0) {
+            const createdCashEntries = await createMultipleCashBookEntries(cashBookEntries)();
+            
+            // Create corresponding ledger entries if cashLedgerAccountId provided
+            if (cashLedgerAccountId) {
+                for (const cashEntry of createdCashEntries) {
+                    const ledgerEntry = await createLedgerEntry({
+                        ledgerAccountId: cashLedgerAccountId,
+                        date: cashEntry.date,
+                        amount: cashEntry.amount,
+                        type: cashEntry.type,
+                        primaryDescription: cashEntry.primaryDescription,
+                        documentId: cashEntry.documentId,
+                        documentType: cashEntry.documentType,
+                        documentNumber: cashEntry.documentNumber,
+                        secondaryDescription: cashEntry.secondaryDescription,
+                        referenceDescription: cashEntry.referenceDescription,
+                        ledgerReference: cashEntry.ledgerReference,
+                        isOpeningBalance: false
+                    });
+                    ledgerEntries.push(ledgerEntry);
+                }
+                console.log(`Created ${ledgerEntries.length} Cash Ledger entries from voucher`);
+            }
+            
+            return { cashEntries: createdCashEntries, ledgerEntries };
+        }
+        
+        return { cashEntries: [], ledgerEntries: [] };
+        
+    } catch (error) {
+        console.error('Error creating cash book entries from voucher:', error);
+        throw error;
+    }
+}
+
+
+
+
+

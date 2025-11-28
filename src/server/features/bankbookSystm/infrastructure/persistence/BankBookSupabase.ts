@@ -323,3 +323,189 @@ export async function getBankBookIdByBankAccountId(bankAccountId: string, fpoId?
     return null;
   }
 }
+
+// ADD TO: server/features/bankbook/infrastructure/persistence/BankBookSupabase.ts
+
+import { createNewLedgerAccount } from "@/server/features/ledger/infrastructure/persistence/ledgerAccountSupabase";
+import { LedgerAccount } from "@/server/features/ledger/core/entities/Ledger";
+
+/**
+ * Creates Bank Book with corresponding Ledger Account
+ */
+export async function createBankBookWithLedger(
+    bankAccountId: string,
+    fpoId: string,
+    openingBalance: number,
+    openingDate: Date,
+    bankName: string,
+    accountNumber?: string
+): Promise<{ 
+    bankBook: BankBook; 
+    ledgerAccount: LedgerAccount;
+    bankLedgerAccountId: string; 
+}> {
+    try {
+        // Create ledger account name
+        const ledgerName = bankName;
+
+        // Step 1: Create ledger account for Bank Account
+        const bankLedgerResult = await createNewLedgerAccount({
+            name: ledgerName,
+            groupName: 'Bank Accounts',
+            openingBalance: Math.abs(openingBalance),
+            balanceType: openingBalance >= 0 ? 'Dr' : 'Cr',
+            fpoId: fpoId,
+            openingDate: openingDate
+        });
+
+        // Step 2: Create bank book
+        const bankBook = new BankBook(
+            undefined, 
+            bankAccountId, 
+            fpoId, 
+            openingBalance, 
+            openingDate
+        );
+        
+        const createdBankBook = await createBankBook(bankBook)();
+
+        if (!createdBankBook) {
+            throw new Error('Failed to create bank book');
+        }
+
+        console.log(`Created Bank Book and Ledger Account for ${bankName}`);
+        console.log(`Bank Book ID: ${createdBankBook.id}, Ledger Account ID: ${bankLedgerResult.ledgerAccount.id}`);
+
+        return { 
+            bankBook: createdBankBook, 
+            ledgerAccount: bankLedgerResult.ledgerAccount,
+            bankLedgerAccountId: bankLedgerResult.ledgerAccount.id!
+        };
+    } catch (error) {
+        console.error('Error in createBankBookWithLedger:', error);
+        throw error;
+    }
+}
+
+/**
+ * Get Bank Ledger Account ID for a bank book
+ */
+export async function getBankLedgerAccountId(bankBookId: string): Promise<string | null> {
+    const supabase = await createClient();
+    
+    try {
+        // Get bank book to find bank account details
+        const { data: bankBookData, error: bankBookError } = await supabase
+            .from('bank_books')
+            .select('bank_account_id, fpo_id')
+            .eq('id', bankBookId)
+            .single();
+
+        if (bankBookError) throw new Error(bankBookError.message);
+
+        // Get bank details
+        const { data: bankData, error: bankError } = await supabase
+            .from('bank_details')
+            .select('bank_name, account_number')
+            .eq('id', bankBookData.bank_account_id)
+            .single();
+
+        if (bankError) throw new Error(bankError.message);
+
+        // Search for ledger account matching this bank
+        const { data, error } = await supabase
+            .from('ledger_account')
+            .select('id')
+            .eq('fpo_id', bankBookData.fpo_id)
+            .eq('group_name', 'Bank Accounts')
+            .ilike('name', `%${bankData.bank_name}%`)
+            .single();
+
+        if (error) {
+            if (error.code === 'PGRST116') {
+                return null;
+            }
+            throw new Error(error.message);
+        }
+
+        return data?.id || null;
+    } catch (error) {
+        console.error('Error getting bank ledger account ID:', error);
+        return null;
+    }
+}
+
+/**
+ * Reconcile Bank Book with Bank Ledger Account
+ */
+export async function reconcileBankBookWithLedger(
+    bankBookId: string,
+    bankLedgerAccountId: string
+): Promise<{
+    isReconciled: boolean;
+    bankBookBalance: number;
+    ledgerBalance: number;
+    difference: number;
+}> {
+    const supabase = await createClient();
+    
+    try {
+        // Get bank book balance
+        const { data: bankBookData, error: bankBookError } = await supabase
+            .from('bank_books')
+            .select('opening_balance')
+            .eq('id', bankBookId)
+            .single();
+
+        if (bankBookError) throw new Error(bankBookError.message);
+
+        const { data: bankEntries, error: entriesError } = await supabase
+            .from('bank_book_entries')
+            .select('amount, type')
+            .eq('bank_book_id', bankBookId);
+
+        if (entriesError) throw new Error(entriesError.message);
+
+        let bankBookBalance = bankBookData.opening_balance;
+        bankEntries?.forEach(entry => {
+            bankBookBalance += entry.type === 'Dr' ? entry.amount : -entry.amount;
+        });
+
+        // Get ledger balance
+        const { data: ledgerData, error: ledgerError } = await supabase
+            .from('ledger_account')
+            .select('opening_balance, balance_type')
+            .eq('id', bankLedgerAccountId)
+            .single();
+
+        if (ledgerError) throw new Error(ledgerError.message);
+
+        const { data: ledgerEntries, error: ledgerEntriesError } = await supabase
+            .from('ledger_entry')
+            .select('amount, type')
+            .eq('ledger_account_id', bankLedgerAccountId);
+
+        if (ledgerEntriesError) throw new Error(ledgerEntriesError.message);
+
+        let ledgerBalance = ledgerData.balance_type === 'Dr' 
+            ? ledgerData.opening_balance 
+            : -ledgerData.opening_balance;
+
+        ledgerEntries?.forEach(entry => {
+            ledgerBalance += entry.type === 'Dr' ? entry.amount : -entry.amount;
+        });
+
+        const difference = Math.abs(bankBookBalance - ledgerBalance);
+        const isReconciled = difference < 0.01;
+
+        return {
+            isReconciled,
+            bankBookBalance,
+            ledgerBalance,
+            difference
+        };
+    } catch (error) {
+        console.error('Error reconciling bank book with ledger:', error);
+        throw error;
+    }
+}

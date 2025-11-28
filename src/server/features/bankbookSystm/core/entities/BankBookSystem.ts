@@ -9,22 +9,22 @@ export interface BankBookEntryInterface {
     type: 'Dr' | 'Cr';  // Dr = Money In, Cr = Money Out
     transactionType: string;  // 'Payment In', 'Payment Out', 'Opening Balance', etc.
     paymentMethod?: string;   // 'Cheque', 'NEFT', 'RTGS', 'UPI', 'Cash Deposit', 'DD', etc.
-    
+
     // Document Reference System
     documentId?: string;        // Reference to source document
     documentType?: string;      // 'invoice', 'purchase_voucher', 'payment_voucher', etc.
     documentNumber?: string;    // Human-readable document number
-    
+
     // Rich Description System (similar to CashBook)
     primaryDescription: string; // Main description (e.g., "Payment In", "Payment Out")
     secondaryDescription?: string; // Additional context (e.g., "Party: PARTY NAME")
     referenceDescription?: string; // Reference info (e.g., "Invoice #3 - Cheque #123456")
     ledgerReference?: string;   // Related ledger name for cross-references
-    
+
     // Bank-specific fields
     chequeNumber?: string;      // Cheque number for cheque transactions
     referenceNumber?: string;   // NEFT/RTGS/UPI reference number
-    
+
     // Additional Metadata
     isOpeningBalance?: boolean; // Flag for opening balance entries
     createdAt?: Date;
@@ -52,7 +52,7 @@ export class BankBookEntry implements BankBookEntryInterface {
         public isOpeningBalance: boolean = false,
         public createdAt?: Date,
         public updatedAt?: Date
-    ) {}
+    ) { }
 
     // Static factory methods
     static fromDbFormat(dbRow: any): BankBookEntry {
@@ -82,19 +82,19 @@ export class BankBookEntry implements BankBookEntryInterface {
     // Core business methods
     getFormattedDescription(): string {
         let description = this.primaryDescription;
-        
+
         if (this.secondaryDescription) {
             description += `\n${this.secondaryDescription}`;
         }
-        
+
         if (this.referenceDescription) {
             description += `\n${this.referenceDescription}`;
         }
-        
+
         if (this.ledgerReference) {
             description += `\nLedger: ${this.ledgerReference}`;
         }
-        
+
         return description;
     }
 
@@ -131,6 +131,8 @@ export interface BankBookInterface {
     fpoId: string;
     openingBalance: number;
     openingDate: Date;
+    ledgerAccountId?: string; // NEW
+
     createdAt?: Date;
     updatedAt?: Date;
 }
@@ -142,6 +144,8 @@ export class BankBook implements BankBookInterface {
         public fpoId: string,
         public openingBalance: number,
         public openingDate: Date,
+        public ledgerAccountId?: string, // NEW - add after openingDate
+
         public createdAt?: Date,
         public updatedAt?: Date,
         public entries: BankBookEntry[] = []
@@ -157,6 +161,8 @@ export class BankBook implements BankBookInterface {
             dbRow.fpo_id,
             dbRow.opening_balance,
             new Date(dbRow.opening_date),
+            dbRow.ledger_account_id, // NEW
+
             dbRow.created_at ? new Date(dbRow.created_at) : undefined,
             dbRow.updated_at ? new Date(dbRow.updated_at) : undefined
         );
@@ -169,12 +175,12 @@ export class BankBook implements BankBookInterface {
 
     getCurrentBalance(): number {
         let balance = this.openingBalance;
-        
+
         this.entries.forEach(entry => {
             if (entry.isOpeningBalance) return; // Skip opening balance entry
             balance += this.getNetAmount(entry);
         });
-        
+
         return balance; // Can be negative
     }
 
@@ -193,13 +199,13 @@ export class BankBook implements BankBookInterface {
         // Filter entries by date range if provided
         let entries = this.entries;
         if (startDate && endDate) {
-            entries = entries.filter(entry => 
+            entries = entries.filter(entry =>
                 entry.date >= startDate && entry.date <= endDate
             );
         }
 
         // Sort by date
-        const sortedEntries = [...entries].sort((a, b) => 
+        const sortedEntries = [...entries].sort((a, b) =>
             a.date.getTime() - b.date.getTime()
         );
 
@@ -231,7 +237,7 @@ export class BankBook implements BankBookInterface {
     }
 
     getEntriesForDateRange(startDate: Date, endDate: Date): BankBookEntry[] {
-        return this.entries.filter(entry => 
+        return this.entries.filter(entry =>
             entry.date >= startDate && entry.date <= endDate
         );
     }
@@ -244,6 +250,8 @@ export class BankBook implements BankBookInterface {
             fpo_id: this.fpoId,
             opening_balance: this.openingBalance,
             opening_date: this.openingDate,
+            ledger_account_id: this.ledgerAccountId, // NEW
+
             created_at: this.createdAt || new Date(),
             updated_at: this.updatedAt || new Date()
         };
@@ -296,17 +304,17 @@ export interface UniversalBankBookTransactionData {
     date: Date;
     transactionType: string;
     paymentMethod?: string;
-    
+
     // Description components
     partyName?: string;         // Customer/Supplier name
     documentNumber?: string;    // Invoice #, Voucher #, etc.
     additionalInfo?: string;    // Any additional context
     relatedLedgerName?: string; // Cross-reference ledger name
-    
+
     // Bank-specific data
     chequeNumber?: string;      // Cheque number
     referenceNumber?: string;   // NEFT/RTGS/UPI reference
-    
+
     // Document reference
     documentId?: string;
     documentType?: string;      // 'invoice', 'voucher', 'payment', etc.
@@ -316,17 +324,17 @@ export interface UniversalBankBookTransactionData {
 export function createBankBookEntry(data: UniversalBankBookTransactionData): BankBookEntry {
     // Build rich description
     const primaryDescription = data.transactionType;
-    
+
     let secondaryDescription = '';
     if (data.partyName) {
         secondaryDescription = `Party: ${data.partyName}`;
     }
-    
+
     let referenceDescription = '';
     if (data.documentNumber) {
         referenceDescription = data.documentNumber;
     }
-    
+
     // Add payment method details to reference description
     if (data.paymentMethod && data.chequeNumber) {
         const methodInfo = `${data.paymentMethod} #${data.chequeNumber}`;
@@ -337,7 +345,7 @@ export function createBankBookEntry(data: UniversalBankBookTransactionData): Ban
     } else if (data.paymentMethod) {
         referenceDescription += referenceDescription ? ` - ${data.paymentMethod}` : data.paymentMethod;
     }
-    
+
     if (data.additionalInfo) {
         referenceDescription += referenceDescription ? ` - ${data.additionalInfo}` : data.additionalInfo;
     }
@@ -368,7 +376,7 @@ export function createBankBookOpeningBalanceEntry(
     // Handle negative opening balances properly (overdraft)
     const balanceType: 'Dr' | 'Cr' = bankBook.openingBalance >= 0 ? 'Dr' : 'Cr';
     const balanceAmount = Math.abs(bankBook.openingBalance);
-    
+
     return new BankBookEntry(
         undefined, // id
         bankBook.id!,

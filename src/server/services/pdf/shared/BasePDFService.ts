@@ -20,6 +20,7 @@ export interface HeaderLayoutOptions {
     showAddress?: boolean;
     showContact?: boolean;
     showGSTIN?: boolean;
+    centerAlign?: boolean; // New option for center alignment
   };
   rightContent?: {
     title?: string;
@@ -94,6 +95,7 @@ export abstract class BasePDFService {
       showAddress: true,
       showContact: true,
       showGSTIN: true,
+      centerAlign: false,
       ...options.companySettings
     };
 
@@ -110,7 +112,7 @@ export abstract class BasePDFService {
         logoHeight = logoSettings.height;
         this.doc.addImage(imageData, format, this.margin, companyInfoY, logoSettings.width, logoSettings.height);
       } catch (error) {
-        console.error('❌ Failed to load logo:', error);
+        console.error('âŒ Failed to load logo:', error);
         logoHeight = 0;
       }
     }
@@ -149,6 +151,7 @@ export abstract class BasePDFService {
       showAddress: true,
       showContact: true,
       showGSTIN: true,
+      centerAlign: false,
       ...options.companySettings
     };
 
@@ -161,7 +164,7 @@ export abstract class BasePDFService {
         this.doc.addImage(imageData, format, this.margin, headerY, logoSettings.width, logoSettings.height);
         headerY += logoSettings.height + logoSettings.spacing;
       } catch (error) {
-        console.error('❌ Failed to load logo:', error);
+        console.error('âŒ Failed to load logo:', error);
       }
     }
 
@@ -192,11 +195,15 @@ export abstract class BasePDFService {
       showAddress: true,
       showContact: true,
       showGSTIN: true,
+      centerAlign: true, // Default to center align for company-only layout
       ...options.companySettings
     };
 
+    // For company-only layout, use center of page as startX when centerAlign is true
+    const startX = companySettings.centerAlign ? this.pageWidth / 2 : this.margin;
+
     // Add company information
-    const companyInfoEndY = this.addCompanyInfo(fpoProfile, this.margin, currentY, companySettings);
+    const companyInfoEndY = this.addCompanyInfo(fpoProfile, startX, currentY, companySettings);
 
     // Add right content if provided
     let rightContentEndY = currentY;
@@ -214,32 +221,36 @@ export abstract class BasePDFService {
     fpoProfile: FpoProfile, 
     startX: number, 
     startY: number, 
-    settings: Required<Exclude<HeaderLayoutOptions['companySettings'], undefined>>
+    settings: Required<Exclude<HeaderLayoutOptions['companySettings'], undefined>> & { centerAlign: boolean }
   ): number {
     let currentY = startY;
 
-    // Company name
-  
-  // Company name with text wrapping
-  this.doc.setFont('helvetica', 'bold');
-  this.doc.setFontSize(settings.nameSize);
-  
-  // Calculate max width for company name (leaving space for right content)
-  const maxWidth = this.pageWidth - startX - 70;
-  
-  // Split company name into lines if it's too long
-  const companyNameLines = this.doc.splitTextToSize(
-    fpoProfile.companyName || 'COMPANY NAME',
-    maxWidth
-  );
+    // Company name with text wrapping
+    this.doc.setFont('helvetica', 'bold');
+    this.doc.setFontSize(settings.nameSize);
+    
+    // Calculate max width for company name (leaving space for right content when not center aligned)
+    const maxWidth = settings.centerAlign 
+      ? this.pageWidth - (2 * this.margin) 
+      : this.pageWidth - startX - 70;
+    
+    // Split company name into lines if it's too long
+    const companyNameLines = this.doc.splitTextToSize(
+      fpoProfile.companyName || 'COMPANY NAME',
+      maxWidth
+    );
 
-  // Add each line of company name
-  companyNameLines.forEach((line: string, index: number) => {
-    this.doc.text(line, startX, currentY + (index * (settings.nameSize / 2)));
-  });
+    // Add each line of company name
+    companyNameLines.forEach((line: string, index: number) => {
+      if (settings.centerAlign) {
+        this.doc.text(line, startX, currentY + (index * (settings.nameSize / 2)), { align: 'center' });
+      } else {
+        this.doc.text(line, startX, currentY + (index * (settings.nameSize / 2)));
+      }
+    });
 
-  // Update Y position based on number of lines
-  currentY += (companyNameLines.length * (settings.nameSize / 2)) ;
+    // Update Y position based on number of lines
+    currentY += (companyNameLines.length * (settings.nameSize / 2));
 
     // Company details
     this.doc.setFont('helvetica', 'normal');
@@ -255,11 +266,17 @@ export abstract class BasePDFService {
       ].filter(Boolean);
       
       const addressText = addressParts.join(', ');
-      const maxWidth = this.pageWidth - startX - 90;
-      const addressLines = this.doc.splitTextToSize(addressText, maxWidth);
+      const addressMaxWidth = settings.centerAlign 
+        ? this.pageWidth - (2 * this.margin)
+        : this.pageWidth - startX - 90;
+      const addressLines = this.doc.splitTextToSize(addressText, addressMaxWidth);
       
       addressLines.forEach((line: string, index: number) => {
-        this.doc.text(line, startX, currentY + (index * settings.lineSpacing));
+        if (settings.centerAlign) {
+          this.doc.text(line, startX, currentY + (index * settings.lineSpacing), { align: 'center' });
+        } else {
+          this.doc.text(line, startX, currentY + (index * settings.lineSpacing));
+        }
       });
       currentY += addressLines.length * settings.lineSpacing;
     }
@@ -271,14 +288,24 @@ export abstract class BasePDFService {
       if (fpoProfile.phoneNumber) contactParts.push(`Phone: ${fpoProfile.phoneNumber}`);
       
       if (contactParts.length > 0) {
-        this.doc.text(contactParts.join(' | '), startX, currentY);
+        const contactText = contactParts.join(' | ');
+        if (settings.centerAlign) {
+          this.doc.text(contactText, startX, currentY, { align: 'center' });
+        } else {
+          this.doc.text(contactText, startX, currentY);
+        }
         currentY += settings.lineSpacing;
       }
     }
 
     // GST Number
     if (settings.showGSTIN && fpoProfile.gstNumber) {
-      this.doc.text(`GSTN: ${fpoProfile.gstNumber}`, startX, currentY);
+      const gstText = `GSTN: ${fpoProfile.gstNumber}`;
+      if (settings.centerAlign) {
+        this.doc.text(gstText, startX, currentY, { align: 'center' });
+      } else {
+        this.doc.text(gstText, startX, currentY);
+      }
       currentY += settings.lineSpacing;
     }
 
@@ -330,15 +357,15 @@ export abstract class BasePDFService {
    */
   protected async addCompanyLogo(logoUrl: string, currentY: number, width: number = 40, height: number = 30): Promise<number> {
     try {
-      console.log('🔍 Loading logo from URL:', logoUrl);
+      console.log('ðŸ" Loading logo from URL:', logoUrl);
       const { imageData, format } = await this.loadImage(logoUrl);
       
-      console.log('✅ Logo loaded successfully, format:', format);
+      console.log('âœ… Logo loaded successfully, format:', format);
       this.doc.addImage(imageData, format, this.margin, currentY, width, height);
       return currentY + height;
     } catch (error) {
-      console.error('❌ Failed to load logo:', error);
-      console.log('📝 Continuing without logo...');
+      console.error('âŒ Failed to load logo:', error);
+      console.log('ðŸ" Continuing without logo...');
       return currentY;
     }
   }
@@ -511,41 +538,41 @@ export abstract class BasePDFService {
    * Utility methods - COMMON across all documents
    */
   protected async loadImage(url: string): Promise<{ imageData: string; format: string }> {
-    console.log('🔄 loadImage() called with URL:', url);
+    console.log('ðŸ"„ loadImage() called with URL:', url);
     
     return new Promise((resolve, reject) => {
-      console.log('🔍 Starting image load process...');
+      console.log('ðŸ" Starting image load process...');
       
       // Handle data URLs (base64 images)
       if (url.startsWith('data:')) {
-        console.log('📊 Processing data URL...');
+        console.log('ðŸ"Š Processing data URL...');
         try {
           const format = this.getImageFormatFromDataUrl(url);
-          console.log('✅ Data URL processed, format:', format);
+          console.log('âœ… Data URL processed, format:', format);
           resolve({ imageData: url, format });
         } catch (error) {
-          console.error('❌ Error processing data URL:', error);
+          console.error('âŒ Error processing data URL:', error);
           reject(error);
         }
         return;
       }
 
       // Handle regular URLs
-      console.log('🌐 Loading image from URL:', url);
+      console.log('ðŸŒ Loading image from URL:', url);
       const img = new Image();
       
       // Set up error handling
       img.onerror = (error) => {
-        console.error('❌ Image load error event:', error);
-        console.error('❌ Failed URL:', url);
+        console.error('âŒ Image load error event:', error);
+        console.error('âŒ Failed URL:', url);
         reject(new Error(`Failed to load image from URL: ${url}`));
       };
 
       // Set up success handling
       img.onload = () => {
         try {
-          console.log('✅ Image onload event fired');
-          console.log('📏 Image dimensions:', img.width, 'x', img.height);
+          console.log('âœ… Image onload event fired');
+          console.log('ðŸ" Image dimensions:', img.width, 'x', img.height);
           
           if (img.naturalWidth === 0 || img.naturalHeight === 0) {
             throw new Error('Image loaded but has zero dimensions');
@@ -561,7 +588,7 @@ export abstract class BasePDFService {
           canvas.width = img.naturalWidth;
           canvas.height = img.naturalHeight;
           
-          console.log('🎨 Drawing image to canvas...');
+          console.log('ðŸŽ¨ Drawing image to canvas...');
           ctx.drawImage(img, 0, 0);
           
           // Determine format from URL or default to JPEG
@@ -569,24 +596,24 @@ export abstract class BasePDFService {
           const mimeType = format === 'PNG' ? 'image/png' : 'image/jpeg';
           const quality = format === 'JPEG' ? 0.92 : undefined;
           
-          console.log('🔄 Converting canvas to data URL...');
+          console.log('ðŸ"„ Converting canvas to data URL...');
           const dataUrl = canvas.toDataURL(mimeType, quality);
           
-          console.log('✅ Canvas conversion successful, format:', format);
+          console.log('âœ… Canvas conversion successful, format:', format);
           resolve({ imageData: dataUrl, format });
         } catch (error) {
-          console.error('❌ Canvas conversion error:', error);
+          console.error('âŒ Canvas conversion error:', error);
           reject(error);
         }
       };
 
       // Configure image loading
-      console.log('⚙️ Setting up image configuration...');
+      console.log('âš™ï¸ Setting up image configuration...');
       img.crossOrigin = 'anonymous';
       
       // Add timeout for loading
       const timeout = setTimeout(() => {
-        console.error('⏰ Image load timeout after 15 seconds');
+        console.error('â° Image load timeout after 15 seconds');
         reject(new Error('Image load timeout after 15 seconds'));
       }, 15000);
 
@@ -605,7 +632,7 @@ export abstract class BasePDFService {
       };
 
       // Start loading
-      console.log('🚀 Setting image src to start loading...');
+      console.log('ðŸš€ Setting image src to start loading...');
       img.src = url;
     });
   }
@@ -615,7 +642,7 @@ export abstract class BasePDFService {
    */
   private getImageFormatFromUrl(url: string): string {
     const extension = url.toLowerCase().split('.').pop()?.split('?')[0];
-    console.log('🔍 Detected file extension:', extension);
+    console.log('ðŸ" Detected file extension:', extension);
     
     switch (extension) {
       case 'png':
@@ -628,7 +655,7 @@ export abstract class BasePDFService {
       case 'gif':
         return 'PNG'; // jsPDF doesn't support GIF, convert to PNG
       default:
-        console.log('⚠️ Unknown extension, defaulting to JPEG');
+        console.log('âš ï¸ Unknown extension, defaulting to JPEG');
         return 'JPEG';
     }
   }
@@ -646,7 +673,7 @@ export abstract class BasePDFService {
     } else if (dataUrl.startsWith('data:image/gif')) {
       return 'PNG'; // Convert GIF to PNG for jsPDF
     } else {
-      console.log('⚠️ Unknown data URL format, defaulting to JPEG');
+      console.log('âš ï¸ Unknown data URL format, defaulting to JPEG');
       return 'JPEG';
     }
   }

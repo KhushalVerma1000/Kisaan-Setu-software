@@ -5,9 +5,12 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Calendar as CalendarComponent } from '@/components/ui/calendar';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { useAppSelector } from '@/store/hooks';
+import { LedgerReportsAPI } from '@/server/features/ledger/infrastructure/apiHelper/reports/reportApi';
+import { BalanceSheetPDFService } from '@/server/services/pdf/BalanceSheetPDFService';
+import DateRangePicker from '@/components/shared/date/dateRangePicker'; // Adjust the import path as needed
+import { toast } from 'react-toastify';
 
 // Define types for better type safety
 type ReportStatus = 'ready' | 'warning' | 'processing' | 'live';
@@ -31,8 +34,27 @@ interface ReportCategory {
 
 export default function ReportsPage() {
   const [selectedCategory, setSelectedCategory] = useState('all');
-  const [date, setDate] = useState<Date | undefined>(new Date());
+  
+  // Replace single date state with date range state
+  const [dateRange, setDateRange] = useState<{
+    from: Date | undefined;
+    to: Date | undefined;
+  }>(() => {
+    // Initialize with current month by default
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    return { from: startOfMonth, to: endOfMonth };
+  });
 
+  let  fpoId :string;
+  const user = useAppSelector((state) => state.user);
+if (user.fpoId) {
+   fpoId = user.fpoId;
+}
+else{
+  toast.error("Netwrk Error")
+}
   const reportCategories: ReportCategory[] = [
     {
       id: 'business',
@@ -97,13 +119,76 @@ export default function ReportsPage() {
     return statusConfig[status];
   };
 
-  const filteredCategories = selectedCategory === 'all' 
-    ? reportCategories 
+  const filteredCategories = selectedCategory === 'all'
+    ? reportCategories
     : reportCategories.filter(cat => cat.id === selectedCategory);
 
-  const handleDownload = (reportName: string, categoryTitle: string) => {
-    console.log(`Downloading ${reportName} from ${categoryTitle}`);
+  const handleDownload = async (reportName: string, categoryTitle: string) => {
+    // Get start and end dates from the date range
+    const startDate = dateRange.from;
+    const endDate = dateRange.to;
+
+    if (!startDate || !endDate) {
+      alert('Please select a valid date range before generating the report.');
+      return;
+    }
+
+    if (reportName === "Balance Sheet") {
+      alert(`Downloading ${reportName} from ${categoryTitle} for period: ${startDate.toLocaleDateString()} to ${endDate.toLocaleDateString()}`);
+      
+      const balanceSheetService = new BalanceSheetPDFService({
+        fpoId: fpoId || '',
+        asOfDate: endDate, // Use end date for Balance Sheet
+        title: 'Balance Sheet',
+        showLogo: false,
+        headerLayout: 'company-only'
+      });
+      await balanceSheetService.generatePDF();
+    }
+    else if (reportName === "Profit and Loss") {
+      alert(`Downloading ${reportName} from ${categoryTitle} for period: ${startDate.toLocaleDateString()} to ${endDate.toLocaleDateString()}`);
+      
+      const profitloss = await LedgerReportsAPI.generateProfitLoss(
+        fpoId, 
+        startDate, 
+        endDate
+      );
+
+      console.log(profitloss)
+    }
+    else {
+      alert(`Downloading ${reportName} from ${categoryTitle} for period: ${startDate.toLocaleDateString()} to ${endDate.toLocaleDateString()}`);
+    }
   };
+
+  // Custom quick filters for reports
+  const customQuickFilters = [
+    {
+      label: "Last Quarter",
+      getValue: () => {
+        const now = new Date();
+        const quarterStart = new Date(now.getFullYear(), Math.floor(now.getMonth() / 3) * 3 - 3, 1);
+        const quarterEnd = new Date(now.getFullYear(), Math.floor(now.getMonth() / 3) * 3, 0);
+        return { from: quarterStart, to: quarterEnd };
+      }
+    },
+    {
+      label: "Current Quarter",
+      getValue: () => {
+        const now = new Date();
+        const quarterStart = new Date(now.getFullYear(), Math.floor(now.getMonth() / 3) * 3, 1);
+        return { from: quarterStart, to: now };
+      }
+    },
+    {
+      label: "Last 90 days",
+      getValue: () => {
+        const today = new Date();
+        const ninetyDaysAgo = new Date(today.getTime() - 90 * 24 * 60 * 60 * 1000);
+        return { from: ninetyDaysAgo, to: today };
+      }
+    }
+  ];
 
   return (
     <div className="min-h-screen bg-gray-50 p-3 sm:p-4 lg:p-6">
@@ -120,24 +205,19 @@ export default function ReportsPage() {
               </div>
             </div>
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3">
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button variant="outline" className="w-full sm:w-[240px] justify-start text-left font-normal">
-                    <CalendarDays className="mr-2 h-4 w-4" />
-                    <span className="truncate">
-                      {date ? date.toLocaleDateString() : "Pick a date"}
-                    </span>
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0" align="start">
-                  <CalendarComponent
-                    mode="single"
-                    selected={date}
-                    onSelect={setDate}
-                    initialFocus
-                  />
-                </PopoverContent>
-              </Popover>
+              {/* Replace single date picker with date range picker */}
+              <DateRangePicker
+                dateRange={dateRange}
+                onDateRangeChange={setDateRange}
+                placeholder="Select date range"
+                className="w-full sm:w-auto"
+                showFinancialYears={true}
+                showStandardFilters={true}
+                customQuickFilters={customQuickFilters}
+                buttonVariant="outline"
+                resetToCurrentMonth={true}
+                resetLabel="Reset to current month"
+              />
               <Button className="w-full sm:w-auto">
                 <Download className="w-4 h-4 mr-2" />
                 <span className="hidden sm:inline">Export All</span>
@@ -168,6 +248,15 @@ export default function ReportsPage() {
                     </SelectContent>
                   </Select>
                 </div>
+                
+                {/* Display selected date range */}
+                {dateRange.from && dateRange.to && (
+                  <div className="text-sm text-muted-foreground bg-blue-50 px-3 py-2 rounded-lg">
+                    <span className="font-medium">Selected period: </span>
+                    {dateRange.from.toLocaleDateString()} - {dateRange.to.toLocaleDateString()}
+                  </div>
+                )}
+                
                 <div className="flex flex-wrap gap-2">
                   {reportCategories.map((category) => {
                     const IconComponent = category.icon;
@@ -238,7 +327,7 @@ export default function ReportsPage() {
                                 <Download className="w-3 h-3 sm:w-4 sm:h-4" />
                               </Button>
                             </div>
-                            
+
                             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                               <div className="flex items-center space-x-2">
                                 <Badge variant={getStatusBadge(report.status).variant} className="text-xs">
@@ -308,7 +397,7 @@ export default function ReportsPage() {
                                 <Download className="w-3 h-3 sm:w-4 sm:h-4" />
                               </Button>
                             </div>
-                            
+
                             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                               <div className="flex items-center space-x-2">
                                 <Badge variant={getStatusBadge(report.status).variant} className="text-xs">
@@ -355,7 +444,7 @@ export default function ReportsPage() {
               </div>
             </CardContent>
           </Card>
-          
+
           <Card>
             <CardContent className="p-4 sm:p-6">
               <div className="flex items-center space-x-2 sm:space-x-3">
@@ -369,7 +458,7 @@ export default function ReportsPage() {
               </div>
             </CardContent>
           </Card>
-          
+
           <Card>
             <CardContent className="p-4 sm:p-6">
               <div className="flex items-center space-x-2 sm:space-x-3">
@@ -383,7 +472,7 @@ export default function ReportsPage() {
               </div>
             </CardContent>
           </Card>
-          
+
           <Card>
             <CardContent className="p-4 sm:p-6">
               <div className="flex items-center space-x-2 sm:space-x-3">

@@ -6,25 +6,23 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import { Separator } from '@/components/ui/separator';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Textarea } from '@/components/ui/textarea';
-import { Calendar, Plus, Search, Filter, Download, TrendingUp, TrendingDown, DollarSign, Receipt, CreditCard } from 'lucide-react';
+import { Search, Filter, Download, TrendingUp, TrendingDown, DollarSign, Receipt } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { format } from 'date-fns';
 import { CashbookAPI } from '@/server/features/cashbookSystem/infrastructure/apiHelper/cashbookApi';
 import { useAppSelector } from '@/store/hooks';
+import { StatementPDFUtils } from '@/server/services/pdf/Statements/StatementPDFService';
+import { DatePicker } from '@/components/ui/datepicker';
 
 interface CashbookEntry {
   entry: {
     id: string;
-    cashBookId: string;
     date: string;
     amount: number;
     type: 'Dr' | 'Cr';
-    transactionType: string;
     primaryDescription: string;
     documentId?: string;
     documentType?: string;
@@ -33,11 +31,9 @@ interface CashbookEntry {
     referenceDescription?: string;
     ledgerReference?: string;
     isOpeningBalance?: boolean;
-    createdAt: string;
-    updatedAt: string;
   };
   runningBalance: number;
-  isNegativeBalance: boolean;
+  runningBalanceType: 'Dr' | 'Cr';
 }
 
 interface Cashbook {
@@ -55,9 +51,19 @@ interface CashbookStatement {
     startDate?: string;
     endDate?: string;
   };
-  openingBalance: number;
-  currentBalance: number;
-  isNegativeBalance: boolean;
+  ledgerAccount?: {
+    id: string;
+    name: string;
+    groupName: string;
+  };
+  openingBalance: {
+    amount: number;
+    type: 'Dr' | 'Cr';
+  };
+  currentBalance: {
+    amount: number;
+    type: 'Dr' | 'Cr';
+  };
   totalCashIn: number;
   totalCashOut: number;
   netCashFlow: number;
@@ -69,7 +75,7 @@ export default function CashbookPage() {
   const user = useAppSelector((state) => state.user);
   const fpoIdOfUser = user.fpoId;
 
-  // State management - all hooks must be declared before any early returns
+  // State management
   const [loading, setLoading] = useState(true);
   const [cashbook, setCashbook] = useState<Cashbook | null>(null);
   const [statement, setStatement] = useState<CashbookStatement | null>(null);
@@ -77,25 +83,24 @@ export default function CashbookPage() {
   const [showExportDialog, setShowExportDialog] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState<'all' | 'Dr' | 'Cr'>('all');
-  const [dateRange, setDateRange] = useState<{
-    startDate: string;
-    endDate: string;
-  }>({
-    startDate: '',
-    endDate: ''
-  });
+  
+  // Date state as Date objects for DatePicker
+  const [startDate, setStartDate] = useState<Date | undefined>(undefined);
+  const [endDate, setEndDate] = useState<Date | undefined>(undefined);
 
   // Initialization form state
-  const [initForm, setInitForm] = useState({
-    openingBalance: '',
-    openingDate: format(new Date(), 'yyyy-MM-dd')
-  });
+  const [initOpeningBalance, setInitOpeningBalance] = useState('');
+  const [initOpeningDate, setInitOpeningDate] = useState<Date | undefined>(new Date());
 
   // Export form state
-  const [exportForm, setExportForm] = useState({
-    startDate: '',
-    endDate: ''
-  });
+  const [exportStartDate, setExportStartDate] = useState<Date | undefined>(undefined);
+  const [exportEndDate, setExportEndDate] = useState<Date | undefined>(undefined);
+
+  // Convert Date to ISO string for API
+  const dateToISOString = (date: Date | undefined): string | undefined => {
+    if (!date) return undefined;
+    return format(date, 'yyyy-MM-dd');
+  };
 
   // Load cashbook data
   const loadCashbookData = async () => {
@@ -129,8 +134,8 @@ export default function CashbookPage() {
     try {
       const statementData = await CashbookAPI.getStatement(
         fpoIdOfUser,
-        dateRange.startDate || undefined,
-        dateRange.endDate || undefined
+        dateToISOString(startDate),
+        dateToISOString(endDate)
       );
 
       console.log('Statement data:', statementData);
@@ -149,12 +154,12 @@ export default function CashbookPage() {
     }
 
     try {
-      if (!initForm.openingBalance || !initForm.openingDate) {
+      if (!initOpeningBalance || !initOpeningDate) {
         toast.error('Please fill all required fields');
         return;
       }
 
-      const openingBalance = parseFloat(initForm.openingBalance);
+      const openingBalance = parseFloat(initOpeningBalance);
       if (isNaN(openingBalance)) {
         toast.error('Please enter a valid opening balance');
         return;
@@ -163,7 +168,7 @@ export default function CashbookPage() {
       const newCashbook = await CashbookAPI.createCashbook({
         fpoId: fpoIdOfUser,
         openingBalance,
-        openingDate: initForm.openingDate
+        openingDate: dateToISOString(initOpeningDate)!
       });
 
       setCashbook(newCashbook);
@@ -184,35 +189,31 @@ export default function CashbookPage() {
     }
 
     try {
-      if (!exportForm.startDate || !exportForm.endDate) {
+      if (!exportStartDate || !exportEndDate) {
         toast.error('Please select both start and end dates for export');
         return;
       }
 
-      if (new Date(exportForm.startDate) > new Date(exportForm.endDate)) {
+      if (exportStartDate > exportEndDate) {
         toast.error('Start date cannot be after end date');
         return;
       }
 
-      // Create and download JSON file
-      const exportData = await CashbookAPI.getStatement(
-        fpoIdOfUser,
-        exportForm.startDate,
-        exportForm.endDate
-      );
-      
-      const dataStr = JSON.stringify(exportData, null, 2);
-      const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
-      
-      const exportFileDefaultName = `cashbook_${exportForm.startDate}_${exportForm.endDate}.json`;
-      
-      const linkElement = document.createElement('a');
-      linkElement.setAttribute('href', dataUri);
-      linkElement.setAttribute('download', exportFileDefaultName);
-      linkElement.click();
+      try {
+        const statementData = await CashbookAPI.getStatement(
+          fpoIdOfUser, 
+          dateToISOString(exportStartDate)!, 
+          dateToISOString(exportEndDate)!
+        );
+        await StatementPDFUtils.generateCashBookPDF(statementData, fpoIdOfUser);
+        toast.success('Cash book PDF exported successfully');
+      } catch (error) {
+        toast.error('Failed to export cash book PDF');
+      }
       
       setShowExportDialog(false);
-      setExportForm({ startDate: '', endDate: '' });
+      setExportStartDate(undefined);
+      setExportEndDate(undefined);
       toast.success('Data exported successfully');
     } catch (error) {
       console.error('Error exporting data:', error);
@@ -222,8 +223,8 @@ export default function CashbookPage() {
 
   // Apply date filter
   const handleDateFilter = async () => {
-    if (dateRange.startDate && dateRange.endDate) {
-      if (new Date(dateRange.startDate) > new Date(dateRange.endDate)) {
+    if (startDate && endDate) {
+      if (startDate > endDate) {
         toast.error('Start date cannot be after end date');
         return;
       }
@@ -232,14 +233,19 @@ export default function CashbookPage() {
     toast.success('Filter applied successfully');
   };
 
-  // Filter entries
+  // Filter entries - exclude opening balance
   const filteredEntries = statement?.statement?.filter(entryWrapper => {
     const entry = entryWrapper.entry;
+    
+    // Skip opening balance entries in the display
+    if (entry.isOpeningBalance) {
+      return false;
+    }
+    
     const matchesSearch = !searchTerm || 
       entry.primaryDescription?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       entry.secondaryDescription?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      entry.documentNumber?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      entry.transactionType?.toLowerCase().includes(searchTerm.toLowerCase());
+      entry.documentNumber?.toLowerCase().includes(searchTerm.toLowerCase());
 
     const matchesType = filterType === 'all' || entry.type === filterType;
 
@@ -248,7 +254,8 @@ export default function CashbookPage() {
 
   // Clear date filter
   const clearDateFilter = () => {
-    setDateRange({ startDate: '', endDate: '' });
+    setStartDate(undefined);
+    setEndDate(undefined);
     setTimeout(() => {
       loadStatement();
       toast.success('Filter cleared');
@@ -272,7 +279,7 @@ export default function CashbookPage() {
       currency: 'INR',
       minimumFractionDigits: 0,
       maximumFractionDigits: 2
-    }).format(amount);
+    }).format(Math.abs(amount));
   };
 
   // useEffect hook
@@ -315,6 +322,11 @@ export default function CashbookPage() {
           <p className="text-muted-foreground">
             Manage your cash transactions and track balance
           </p>
+          {statement?.ledgerAccount && (
+            <p className="text-sm text-muted-foreground mt-1">
+              Ledger: {statement.ledgerAccount.name} ({statement.ledgerAccount.groupName})
+            </p>
+          )}
         </div>
         
         {cashbook && (
@@ -338,12 +350,12 @@ export default function CashbookPage() {
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">
-                  {formatCurrency(statement.currentBalance)}
+                  {formatCurrency(statement.currentBalance.amount)}
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  {statement.isNegativeBalance ? 
-                    <span className="text-red-600">Negative Balance</span> : 
-                    <span className="text-green-600">Positive Balance</span>
+                  {statement.currentBalance.type === 'Cr' ? 
+                    <span className="text-red-600">Negative Balance (Cr)</span> : 
+                    <span className="text-green-600">Positive Balance (Dr)</span>
                   }
                 </p>
               </CardContent>
@@ -395,7 +407,7 @@ export default function CashbookPage() {
             </Card>
           </div>
 
-          {/* Filters */}
+          {/* Filters with DatePicker */}
           <Card>
             <CardHeader>
               <CardTitle className="text-lg">Filters & Date Range</CardTitle>
@@ -433,61 +445,49 @@ export default function CashbookPage() {
                   </Select>
                 </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="startDate">Start Date</Label>
-                  <Input
-                    id="startDate"
-                    type="date"
-                    value={dateRange.startDate}
-                    onChange={(e) => setDateRange(prev => ({ ...prev, startDate: e.target.value }))}
+                <div className="md:col-span-2">
+                  <DatePicker
+                    date={startDate}
+                    onDateChange={setStartDate}
+                    label="Start Date"
+                    placeholder="DD/MM/YYYY"
                   />
                 </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="endDate">End Date</Label>
-                  <Input
-                    id="endDate"
-                    type="date"
-                    value={dateRange.endDate}
-                    onChange={(e) => setDateRange(prev => ({ ...prev, endDate: e.target.value }))}
+                <div className="md:col-span-2">
+                  <DatePicker
+                    date={endDate}
+                    onDateChange={setEndDate}
+                    label="End Date"
+                    placeholder="DD/MM/YYYY"
                   />
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Filter Actions</Label>
-                  <div className="flex gap-2">
-                    <Button 
-                      onClick={handleDateFilter} 
-                      variant="default" 
-                      size="sm"
-                      className="gap-1"
-                    >
-                      <Filter className="h-4 w-4" />
-                      Apply
-                    </Button>
-                    <Button 
-                      onClick={clearDateFilter} 
-                      variant="outline" 
-                      size="sm"
-                    >
-                      Clear
-                    </Button>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Current Period</Label>
-                  <div className="text-sm text-muted-foreground">
-                    {dateRange.startDate && dateRange.endDate ? (
-                      <div>
-                        {formatDate(dateRange.startDate)} - {formatDate(dateRange.endDate)}
-                      </div>
-                    ) : (
-                      <div>All entries</div>
-                    )}
-                  </div>
                 </div>
               </div>
+
+              <div className="flex gap-2 mt-4">
+                <Button 
+                  onClick={handleDateFilter} 
+                  variant="default" 
+                  size="sm"
+                  className="gap-1"
+                >
+                  <Filter className="h-4 w-4" />
+                  Apply Filter
+                </Button>
+                <Button 
+                  onClick={clearDateFilter} 
+                  variant="outline" 
+                  size="sm"
+                >
+                  Clear Filter
+                </Button>
+              </div>
+
+              {(startDate || endDate) && (
+                <div className="mt-3 text-sm text-muted-foreground">
+                  Current Period: {startDate ? format(startDate, 'dd MMM, yyyy') : 'Start'} - {endDate ? format(endDate, 'dd MMM, yyyy') : 'End'}
+                </div>
+              )}
             </CardContent>
           </Card>
 
@@ -499,7 +499,7 @@ export default function CashbookPage() {
                 Cashbook Entries
               </CardTitle>
               <CardDescription>
-                {filteredEntries.length} of {statement.statement.length} entries
+                {filteredEntries.length} entries
                 {statement.period.startDate && statement.period.endDate && (
                   <span className="ml-2">
                     ({formatDate(statement.period.startDate)} - {formatDate(statement.period.endDate)})
@@ -568,9 +568,12 @@ export default function CashbookPage() {
                               {entry.type === 'Dr' ? '+' : '-'}{formatCurrency(entry.amount)}
                             </TableCell>
                             <TableCell className={`text-right font-medium ${
-                              entryWrapper.isNegativeBalance ? 'text-red-600' : 'text-green-600'
+                              entryWrapper.runningBalanceType === 'Cr' ? 'text-red-600' : 'text-green-600'
                             }`}>
-                              {formatCurrency(Math.abs(entryWrapper.runningBalance))}
+                              {formatCurrency(entryWrapper.runningBalance)}
+                              <span className="text-xs ml-1 text-muted-foreground">
+                                {entryWrapper.runningBalanceType}
+                              </span>
                             </TableCell>
                           </TableRow>
                         );
@@ -602,20 +605,18 @@ export default function CashbookPage() {
                 type="number"
                 step="0.01"
                 placeholder="0.00"
-                value={initForm.openingBalance}
-                onChange={(e) => setInitForm(prev => ({ ...prev, openingBalance: e.target.value }))}
+                value={initOpeningBalance}
+                onChange={(e) => setInitOpeningBalance(e.target.value)}
               />
             </div>
             
-            <div className="space-y-2">
-              <Label htmlFor="openingDate">Opening Date</Label>
-              <Input
-                id="openingDate"
-                type="date"
-                value={initForm.openingDate}
-                onChange={(e) => setInitForm(prev => ({ ...prev, openingDate: e.target.value }))}
-              />
-            </div>
+            <DatePicker
+              date={initOpeningDate}
+              onDateChange={setInitOpeningDate}
+              label="Opening Date"
+              placeholder="DD/MM/YYYY"
+              required
+            />
           </div>
 
           <DialogFooter>
@@ -640,31 +641,27 @@ export default function CashbookPage() {
           </DialogHeader>
           
           <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="exportStartDate">Start Date</Label>
-              <Input
-                id="exportStartDate"
-                type="date"
-                value={exportForm.startDate}
-                onChange={(e) => setExportForm(prev => ({ ...prev, startDate: e.target.value }))}
-              />
-            </div>
+            <DatePicker
+              date={exportStartDate}
+              onDateChange={setExportStartDate}
+              label="Start Date"
+              placeholder="DD/MM/YYYY"
+              required
+            />
             
-            <div className="space-y-2">
-              <Label htmlFor="exportEndDate">End Date</Label>
-              <Input
-                id="exportEndDate"
-                type="date"
-                value={exportForm.endDate}
-                onChange={(e) => setExportForm(prev => ({ ...prev, endDate: e.target.value }))}
-              />
-            </div>
+            <DatePicker
+              date={exportEndDate}
+              onDateChange={setExportEndDate}
+              label="End Date"
+              placeholder="DD/MM/YYYY"
+              required
+            />
 
-            {exportForm.startDate && exportForm.endDate && (
+            {exportStartDate && exportEndDate && (
               <div className="p-3 bg-muted rounded-lg">
                 <p className="text-sm font-medium">Export Period:</p>
                 <p className="text-sm text-muted-foreground">
-                  {formatDate(exportForm.startDate)} - {formatDate(exportForm.endDate)}
+                  {format(exportStartDate, 'dd MMM, yyyy')} - {format(exportEndDate, 'dd MMM, yyyy')}
                 </p>
               </div>
             )}
@@ -673,7 +670,8 @@ export default function CashbookPage() {
           <DialogFooter>
             <Button variant="outline" onClick={() => {
               setShowExportDialog(false);
-              setExportForm({ startDate: '', endDate: '' });
+              setExportStartDate(undefined);
+              setExportEndDate(undefined);
             }}>
               Cancel
             </Button>
@@ -681,7 +679,7 @@ export default function CashbookPage() {
               <Download className="h-4 w-4" />
               Export Data
             </Button>
-            </DialogFooter>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

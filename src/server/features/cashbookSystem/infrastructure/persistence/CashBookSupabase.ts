@@ -217,3 +217,168 @@ export async function getCashBookIdByFpoId(fpoId: string): Promise<string | null
     return null;
   }
 }
+
+// ADD TO: server/features/cashbookSystem/infrastructure/persistence/CashBookSupabase.ts
+
+import { createNewLedgerAccount } from "@/server/features/ledger/infrastructure/persistence/ledgerAccountSupabase";
+import { LedgerAccount } from "@/server/features/ledger/core/entities/Ledger";
+import { getFpoState } from "@/server/features/fpo/infrastructure/persistence/FpoProfileSupabase";
+
+/**
+ * Creates Cash Book with corresponding Ledger Account
+ * This should be called when setting up a new FPO's cash book
+ */
+// REPLACE createCashBookWithLedger
+export async function createCashBookWithLedger(
+    fpoId: string, 
+    openingBalance: number,
+    openingDate: Date
+): Promise<{ 
+    cashBook: CashBook; 
+    ledgerAccount: LedgerAccount;
+}> {
+    try {
+     const fpostate = await  getFpoState(fpoId);
+        // Step 1: Create ledger account
+        const cashLedgerResult = await createNewLedgerAccount({
+            name: 'Cash-in-Hand',
+            groupName: 'Cash-in-Hand',
+            openingBalance: Math.abs(openingBalance),
+            balanceType: openingBalance >= 0 ? 'Dr' : 'Cr',
+            fpoId: fpoId,
+            state: fpostate ? fpostate : undefined,
+            openingDate: openingDate
+        });
+
+        // Step 2: Create cash book WITH ledger_account_id
+        const cashBook = new CashBook(
+            fpoId, 
+            openingBalance, 
+            openingDate,
+            undefined, // id
+            cashLedgerResult.ledgerAccount.id // NEW - store ledger account ID
+        );
+        
+        const createdCashBook = await createCashBook(cashBook)();
+
+        if (!createdCashBook) {
+            throw new Error('Failed to create cash book');
+        }
+
+        console.log(`Created Cash Book with linked Ledger Account: ${cashLedgerResult.ledgerAccount.id}`);
+
+        return { 
+            cashBook: createdCashBook, 
+            ledgerAccount: cashLedgerResult.ledgerAccount
+        };
+    } catch (error) {
+        console.error('Error in createCashBookWithLedger:', error);
+        throw error;
+    }
+}
+
+// REMOVE getCashLedgerAccountId() - no longer needed!
+
+/**
+ * Get Cash Ledger Account ID for an FPO
+ */
+export async function getCashLedgerAccountId(fpoId: string): Promise<string | null> {
+    const supabase = await createClient();
+    
+    try {
+        const { data, error } = await supabase
+            .from('ledger_account')
+            .select('id')
+            .eq('fpo_id', fpoId)
+            .eq('name', 'Cash-in-Hand')
+            .eq('group_name', 'Cash-in-Hand')
+            .single();
+
+        if (error) {
+            if (error.code === 'PGRST116') {
+                return null;
+            }
+            throw new Error(error.message);
+        }
+
+        return data?.id || null;
+    } catch (error) {
+        console.error('Error getting cash ledger account ID:', error);
+        return null;
+    }
+}
+
+/**
+ * Reconcile Cash Book with Cash Ledger Account
+ */
+export async function reconcileCashBookWithLedger(
+    cashBookId: string,
+    cashLedgerAccountId: string
+): Promise<{
+    isReconciled: boolean;
+    cashBookBalance: number;
+    ledgerBalance: number;
+    difference: number;
+}> {
+    const supabase = await createClient();
+    
+    try {
+        // Get cash book balance
+        const { data: cashBookData, error: cashBookError } = await supabase
+            .from('cash_books')
+            .select('opening_balance')
+            .eq('id', cashBookId)
+            .single();
+
+        if (cashBookError) throw new Error(cashBookError.message);
+
+        const { data: cashEntries, error: entriesError } = await supabase
+            .from('cash_book_entries')
+            .select('amount, type')
+            .eq('cash_book_id', cashBookId);
+
+        if (entriesError) throw new Error(entriesError.message);
+
+        let cashBookBalance = cashBookData.opening_balance;
+        cashEntries?.forEach(entry => {
+            cashBookBalance += entry.type === 'Dr' ? entry.amount : -entry.amount;
+        });
+
+        // Get ledger balance
+        const { data: ledgerData, error: ledgerError } = await supabase
+            .from('ledger_account')
+            .select('opening_balance, balance_type')
+            .eq('id', cashLedgerAccountId)
+            .single();
+
+        if (ledgerError) throw new Error(ledgerError.message);
+
+        const { data: ledgerEntries, error: ledgerEntriesError } = await supabase
+            .from('ledger_entry')
+            .select('amount, type')
+            .eq('ledger_account_id', cashLedgerAccountId);
+
+        if (ledgerEntriesError) throw new Error(ledgerEntriesError.message);
+
+        let ledgerBalance = ledgerData.balance_type === 'Dr' 
+            ? ledgerData.opening_balance 
+            : -ledgerData.opening_balance;
+
+        ledgerEntries?.forEach(entry => {
+            ledgerBalance += entry.type === 'Dr' ? entry.amount : -entry.amount;
+        });
+
+        const difference = Math.abs(cashBookBalance - ledgerBalance);
+        const isReconciled = difference < 0.01;
+
+        return {
+            isReconciled,
+            cashBookBalance,
+            ledgerBalance,
+            difference
+        };
+    } catch (error) {
+        console.error('Error reconciling cash book with ledger:', error);
+        throw error;
+    }
+}

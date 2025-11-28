@@ -1,5 +1,6 @@
 import { createClient } from "@/utils/supabase/server";
 import { Ledger, LedgerAccount, LedgerAccountInterface, LedgerEntry, LedgerEntryInterface } from "../../core/entities/Ledger";
+import { Voucher, PaymentVoucher, ReceiptVoucher, ContraVoucher, JournalVoucher } from "@/server/features/vouchers/core/entities/VoucherSystem";
 
 // Basic CRUD Operations for Ledger Entries
 
@@ -46,6 +47,26 @@ export async function getLedgerEntryById(entryId: string): Promise<LedgerEntry |
     }
 }
 
+export async function getLedgerEntriesByIds(entryIds: string[]): Promise<LedgerEntry[]> {
+    if (!entryIds || entryIds.length === 0) {
+        console.log("the params length for ledger entry ids is ",entryIds.length)
+        return [];
+    }
+
+    const supabase = await createClient();
+    
+    const { data, error } = await supabase
+        .from('ledger_entry')
+        .select('*')
+        .in('id', entryIds)
+        .order('type', { ascending: true }); // Dr before Cr
+
+    if (error) {
+        throw new Error(`Failed to fetch ledger entries: ${error.message}`);
+    }
+
+    return data.map(LedgerEntry.fromDbFormat);
+}
 export async function getLedgerEntryByDocumentId(documentId: string): Promise<LedgerEntry | null> {
     const supabase = await createClient();
     try {
@@ -901,6 +922,379 @@ export async function bulkDeleteLedgerEntries(entryIds: string[]): Promise<void>
         console.log(`${entryIds.length} ledger entries deleted successfully`);
     } catch (error) {
         console.error('Error in bulkDeleteLedgerEntries:', error);
+        throw error;
+    }
+}
+
+
+
+
+
+
+// Function to create ledger entries from vouchers
+export async function createLedgerEntriesFromVoucher(voucher: Voucher): Promise<LedgerEntry[]> {
+    const supabase = await createClient();
+    
+    try {
+        const ledgerEntries: LedgerEntry[] = [];
+        
+        // Process each voucher entry
+        for (const voucherEntry of voucher.entries) {
+            const transactionData: UniversalTransactionData = {
+                ledgerAccountId: voucherEntry.ledgerAccountId,
+                amount: voucherEntry.amount,
+                type: voucherEntry.type,
+                date: voucher.date,
+                transactionType: `${voucher.voucherType.charAt(0).toUpperCase() + voucher.voucherType.slice(1)} Voucher`,
+                documentNumber: `${voucher.voucherType.toUpperCase()} #${voucher.voucherNumber}`,
+                notes: `${voucherEntry.description} | Voucher: ${voucher.description}`,
+                documentId: voucher.id,
+                documentType: `${voucher.voucherType}_voucher`
+            };
+            
+            const ledgerEntry = createUniversalLedgerEntry(transactionData);
+            ledgerEntries.push(ledgerEntry);
+        }
+        
+        // Bulk insert all ledger entries
+        if (ledgerEntries.length > 0) {
+            const dbEntries = ledgerEntries.map(entry => entry.toDbFormat());
+            
+            const { data, error } = await supabase
+                .from('ledger_entry')
+                .insert(dbEntries)
+                .select();
+
+            if (error) {
+                console.error("Error creating ledger entries from voucher:", error);
+                throw new Error(`Failed to create ledger entries: ${error.message}`);
+            }
+
+            console.log(`Created ${data.length} ledger entries from ${voucher.voucherType} voucher #${voucher.voucherNumber}`);
+            return data.map(LedgerEntry.fromDbFormat);
+        }
+        
+        return [];
+        
+    } catch (error) {
+        console.error('Error in createLedgerEntriesFromVoucher:', error);
+        throw error;
+    }
+}
+
+// Function to create complete voucher transaction (all ledger entries for a voucher)
+export async function createVoucherTransaction(
+    voucher: Voucher,
+    voucherEntries: Array<{
+        ledgerAccountId: string;
+        amount: number;
+        type: 'Dr' | 'Cr';
+        description: string;
+    }>
+): Promise<LedgerEntry[]> {
+    const supabase = await createClient();
+    
+    try {
+        const ledgerEntries: LedgerEntry[] = [];
+        
+        // Create ledger entries for each voucher entry
+        for (const entry of voucherEntries) {
+            let transactionType = '';
+            let documentPrefix = '';
+            
+            switch (voucher.voucherType) {
+                case 'payment':
+                    transactionType = 'Payment Voucher';
+                    documentPrefix = 'PAYV';
+                    break;
+                case 'receipt':
+                    transactionType = 'Receipt Voucher';
+                    documentPrefix = 'RECV';
+                    break;
+                case 'contra':
+                    transactionType = 'Contra Voucher';
+                    documentPrefix = 'CONV';
+                    break;
+                case 'journal':
+                    const journalVoucher = voucher as JournalVoucher;
+                    transactionType = `Journal Voucher (${journalVoucher.journalType})`;
+                    documentPrefix = 'JORV';
+                    break;
+                default:
+                    transactionType = 'Unknown Voucher';
+                    documentPrefix = 'UNKN';
+            }
+
+            const transactionData: UniversalTransactionData = {
+                ledgerAccountId: entry.ledgerAccountId,
+                amount: entry.amount,
+                type: entry.type,
+                date: voucher.date,
+                transactionType,
+                documentNumber: `${documentPrefix} #${voucher.voucherNumber}`,
+                notes: `${entry.description} | Voucher: ${voucher.description}`,
+                documentId: voucher.id,
+                documentType: `${voucher.voucherType}_voucher`
+            };
+            
+            const ledgerEntry = createUniversalLedgerEntry(transactionData);
+            ledgerEntries.push(ledgerEntry);
+        }
+        
+        // Validate that debits equal credits
+        const totalDebits = ledgerEntries.filter(e => e.type === 'Dr').reduce((sum, e) => sum + e.amount, 0);
+        const totalCredits = ledgerEntries.filter(e => e.type === 'Cr').reduce((sum, e) => sum + e.amount, 0);
+        
+        if (Math.abs(totalDebits - totalCredits) > 0.01) {
+            throw new Error(`Voucher is not balanced. Debits: ₹${totalDebits}, Credits: ₹${totalCredits}`);
+        }
+        
+        // Bulk insert all ledger entries
+        const dbEntries = ledgerEntries.map(entry => entry.toDbFormat());
+        
+        const { data, error } = await supabase
+            .from('ledger_entry')
+            .insert(dbEntries)
+            .select();
+
+        if (error) {
+            console.error("Error creating voucher transaction:", error);
+            throw new Error(`Failed to create voucher transaction: ${error.message}`);
+        }
+
+        console.log(`Created balanced voucher transaction with ${data.length} entries for ${voucher.voucherType} voucher #${voucher.voucherNumber}`);
+        return data.map(LedgerEntry.fromDbFormat);
+        
+    } catch (error) {
+        console.error('Error in createVoucherTransaction:', error);
+        throw error;
+    }
+}
+
+// NEW: Function to create journal entry adjustments
+export async function createJournalAdjustment(data: {
+    fpoId: string;
+    date: Date;
+    description: string;
+    adjustmentType: 'correction' | 'accrual' | 'provision' | 'depreciation' | 'other';
+    referenceNumber?: string;
+    entries: Array<{
+        ledgerAccountId: string;
+        amount: number;
+        type: 'Dr' | 'Cr';
+        description: string;
+    }>;
+    notes?: string;
+}): Promise<LedgerEntry[]> {
+    const supabase = await createClient();
+    
+    try {
+        // Validate entries are balanced
+        const totalDebits = data.entries.filter(e => e.type === 'Dr').reduce((sum, e) => sum + e.amount, 0);
+        const totalCredits = data.entries.filter(e => e.type === 'Cr').reduce((sum, e) => sum + e.amount, 0);
+        
+        if (Math.abs(totalDebits - totalCredits) > 0.01) {
+            throw new Error(`Journal adjustment entries are not balanced. Debits: ₹${totalDebits}, Credits: ₹${totalCredits}`);
+        }
+
+        // Generate a unique reference for the adjustment
+        const adjustmentRef = `JE-${data.adjustmentType.toUpperCase()}-${Date.now()}`;
+        
+        const ledgerEntries: LedgerEntry[] = [];
+        
+        // Create ledger entries
+        for (const entry of data.entries) {
+            const transactionData: UniversalTransactionData = {
+                ledgerAccountId: entry.ledgerAccountId,
+                amount: entry.amount,
+                type: entry.type,
+                date: data.date,
+                transactionType: `Journal Entry - ${data.adjustmentType.charAt(0).toUpperCase() + data.adjustmentType.slice(1)}`,
+                documentNumber: adjustmentRef,
+                notes: `${entry.description} | Adjustment: ${data.description}`,
+                documentId: adjustmentRef, // Use adjustment reference as document ID
+                documentType: 'journal_adjustment'
+            };
+            
+            const ledgerEntry = createUniversalLedgerEntry(transactionData);
+            ledgerEntries.push(ledgerEntry);
+        }
+        
+        // Bulk insert all ledger entries
+        const dbEntries = ledgerEntries.map(entry => entry.toDbFormat());
+        
+        const { data: insertedData, error } = await supabase
+            .from('ledger_entry')
+            .insert(dbEntries)
+            .select();
+
+        if (error) {
+            console.error("Error creating journal adjustment:", error);
+            throw new Error(`Failed to create journal adjustment: ${error.message}`);
+        }
+
+        console.log(`Created journal adjustment with ${insertedData.length} entries: ${adjustmentRef}`);
+        return insertedData.map(LedgerEntry.fromDbFormat);
+        
+    } catch (error) {
+        console.error('Error in createJournalAdjustment:', error);
+        throw error;
+    }
+}
+
+// NEW: Function to reverse a journal voucher by creating opposing entries
+export async function reverseJournalVoucher(
+    originalVoucherId: string,
+    reversalDate: Date,
+    reversalDescription?: string
+): Promise<LedgerEntry[]> {
+    const supabase = await createClient();
+    
+    try {
+        // Get original ledger entries for the voucher
+        const { data: originalEntries, error } = await supabase
+            .from('ledger_entry')
+            .select('*')
+            .eq('document_id', originalVoucherId)
+            .eq('document_type', 'journal_voucher');
+
+        if (error) {
+            throw new Error(`Failed to fetch original entries: ${error.message}`);
+        }
+
+        if (!originalEntries || originalEntries.length === 0) {
+            throw new Error('No original entries found for the journal voucher');
+        }
+
+        const reversalRef = `REV-${originalVoucherId}-${Date.now()}`;
+        const reversalEntries: LedgerEntry[] = [];
+
+        // Create reverse entries (Dr becomes Cr, Cr becomes Dr)
+        for (const originalEntry of originalEntries) {
+            const transactionData: UniversalTransactionData = {
+                ledgerAccountId: originalEntry.ledger_account_id,
+                amount: originalEntry.amount,
+                type: originalEntry.type === 'Dr' ? 'Cr' : 'Dr', // Reverse the type
+                date: reversalDate,
+                transactionType: 'Journal Reversal',
+                documentNumber: reversalRef,
+                notes: `Reversal: ${originalEntry.notes || ''} | ${reversalDescription || 'Journal voucher reversal'}`,
+                documentId: reversalRef,
+                documentType: 'journal_reversal'
+            };
+            
+            const ledgerEntry = createUniversalLedgerEntry(transactionData);
+            reversalEntries.push(ledgerEntry);
+        }
+
+        // Bulk insert reversal entries
+        const dbEntries = reversalEntries.map(entry => entry.toDbFormat());
+        
+        const { data: insertedData, error: insertError } = await supabase
+            .from('ledger_entry')
+            .insert(dbEntries)
+            .select();
+
+        if (insertError) {
+            console.error("Error creating reversal entries:", insertError);
+            throw new Error(`Failed to create reversal entries: ${insertError.message}`);
+        }
+
+        console.log(`Created ${insertedData.length} reversal entries for journal voucher: ${originalVoucherId}`);
+        return insertedData.map(LedgerEntry.fromDbFormat);
+        
+    } catch (error) {
+        console.error('Error in reverseJournalVoucher:', error);
+        throw error;
+    }
+}
+
+// NEW: Function to get ledger entries by voucher type
+export async function getLedgerEntriesByVoucherType(
+    fpoId: string,
+    voucherType: 'payment' | 'receipt' | 'contra' | 'journal',
+    startDate: Date,
+    endDate: Date
+): Promise<LedgerEntry[]> {
+    const supabase = await createClient();
+    
+    try {
+        const { data, error } = await supabase
+            .from('ledger_entry')
+            .select(`
+                *,
+                ledger_account:ledger_account_id (
+                    account_name,
+                    account_code,
+                    account_type
+                )
+            `)
+            .eq('document_type', `${voucherType}_voucher`)
+            .gte('date', startDate.toISOString().split('T')[0])
+            .lte('date', endDate.toISOString().split('T')[0])
+            .order('date', { ascending: false })
+            .order('created_at', { ascending: false });
+
+        if (error) {
+            throw new Error(error.message);
+        }
+
+        return (data || []).map(LedgerEntry.fromDbFormat);
+        
+    } catch (error) {
+        console.error('Error in getLedgerEntriesByVoucherType:', error);
+        throw error;
+    }
+}
+
+// NEW: Function to validate voucher balance in ledger
+export async function validateVoucherBalance(voucherId: string): Promise<{
+    isBalanced: boolean;
+    totalDebits: number;
+    totalCredits: number;
+    difference: number;
+}> {
+    const supabase = await createClient();
+    
+    try {
+        const { data, error } = await supabase
+            .from('ledger_entry')
+            .select('amount, type')
+            .eq('document_id', voucherId);
+
+        if (error) {
+            throw new Error(error.message);
+        }
+
+        if (!data || data.length === 0) {
+            return {
+                isBalanced: true,
+                totalDebits: 0,
+                totalCredits: 0,
+                difference: 0
+            };
+        }
+
+        const totalDebits = data
+            .filter(entry => entry.type === 'Dr')
+            .reduce((sum, entry) => sum + entry.amount, 0);
+        
+        const totalCredits = data
+            .filter(entry => entry.type === 'Cr')
+            .reduce((sum, entry) => sum + entry.amount, 0);
+        
+        const difference = Math.abs(totalDebits - totalCredits);
+        const isBalanced = difference < 0.01;
+
+        return {
+            isBalanced,
+            totalDebits,
+            totalCredits,
+            difference
+        };
+        
+    } catch (error) {
+        console.error('Error in validateVoucherBalance:', error);
         throw error;
     }
 }
