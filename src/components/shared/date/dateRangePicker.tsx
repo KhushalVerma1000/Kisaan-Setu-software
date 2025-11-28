@@ -95,7 +95,7 @@ const DateRangePicker: React.FC<DateRangePickerProps> = ({
       };
     };
 
-    let currentFYStart = currentMonth >= 3 ? currentYear : currentYear - 1;
+    const currentFYStart = currentMonth >= 3 ? currentYear : currentYear - 1;
 
     ranges.push({
       ...createFY(currentFYStart),
