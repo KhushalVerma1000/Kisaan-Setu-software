@@ -1,6 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+
+=======
   compiler: {
     // Remove specific console methods in production
     removeConsole: process.env.NODE_ENV === 'production' ? {
@@ -8,6 +10,7 @@ const nextConfig: NextConfig = {
     } : false
   }
   // config options here
+
 };
 
 export default nextConfig;

@@ -1,6 +1,9 @@
 import { PaymentOperationResult } from "@/server/features/Payment/infrastructure/persistence/paymentSupabase";
 import { BankBookEntry } from "../../core/entities/BankBookSystem";
 import { createClient } from "@/utils/supabase/server";
+import { Voucher, PaymentVoucher, ReceiptVoucher, ContraVoucher } from "@/server/features/vouchers/core/entities/VoucherSystem";
+import { LedgerEntry } from "@/server/features/ledger/core/entities/Ledger";
+import { createLedgerEntry } from "@/server/features/ledger/infrastructure/persistence/ledgerEntrySupabase";
 
 export function getBankBookEntries(bankBookId: string) {
   return async (startDate?: Date, endDate?: Date): Promise<BankBookEntry[]> => {
@@ -556,18 +559,66 @@ export function getAllBankBookEntriesForFpo(fpoId: string) {
 
 
 
+// Continuing from where we left off in BankBookEntrySystem.ts
 
-// Function to create bank book entry from PaymentOperationResult
+/**
+ * Creates Bank Book Entry with corresponding Ledger Entry
+ */
+export async function createBankBookEntryWithLedger(
+    bankBookEntry: BankBookEntry,
+    bankLedgerAccountId: string
+): Promise<{ 
+    bankEntry: BankBookEntry; 
+    ledgerEntry: LedgerEntry;
+}> {
+    try {
+        const createdBankEntry = await createBankBookEntry(bankBookEntry)();
+        
+        if (!createdBankEntry) {
+            throw new Error('Failed to create bank book entry');
+        }
+
+        const ledgerEntry = await createLedgerEntry({
+            ledgerAccountId: bankLedgerAccountId,
+            date: bankBookEntry.date,
+            amount: bankBookEntry.amount,
+            type: bankBookEntry.type,
+            primaryDescription: bankBookEntry.primaryDescription,
+            documentId: bankBookEntry.documentId,
+            documentType: bankBookEntry.documentType,
+            documentNumber: bankBookEntry.documentNumber,
+            secondaryDescription: bankBookEntry.secondaryDescription,
+            referenceDescription: bankBookEntry.referenceDescription,
+            ledgerReference: bankBookEntry.ledgerReference,
+            isOpeningBalance: bankBookEntry.isOpeningBalance
+        });
+
+        console.log(`Created synchronized Bank Book and Ledger entry: ₹${bankBookEntry.amount} (${bankBookEntry.type})`);
+
+        return { 
+            bankEntry: createdBankEntry, 
+            ledgerEntry 
+        };
+    } catch (error) {
+        console.error('Error in createBankBookEntryWithLedger:', error);
+        throw error;
+    }
+}
+
+// REPLACE the existing createBankBookEntryFromPaymentOperation function:
 export async function createBankBookEntryFromPaymentOperation(
     paymentResult: PaymentOperationResult,
-    partyName?: string
-): Promise<BankBookEntry> {
+    partyName?: string,
+    bankLedgerAccountId?: string // NEW PARAMETER
+): Promise<{
+    bankEntry: BankBookEntry;
+    ledgerEntry?: LedgerEntry; // NEW RETURN
+}> {
     const supabase = await createClient();
     
     try {
         const { payment, paymentDocument, newPaidAmount, remainingAmount, statusChanged } = paymentResult;
 
-        // Validate that this is a bank payment
         if (payment.method !== 'bank_transfer') {
             throw new Error('Payment method must be bank_transfer for bank book entries');
         }
@@ -576,40 +627,32 @@ export async function createBankBookEntryFromPaymentOperation(
             throw new Error('Bank book ID is required for bank transfers');
         }
 
-        // Determine transaction type and entry type
         let transactionType: string;
         let entryType: 'Dr' | 'Cr';
         
         if (payment.isReversalPayment()) {
             transactionType = `Payment Reversal`;
-            // For reversals, flip the normal logic
             entryType = payment.type === 'payment_in' ? 'Cr' : 'Dr';
         } else {
             transactionType = payment.type === 'payment_in' ? 'Payment In' : 'Payment Out';
-            // Payment In = Debit to bank (money coming in)
-            // Payment Out = Credit to bank (money going out)
             entryType = payment.type === 'payment_in' ? 'Dr' : 'Cr';
         }
 
-        // Build comprehensive descriptions
         const partyInfo = partyName ? ` - ${partyName}` : '';
         const documentInfo = ` (${paymentDocument.documentType} #${paymentDocument.documentNumber})`;
         
         const primaryDescription = `${transactionType}${partyInfo}${documentInfo}`;
         
-        // Secondary description with payment context
         const operationContext = payment.isReversalPayment() ? 'Reversal of payment' : 'Payment processing';
         const statusContext = statusChanged ? ` | Status: ${paymentDocument.paymentStatus}` : '';
         const secondaryDescription = `${operationContext}${statusContext}`;
         
-        // Reference description with financial details
         const balanceInfo = `Paid: ₹${newPaidAmount.toLocaleString()} / ₹${paymentDocument.totalDocumentAmount.toLocaleString()}`;
         const remainingInfo = remainingAmount > 0 
             ? ` | Outstanding: ₹${remainingAmount.toLocaleString()}` 
             : ' | Fully Settled';
         const referenceDescription = `${balanceInfo}${remainingInfo}`;
 
-        // Create bank book entry with correct parameter order matching BankBookEntry constructor
         const bankBookEntry = new BankBookEntry(
             undefined, // id
             payment.bankbookId, // bankBookId
@@ -619,18 +662,18 @@ export async function createBankBookEntryFromPaymentOperation(
             transactionType, // transactionType
             primaryDescription, // primaryDescription
             'bank_transfer', // paymentMethod
-            payment.id, // documentId (payment ID)
+            payment.id, // documentId
             'payment', // documentType
-            paymentDocument.documentNumber, // documentNumber - use from PaymentDocument
+            paymentDocument.documentNumber, // documentNumber
             secondaryDescription, // secondaryDescription
             referenceDescription, // referenceDescription
             `Payment-${payment.id}`, // ledgerReference
-            undefined, // chequeNumber (not applicable for bank transfers typically)
+            undefined, // chequeNumber
             payment.referenceNumber, // referenceNumber
             false // isOpeningBalance
         );
 
-        // Insert the entry
+        // Create bank book entry
         const { data, error } = await supabase
             .from('bank_book_entries')
             .insert(bankBookEntry.toDbFormat())
@@ -642,8 +685,30 @@ export async function createBankBookEntryFromPaymentOperation(
             throw new Error(`Failed to create bank book entry: ${error.message}`);
         }
 
+        const createdBankEntry = BankBookEntry.fromDbFormat(data);
+
+        // Create corresponding ledger entry if bankLedgerAccountId provided
+        let ledgerEntry: LedgerEntry | undefined;
+        if (bankLedgerAccountId) {
+            ledgerEntry = await createLedgerEntry({
+                ledgerAccountId: bankLedgerAccountId,
+                date: bankBookEntry.date,
+                amount: bankBookEntry.amount,
+                type: bankBookEntry.type,
+                primaryDescription: bankBookEntry.primaryDescription,
+                documentId: bankBookEntry.documentId,
+                documentType: bankBookEntry.documentType,
+                documentNumber: bankBookEntry.documentNumber,
+                secondaryDescription: bankBookEntry.secondaryDescription,
+                referenceDescription: bankBookEntry.referenceDescription,
+                ledgerReference: bankBookEntry.ledgerReference,
+                isOpeningBalance: false
+            });
+            console.log(`Created Bank Ledger entry for payment ${payment.id}`);
+        }
+
         console.log(`Created bank book entry for payment ${payment.id} in bank book ${payment.bankbookId}`);
-        return BankBookEntry.fromDbFormat(data);
+        return { bankEntry: createdBankEntry, ledgerEntry };
 
     } catch (error) {
         console.error('Error in createBankBookEntryFromPaymentOperation:', error);
@@ -651,32 +716,34 @@ export async function createBankBookEntryFromPaymentOperation(
     }
 }
 
-// Batch function for processing multiple payment operation results
+// REPLACE the existing createBankBookEntriesFromPaymentOperations function:
 export async function createBankBookEntriesFromPaymentOperations(
     paymentResults: PaymentOperationResult[],
-    partyNames?: Map<string, string>
-): Promise<BankBookEntry[]> {
+    partyNames?: Map<string, string>,
+    bankLedgerAccountId?: string // NEW PARAMETER
+): Promise<{
+    bankEntries: BankBookEntry[];
+    ledgerEntries: LedgerEntry[]; // NEW RETURN
+}> {
     const supabase = await createClient();
     
     try {
         const bankBookEntries: BankBookEntry[] = [];
+        const ledgerEntries: LedgerEntry[] = [];
         
-        // Filter and process only bank transfer payments
         const bankPaymentResults = paymentResults.filter(result => 
             result.payment.method === 'bank_transfer' && result.payment.bankbookId
         );
 
         if (bankPaymentResults.length === 0) {
             console.log('No bank transfer payments found in the results');
-            return [];
+            return { bankEntries: [], ledgerEntries: [] };
         }
  
-        // Process each bank payment result
         for (const paymentResult of bankPaymentResults) {
             const { payment, paymentDocument, newPaidAmount, remainingAmount, statusChanged } = paymentResult;
             const partyName = partyNames?.get(payment.partyLedgerAccountId);
             
-            // Determine transaction details
             let transactionType: string;
             let entryType: 'Dr' | 'Cr';
             
@@ -688,7 +755,6 @@ export async function createBankBookEntriesFromPaymentOperations(
                 entryType = payment.type === 'payment_in' ? 'Dr' : 'Cr';
             }
 
-            // Build descriptions
             const partyInfo = partyName ? ` - ${partyName}` : '';
             const documentInfo = ` (${paymentDocument.documentType} #${paymentDocument.documentNumber})`;
             
@@ -702,7 +768,6 @@ export async function createBankBookEntriesFromPaymentOperations(
             const remainingInfo = remainingAmount > 0 ? ` | Due: ₹${remainingAmount.toLocaleString()}` : ' | Settled';
             const referenceDescription = `${balanceInfo}${remainingInfo}`;
 
-            // Create bank book entry with correct parameter order
             const bankBookEntry = new BankBookEntry(
                 undefined, // id
                 payment.bankbookId!, // bankBookId
@@ -714,7 +779,7 @@ export async function createBankBookEntriesFromPaymentOperations(
                 'bank_transfer', // paymentMethod
                 payment.id, // documentId
                 'payment', // documentType
-                paymentDocument.documentNumber, // documentNumber - use from PaymentDocument
+                paymentDocument.documentNumber, // documentNumber
                 secondaryDescription, // secondaryDescription
                 referenceDescription, // referenceDescription
                 `Payment-${payment.id}`, // ledgerReference
@@ -726,7 +791,7 @@ export async function createBankBookEntriesFromPaymentOperations(
             bankBookEntries.push(bankBookEntry);
         }
 
-        // Bulk insert all bank book entries
+        // Bulk insert bank book entries
         if (bankBookEntries.length > 0) {
             const dbEntries = bankBookEntries.map(entry => entry.toDbFormat());
             
@@ -740,14 +805,198 @@ export async function createBankBookEntriesFromPaymentOperations(
                 throw new Error(`Failed to create bank book entries: ${error.message}`);
             }
 
+            const createdBankEntries = data.map(BankBookEntry.fromDbFormat);
+
+            // Create corresponding ledger entries if bankLedgerAccountId provided
+            if (bankLedgerAccountId) {
+                for (const bankEntry of createdBankEntries) {
+                    const ledgerEntry = await createLedgerEntry({
+                        ledgerAccountId: bankLedgerAccountId,
+                        date: bankEntry.date,
+                        amount: bankEntry.amount,
+                        type: bankEntry.type,
+                        primaryDescription: bankEntry.primaryDescription,
+                        documentId: bankEntry.documentId,
+                        documentType: bankEntry.documentType,
+                        documentNumber: bankEntry.documentNumber,
+                        secondaryDescription: bankEntry.secondaryDescription,
+                        referenceDescription: bankEntry.referenceDescription,
+                        ledgerReference: bankEntry.ledgerReference,
+                        isOpeningBalance: false
+                    });
+                    ledgerEntries.push(ledgerEntry);
+                }
+                console.log(`Created ${ledgerEntries.length} Bank Ledger entries`);
+            }
+
             console.log(`Created ${data.length} bank book entries from payment operation results`);
-            return data.map(BankBookEntry.fromDbFormat);
+            return { bankEntries: createdBankEntries, ledgerEntries };
         }
 
-        return [];
+        return { bankEntries: [], ledgerEntries: [] };
 
     } catch (error) {
         console.error('Error in createBankBookEntriesFromPaymentOperations:', error);
         throw error;
     }
 }
+
+// REPLACE the existing createBankBookEntriesFromVoucher function:
+// export async function createBankBookEntriesFromVoucher(
+//     voucher: Voucher,
+//     bankLedgerAccountId?: string // NEW PARAMETER
+// ): Promise<{
+//     bankEntries: BankBookEntry[];
+//     ledgerEntries: LedgerEntry[]; // NEW RETURN
+// }> {
+//     const supabase = await createClient();
+    
+//     try {
+//         const bankBookEntries: BankBookEntry[] = [];
+//         const ledgerEntries: LedgerEntry[] = [];
+        
+//         if (voucher.voucherType === 'payment' && voucher.paymentMode === 'bank') {
+//             const paymentVoucher = voucher as PaymentVoucher;
+//             if (!paymentVoucher.bankBookId) {
+//                 throw new Error('Bank book ID is required for bank payment vouchers');
+//             }
+            
+//             const bankEntry = new BankBookEntry(
+//                 undefined, // id
+//                 paymentVoucher.bankBookId,
+//                 paymentVoucher.date,
+//                 paymentVoucher.getTotalAmount(),
+//                 'Cr', // Bank balance decreasing
+//                 'Payment Out',
+//                 `Payment Voucher #${paymentVoucher.voucherNumber}`,
+//                 paymentVoucher.chequeNumber ? 'Cheque' : 'Bank Transfer',
+//                 paymentVoucher.id,
+//                 'payment_voucher',
+//                 paymentVoucher.voucherNumber,
+//                 paymentVoucher.description,
+//                 `Total Amount: ₹${paymentVoucher.getTotalAmount().toLocaleString()}`,
+//                 `Voucher-${paymentVoucher.id}`,
+//                 paymentVoucher.chequeNumber,
+//                 undefined, // referenceNumber
+//                 false
+//             );
+//             bankBookEntries.push(bankEntry);
+//         }
+        
+//         if (voucher.voucherType === 'receipt' && voucher.receiptMode === 'bank') {
+//             const receiptVoucher = voucher as ReceiptVoucher;
+//             if (!receiptVoucher.bankBookId) {
+//                 throw new Error('Bank book ID is required for bank receipt vouchers');
+//             }
+            
+//             const bankEntry = new BankBookEntry(
+//                 undefined, // id
+//                 receiptVoucher.bankBookId,
+//                 receiptVoucher.date,
+//                 receiptVoucher.getTotalAmount(),
+//                 'Dr', // Bank balance increasing
+//                 'Payment In',
+//                 `Receipt Voucher #${receiptVoucher.voucherNumber}`,
+//                 receiptVoucher.chequeNumber ? 'Cheque' : 'Bank Transfer',
+//                 receiptVoucher.id,
+//                 'receipt_voucher',
+//                 receiptVoucher.voucherNumber,
+//                 receiptVoucher.description,
+//                 `Total Amount: ₹${receiptVoucher.getTotalAmount().toLocaleString()}`,
+//                 `Voucher-${receiptVoucher.id}`,
+//                 receiptVoucher.chequeNumber,
+//                 undefined, // referenceNumber
+//                 false
+//             );
+//             bankBookEntries.push(bankEntry);
+//         }
+        
+//         if (voucher.voucherType === 'contra') {
+//             const contraVoucher = voucher as ContraVoucher;
+//             const transferAmount = contraVoucher.getTotalAmount();
+            
+//             // From bank account
+//             if (contraVoucher.fromAccount === 'bank' && contraVoucher.fromBankBookId) {
+//                 const fromEntry = new BankBookEntry(
+//                     undefined, // id
+//                     contraVoucher.fromBankBookId,
+//                     contraVoucher.date,
+//                     transferAmount,
+//                     'Cr', // Bank balance decreasing
+//                     'Bank Transfer Out',
+//                     `Contra Voucher #${contraVoucher.voucherNumber} - Transfer Out`,
+//                     'Internal Transfer',
+//                     contraVoucher.id,
+//                     'contra_voucher',
+//                     contraVoucher.voucherNumber,
+//                     `Transfer to ${contraVoucher.toAccount}: ${contraVoucher.description}`,
+//                     `Transfer Amount: ₹${transferAmount.toLocaleString()}`,
+//                     `Voucher-${contraVoucher.id}`,
+//                     undefined, // chequeNumber
+//                     undefined, // referenceNumber
+//                     false
+//                 );
+//                 bankBookEntries.push(fromEntry);
+//             }
+            
+//             // To bank account
+//             if (contraVoucher.toAccount === 'bank' && contraVoucher.toBankBookId) {
+//                 const toEntry = new BankBookEntry(
+//                     undefined, // id
+//                     contraVoucher.toBankBookId,
+//                     contraVoucher.date,
+//                     transferAmount,
+//                     'Dr', // Bank balance increasing
+//                     'Bank Transfer In',
+//                     `Contra Voucher #${contraVoucher.voucherNumber} - Transfer In`,
+//                     'Internal Transfer',
+//                     contraVoucher.id,
+//                     'contra_voucher',
+//                     contraVoucher.voucherNumber,
+//                     `Transfer from ${contraVoucher.fromAccount}: ${contraVoucher.description}`,
+//                     `Transfer Amount: ₹${transferAmount.toLocaleString()}`,
+//                     `Voucher-${contraVoucher.id}`,
+//                     undefined, // chequeNumber
+//                     undefined, // referenceNumber
+//                     false
+//                 );
+//                 bankBookEntries.push(toEntry);
+//             }
+//         }
+        
+//         // Bulk insert bank book entries
+//         if (bankBookEntries.length > 0) {
+//             const createdBankEntries = await createMultipleBankBookEntries(bankBookEntries)();
+            
+//             // Create corresponding ledger entries if bankLedgerAccountId provided
+//             if (bankLedgerAccountId) {
+//                 for (const bankEntry of createdBankEntries) {
+//                     const ledgerEntry = await createLedgerEntry({
+//                         ledgerAccountId: bankLedgerAccountId,
+//                         date: bankEntry.date,
+//                         amount: bankEntry.amount,
+//                         type: bankEntry.type,
+//                         primaryDescription: bankEntry.primaryDescription,
+//                         documentId: bankEntry.documentId,
+//                         documentType: bankEntry.documentType,
+//                         documentNumber: bankEntry.documentNumber,
+//                         secondaryDescription: bankEntry.secondaryDescription,
+//                         referenceDescription: bankEntry.referenceDescription,
+//                         ledgerReference: bankEntry.ledgerReference,
+//                         isOpeningBalance: false
+//                     });
+//                     ledgerEntries.push(ledgerEntry);
+//                 }
+//                 console.log(`Created ${ledgerEntries.length} Bank Ledger entries from voucher`);
+//             }
+            
+//             return { bankEntries: createdBankEntries, ledgerEntries };
+//         }
+        
+//         return { bankEntries: [], ledgerEntries: [] };
+        
+//     } catch (error) {
+//         console.error('Error creating bank book entries from voucher:', error);
+//         throw error;
+//     }
+// }

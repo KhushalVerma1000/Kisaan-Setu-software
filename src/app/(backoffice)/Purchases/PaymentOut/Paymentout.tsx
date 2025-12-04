@@ -4,8 +4,6 @@ import DocumentSelect from '@/components/shared/document/documentSelect'
 import PaymentDocumentInfo from '@/components/shared/Payment/paymentDocumentInfo'
 import PaymentMethodSelect, { PaymentMethodBooksValue, PaymentMethodValue } from '@/components/shared/Payment/paymentMethodSelect'
 import { LedgerAccount } from '@/server/features/ledger/core/entities/Ledger'
-import { PaymentInput, PaymentDocumentInput } from '@/server/services/ApplicationServices/paymentService/paymentApplicationService'
-import { paymentApi } from '@/server/services/ApplicationServices/paymentService/utils/paymentApi'
 import { PaymentType, PaymentMethod } from '@/server/features/Payment/core/entities/Payment'
 import { PaymentDocument } from '@/server/features/Payment/core/entities/PaymentDocument'
 import { useAppSelector } from '@/store/hooks'
@@ -61,7 +59,65 @@ const PaymentOutPage = () => {
       setRemainingBalance(0)
     }, 3000)
   }, [])
+  // --- DUMMY TYPES & API (add here) ---
+type PaymentStatus = 'active' | 'pending' | 'cancelled';
 
+interface PaymentInput {
+  amount: number;
+  method: PaymentMethod;
+  type: PaymentType;
+  date: Date | string;
+  partyLedgerAccountId?: string;
+  notes?: string;
+  paymentStatus?: PaymentStatus;
+  fpoId?: string;
+  createdAt?: Date;
+  updatedAt?: Date;
+  referenceNumber?: string;
+  cashbookId?: string;
+  bankbookId?: string;
+  bankAccountId?: string;
+  // allow extra fields
+  [key: string]: any;
+}
+
+interface PaymentDocumentInput {
+  documentId: string;
+  documentType: string;
+  documentNumber?: string;
+  totalDocumentAmount?: number;
+  fpoId?: string;
+  [key: string]: any;
+}
+
+/**
+ * Dummy payment API used for local development / type checks.
+ * Replace with real api call (import) when available.
+ */
+const paymentApi = {
+  processPayment: async (
+    paymentInput: PaymentInput,
+    documentInput?: PaymentDocumentInput
+  ): Promise<{ success: boolean; data?: any; error?: string }> => {
+    // minimal simulated network delay
+    await new Promise((r) => setTimeout(r, 200));
+    console.log('[paymentApi.processPayment] dummy call', paymentInput, documentInput);
+
+    // Basic validation in dummy API
+    if (!paymentInput || !paymentInput.amount || paymentInput.amount <= 0) {
+      return { success: false, error: 'Invalid payment amount' };
+    }
+
+    return {
+      success: true,
+      data: {
+        id: 'dummy_payment_' + Date.now(),
+        ...paymentInput,
+        document: documentInput || null
+      }
+    };
+  }
+};
   // Helper function to safely handle errors
   const handleError = (error: any): string => {
     if (error instanceof Error) {

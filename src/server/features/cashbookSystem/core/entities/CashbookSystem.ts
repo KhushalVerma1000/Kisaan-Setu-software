@@ -7,18 +7,18 @@ export interface CashBookEntryInterface {
     amount: number;
     type: 'Dr' | 'Cr';  // Dr = Cash In, Cr = Cash Out
     transactionType: string;  // 'Payment In', 'Payment Out', 'Opening Balance', etc.
-    
+
     // Document Reference System
     documentId?: string;        // Reference to source document
     documentType?: string;      // 'invoice', 'purchase_voucher', 'payment_voucher', etc.
     documentNumber?: string;    // Human-readable document number
-    
+
     // Rich Description System (similar to your LedgerEntry)
     primaryDescription: string; // Main description (e.g., "Payment In", "Payment Out")
     secondaryDescription?: string; // Additional context (e.g., "Party: PARTY NAME")
     referenceDescription?: string; // Reference info (e.g., "Invoice #3", "Purchase Voucher #14173")
     ledgerReference?: string;   // Related ledger name for cross-references
-    
+
     // Additional Metadata
     isOpeningBalance?: boolean; // Flag for opening balance entries
     createdAt?: Date;
@@ -43,24 +43,24 @@ export class CashBookEntry implements CashBookEntryInterface {
         public isOpeningBalance: boolean = false,
         public createdAt?: Date,
         public updatedAt?: Date
-    ) {}
+    ) { }
 
     // Get formatted description like in your image
     getFormattedDescription(): string {
         let description = this.primaryDescription;
-        
+
         if (this.secondaryDescription) {
             description += `\n${this.secondaryDescription}`;
         }
-        
+
         if (this.referenceDescription) {
             description += `\n${this.referenceDescription}`;
         }
-        
+
         if (this.ledgerReference) {
             description += `\nLedger: ${this.ledgerReference}`;
         }
-        
+
         return description;
     }
 
@@ -115,6 +115,7 @@ export interface CashBookInterface {
     fpoId: string;
     openingBalance: number;
     openingDate: Date;
+    ledgerAccountId?: string; // NEW
     createdAt?: Date;
     updatedAt?: Date;
 }
@@ -125,6 +126,7 @@ export class CashBook implements CashBookInterface {
         public openingBalance: number,
         public openingDate: Date,
         public id?: string,
+        public ledgerAccountId?: string, // NEW
         public createdAt?: Date,
         public updatedAt?: Date,
         public entries: CashBookEntry[] = []
@@ -139,6 +141,7 @@ export class CashBook implements CashBookInterface {
             fpo_id: this.fpoId,
             opening_balance: this.openingBalance,
             opening_date: this.openingDate,
+            ledger_account_id: this.ledgerAccountId, // NEW
             created_at: this.createdAt || new Date(),
             updated_at: this.updatedAt || new Date()
         };
@@ -151,6 +154,7 @@ export class CashBook implements CashBookInterface {
             dbRow.opening_balance,
             new Date(dbRow.opening_date),
             dbRow.id,
+            dbRow.ledger_account_id, // NEW
             dbRow.created_at ? new Date(dbRow.created_at) : undefined,
             dbRow.updated_at ? new Date(dbRow.updated_at) : undefined
         );
@@ -171,12 +175,12 @@ export class CashBook implements CashBookInterface {
     // Get current cash balance (can be negative)
     getCurrentBalance(): number {
         let balance = this.openingBalance;
-        
+
         this.entries.forEach(entry => {
             if (entry.isOpeningBalance) return; // Skip opening balance entry
             balance += this.getNetAmount(entry);
         });
-        
+
         return balance; // Can be negative
     }
 
@@ -197,13 +201,13 @@ export class CashBook implements CashBookInterface {
         // Filter entries by date range if provided
         let entries = this.entries;
         if (startDate && endDate) {
-            entries = entries.filter(entry => 
+            entries = entries.filter(entry =>
                 entry.date >= startDate && entry.date <= endDate
             );
         }
 
         // Sort by date
-        const sortedEntries = [...entries].sort((a, b) => 
+        const sortedEntries = [...entries].sort((a, b) =>
             a.date.getTime() - b.date.getTime()
         );
 
@@ -236,7 +240,7 @@ export class CashBook implements CashBookInterface {
 
     // Get entries for a specific date range
     getEntriesForDateRange(startDate: Date, endDate: Date): CashBookEntry[] {
-        return this.entries.filter(entry => 
+        return this.entries.filter(entry =>
             entry.date >= startDate && entry.date <= endDate
         );
     }
@@ -267,13 +271,13 @@ export interface UniversalCashBookTransactionData {
     type: 'Dr' | 'Cr';
     date: Date;
     transactionType: string;
-    
+
     // Description components
     partyName?: string;         // Customer/Supplier name
     documentNumber?: string;    // Invoice #, Voucher #, etc.
     additionalInfo?: string;    // Any additional context
     relatedLedgerName?: string; // Cross-reference ledger name
-    
+
     // Document reference
     documentId?: string;
     documentType?: string;      // 'invoice', 'voucher', 'payment', etc.
@@ -283,17 +287,17 @@ export interface UniversalCashBookTransactionData {
 export function createCashBookEntry(data: UniversalCashBookTransactionData): CashBookEntry {
     // Build rich description
     const primaryDescription = data.transactionType;
-    
+
     let secondaryDescription = '';
     if (data.partyName) {
         secondaryDescription = `Party: ${data.partyName}`;
     }
-    
+
     let referenceDescription = '';
     if (data.documentNumber) {
         referenceDescription = data.documentNumber;
     }
-    
+
     if (data.additionalInfo) {
         referenceDescription += referenceDescription ? ` - ${data.additionalInfo}` : data.additionalInfo;
     }
@@ -322,7 +326,7 @@ export function createCashBookOpeningBalanceEntry(
     // Handle negative opening balances properly
     const balanceType: 'Dr' | 'Cr' = cashBook.openingBalance >= 0 ? 'Dr' : 'Cr';
     const balanceAmount = Math.abs(cashBook.openingBalance);
-    
+
     return new CashBookEntry(
         cashBook.id!,
         cashBook.openingDate,
