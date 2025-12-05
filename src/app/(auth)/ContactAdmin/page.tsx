@@ -78,12 +78,12 @@ export default function ContactAdminPage() {
                 </div>
                 <div className="flex-1">
                   <h3 className="font-semibold text-slate-900">Phone</h3>
-                  <p className="text-slate-600">+91 78200 38781</p>
+                  <p className="text-slate-600">+91 72170 65399</p>
                   <Button 
                     variant="outline" 
                     size="sm" 
                     className="mt-2"
-                    onClick={() => window.open('tel:+917820038781')}
+                    onClick={() => window.open('tel:+917217065399')}
                   >
                     <Phone className="w-4 h-4 mr-2" />
                     Call Now
@@ -100,12 +100,12 @@ export default function ContactAdminPage() {
                 </div>
                 <div className="flex-1">
                   <h3 className="font-semibold text-slate-900">WhatsApp</h3>
-                  <p className="text-slate-600">+91 78200 38781</p>
+                  <p className="text-slate-600">+91 72170 65399</p>
                   <Button 
                     variant="outline" 
                     size="sm" 
                     className="mt-2"
-                    onClick={() => window.open('https://wa.me/917820038781?text=Hi, I would like to request a new account for Kisaan Setu platform.')}
+                    onClick={() => window.open('https://wa.me/917217065399?text=Hi, I would like to request a new account for Kisaan Setu platform.')}
                   >
                     <MessageSquare className="w-4 h-4 mr-2" />
                     WhatsApp
@@ -260,7 +260,7 @@ export default function ContactAdminPage() {
           <Button 
             size="lg" 
             className="px-8"
-            onClick={() => window.open('mailto:admin@kisaansetu.com?subject=New Account Request - Kisaan Setu Platform&body=Dear Administrator,%0A%0AI would like to request a new account for the Kisaan Setu platform.%0A%0AMy Details:%0AName: [Your Full Name]%0AOrganization: [Your Organization]%0AJob Title: [Your Position]%0APhone: [Your Phone Number]%0APurpose: [Why you need access]%0A%0AThank you for your consideration.%0A%0ABest regards')}
+            onClick={() => window.open('mailto:kisaansetu@sukrshinfotech.com?subject=New Account Request - Kisaan Setu Platform&body=Dear Administrator,%0A%0AI would like to request a new account for the Kisaan Setu platform.%0A%0AMy Details:%0AName: [Your Full Name]%0AOrganization: [Your Organization]%0AJob Title: [Your Position]%0APhone: [Your Phone Number]%0APurpose: [Why you need access]%0A%0AThank you for your consideration.%0A%0ABest regards')}
           >
             <Mail className="w-5 h-5 mr-2" />
             Send Account Request Email
@@ -268,7 +268,7 @@ export default function ContactAdminPage() {
           <Button 
             variant="outline" 
             size="lg"
-            onClick={() => window.open('https://wa.me/919876543210?text=Hi, I would like to request a new account for Kisaan Setu platform. Could you please guide me through the process?')}
+            onClick={() => window.open('https://wa.me/917217065399?text=Hi, I would like to request a new account for Kisaan Setu platform. Could you please guide me through the process?')}
           >
             <MessageSquare className="w-5 h-5 mr-2" />
             WhatsApp Admin
