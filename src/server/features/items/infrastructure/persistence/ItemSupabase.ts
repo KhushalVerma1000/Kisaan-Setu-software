@@ -128,12 +128,12 @@ export function createProductWithStock(
 
 // 🟢 NEW: Function to update current stock
 export async function updateProductStock(
-  id: string, 
-  quantity: number, 
+  id: string,
+  quantity: number,
   operation: 'add' | 'subtract' | 'set' = 'set'
 ): Promise<Product | null> {
   const supabase = await createClient()
-  
+
   try {
     const updateData: any = {
       last_stock_update: new Date().toISOString()
@@ -155,8 +155,8 @@ export async function updateProductStock(
       }
 
       const currentStock = currentItem.current_stock || 0
-      updateData.current_stock = operation === 'add' 
-        ? currentStock + quantity 
+      updateData.current_stock = operation === 'add'
+        ? currentStock + quantity
         : currentStock - quantity
     }
 
@@ -176,7 +176,7 @@ export async function updateProductStock(
     }
 
     const category = dbRowToCategoryProps(data.categories)
-    
+
     let unit: Unit | undefined
     if (data.unit_code) {
       unit = await getUnitByCode(data.unit_code) || undefined
@@ -184,7 +184,7 @@ export async function updateProductStock(
         throw new Error(`Unit with code ${data.unit_code} not found`)
       }
     }
-    
+
     return dbRowToItemProps(data, category, unit) as Product
   } catch (error) {
     console.error('Error updating product stock:', error)
@@ -220,7 +220,7 @@ export async function getLowStockProducts(fpo_id: string): Promise<Product[] | n
     const products = []
     for (const row of data) {
       const category = dbRowToCategoryProps(row.categories)
-      
+
       let unit: Unit | undefined
       if (row.unit_code) {
         unit = await getUnitByCode(row.unit_code) || undefined
@@ -229,7 +229,7 @@ export async function getLowStockProducts(fpo_id: string): Promise<Product[] | n
           continue
         }
       }
-      
+
       products.push(dbRowToItemProps(row, category, unit) as Product)
     }
 
@@ -265,7 +265,7 @@ export async function getOutOfStockProducts(fpo_id: string): Promise<Product[] |
     const products = []
     for (const row of data) {
       const category = dbRowToCategoryProps(row.categories)
-      
+
       let unit: Unit | undefined
       if (row.unit_code) {
         unit = await getUnitByCode(row.unit_code) || undefined
@@ -274,7 +274,7 @@ export async function getOutOfStockProducts(fpo_id: string): Promise<Product[] |
           continue
         }
       }
-      
+
       products.push(dbRowToItemProps(row, category, unit) as Product)
     }
 
@@ -344,7 +344,7 @@ export async function createCategory(category: Category, fpo_id: string): Promis
 
 export async function updateCategory(id: string, updates: Partial<Category>): Promise<Category | null> {
   const supabase = await createClient()
-  
+
   const updateData: any = {}
   if (updates.name !== undefined) updateData.name = updates.name
   if (updates.description !== undefined) updateData.description = updates.description
@@ -392,7 +392,7 @@ export async function getAllCategories(fpo_id: string): Promise<Category[] | nul
 
 export async function getCategoryById(id: string): Promise<Category | null> {
   const supabase = await createClient()
-  
+
   try {
     const { data, error } = await supabase
       .from('categories')
@@ -413,7 +413,7 @@ export async function getCategoryById(id: string): Promise<Category | null> {
 
 export async function deleteCategory(id: string): Promise<boolean> {
   const supabase = await createClient()
-  
+
   try {
     const { error } = await supabase
       .from('categories')
@@ -465,7 +465,7 @@ export async function createUnit(unit: Unit, fpo_id: string): Promise<Unit | nul
 
 export async function updateUnit(code: string, updates: Partial<Unit>): Promise<Unit | null> {
   const supabase = await createClient()
-  
+
   // Check if it's a default unit - don't allow updating default units
   if (isDefaultUnit(code)) {
     throw new Error('Cannot update default unit. Default units are read-only.')
@@ -509,14 +509,14 @@ export async function getAllUnits(fpo_id: string): Promise<Unit[] | null> {
     }
 
     const customUnits = data ? data.map(row => dbRowToUnitProps(row)) : []
-    
+
     // Combine default units with custom units
     const defaultUnits = Unit.defaultUnits()
     const allUnits = [...defaultUnits, ...customUnits]
-    
+
     // Sort by label
     allUnits.sort((a, b) => a.label.localeCompare(b.label))
-    
+
     return allUnits
   } catch (error) {
     console.error('Error fetching units:', error)
@@ -532,7 +532,7 @@ export async function getUnitByCode(code: string): Promise<Unit | null> {
 
   // Otherwise, check the database
   const supabase = await createClient()
-  
+
   try {
     const { data, error } = await supabase
       .from('units')
@@ -553,7 +553,7 @@ export async function getUnitByCode(code: string): Promise<Unit | null> {
 
 export async function deleteUnit(code: string): Promise<boolean> {
   const supabase = await createClient()
-  
+
   // Check if it's a default unit - don't allow deleting default units
   if (isDefaultUnit(code)) {
     throw new Error('Cannot delete default unit. Default units are read-only.')
@@ -590,7 +590,7 @@ export async function initializeDefaultUnits(fpo_id: string): Promise<Unit[] | n
 
 export async function getItemByNameAndFpo(name: string, fpo_id: string): Promise<Product | Service | null> {
   const supabase = await createClient()
-  
+
   try {
     const { data, error } = await supabase
       .from('items')
@@ -613,7 +613,7 @@ export async function getItemByNameAndFpo(name: string, fpo_id: string): Promise
     if (!data) return null
 
     const category = dbRowToCategoryProps(data.categories)
-    
+
     // Get unit information (from default units or database)
     let unit: Unit | undefined
     if (data.unit_code) {
@@ -622,7 +622,7 @@ export async function getItemByNameAndFpo(name: string, fpo_id: string): Promise
         console.warn(`Unit with code ${data.unit_code} not found for item ${data.id}`)
       }
     }
-    
+
     return dbRowToItemProps(data, category, unit)
   } catch (error) {
     console.error('Error checking item by name and FPO:', error)
@@ -696,13 +696,50 @@ export async function createItem(item: Product | Service, fpo_id: string): Promi
     }
 
     const category = dbRowToCategoryProps(data.categories)
-    
+
     // Get unit information (from default units or database)
     let unit: Unit | undefined
     if (data.unit_code) {
       unit = await getUnitByCode(data.unit_code) || undefined
       if (!unit) {
         throw new Error(`Unit with code ${data.unit_code} not found`)
+      }
+    }
+
+    // 🟢 NEW: Create opening inventory transaction if needed
+    if (data.type === 'product' && !error) {
+      const initialStock = data.current_stock || data.opening_quantity || 0;
+
+      // Even if stock is 0, we might want an opening record? 
+      // Only if opening_quantity is specified or current_stock > 0
+      if (initialStock !== 0 || (data.opening_quantity && data.opening_quantity !== 0)) {
+        try {
+          const { InventoryTransaction } = await import('@/server/features/inventory/core/entities/InventoryTransaction');
+
+          const openingTx = new InventoryTransaction({
+            fpoId: fpo_id,
+            itemId: data.id,
+            itemType: 'product',
+            transactionType: 'opening',
+            quantity: initialStock,
+            unitPrice: data.purchase_price || 0,
+            transactionDate: data.opening_stock_date ? new Date(data.opening_stock_date) : new Date(),
+            stockBefore: 0,
+            stockAfter: initialStock,
+            notes: 'Opening Stock',
+            documentType: 'opening',
+            documentTotal: initialStock * (data.purchase_price || 0)
+          } as any); // Using 'as any' to bypass potential missing optional fields if interface is strict
+
+          const txDb = openingTx.toDbFormat();
+          delete txDb.id;
+
+          await supabase.from('inventory_transactions').insert(txDb);
+
+        } catch (txError) {
+          console.error('Failed to create opening transaction:', txError);
+          // Don't fail item creation, just log error
+        }
       }
     }
 
@@ -716,7 +753,7 @@ export async function createItem(item: Product | Service, fpo_id: string): Promi
 // UPDATED: updateItem function to handle current stock and fix date handling
 export async function updateItem(id: string, updates: Partial<Product | Service>): Promise<Product | Service | null> {
   const supabase = await createClient()
-  
+
   const updateData: any = {}
   if (updates.name !== undefined) updateData.name = updates.name
   if (updates.category !== undefined) updateData.category_id = updates.category.id
@@ -738,54 +775,54 @@ export async function updateItem(id: string, updates: Partial<Product | Service>
     updateData.unit_code = productUpdates.unit.code
   }
   if (productUpdates.openingQuantity !== undefined) updateData.opening_quantity = productUpdates.openingQuantity
-  
+
   // Fix date handling - convert string to Date if needed, then to ISO string
   if (productUpdates.openingStockDate !== undefined) {
     if (productUpdates.openingStockDate === null) {
       updateData.opening_stock_date = null
     } else {
-      const date = typeof productUpdates.openingStockDate === 'string' 
-        ? new Date(productUpdates.openingStockDate) 
+      const date = typeof productUpdates.openingStockDate === 'string'
+        ? new Date(productUpdates.openingStockDate)
         : productUpdates.openingStockDate
       updateData.opening_stock_date = date?.toISOString()
     }
   }
-  
+
   if (productUpdates.mfgDate !== undefined) {
     if (productUpdates.mfgDate === null) {
       updateData.mfg_date = null
     } else {
-      const date = typeof productUpdates.mfgDate === 'string' 
-        ? new Date(productUpdates.mfgDate) 
+      const date = typeof productUpdates.mfgDate === 'string'
+        ? new Date(productUpdates.mfgDate)
         : productUpdates.mfgDate
       updateData.mfg_date = date?.toISOString()
     }
   }
-  
+
   if (productUpdates.expDate !== undefined) {
     if (productUpdates.expDate === null) {
       updateData.exp_date = null
     } else {
-      const date = typeof productUpdates.expDate === 'string' 
-        ? new Date(productUpdates.expDate) 
+      const date = typeof productUpdates.expDate === 'string'
+        ? new Date(productUpdates.expDate)
         : productUpdates.expDate
       updateData.exp_date = date?.toISOString()
     }
   }
-  
+
   if (productUpdates.currentStock !== undefined) updateData.current_stock = productUpdates.currentStock
-  
+
   if (productUpdates.lastStockUpdate !== undefined) {
     if (productUpdates.lastStockUpdate === null) {
       updateData.last_stock_update = null
     } else {
-      const date = typeof productUpdates.lastStockUpdate === 'string' 
-        ? new Date(productUpdates.lastStockUpdate) 
+      const date = typeof productUpdates.lastStockUpdate === 'string'
+        ? new Date(productUpdates.lastStockUpdate)
         : productUpdates.lastStockUpdate
       updateData.last_stock_update = date?.toISOString()
     }
   }
-  
+
   if (productUpdates.barcode !== undefined) updateData.barcode = productUpdates.barcode
   if (productUpdates.discount !== undefined) updateData.discount = productUpdates.discount
   if (productUpdates.lowStockAlert !== undefined) updateData.low_stock_alert = productUpdates.lowStockAlert
@@ -806,7 +843,7 @@ export async function updateItem(id: string, updates: Partial<Product | Service>
     }
 
     const category = dbRowToCategoryProps(data.categories)
-    
+
     // Get unit information (from default units or database)
     let unit: Unit | undefined
     if (data.unit_code) {
@@ -815,7 +852,7 @@ export async function updateItem(id: string, updates: Partial<Product | Service>
         throw new Error(`Unit with code ${data.unit_code} not found`)
       }
     }
-    
+
     return dbRowToItemProps(data, category, unit)
   } catch (error) {
     console.error('Error updating item:', error)
@@ -844,7 +881,7 @@ export async function getAllItems(fpo_id: string): Promise<(Product | Service)[]
     const items = []
     for (const row of data) {
       const category = dbRowToCategoryProps(row.categories)
-      
+
       // Get unit information (from default units or database)
       let unit: Unit | undefined
       if (row.unit_code) {
@@ -854,7 +891,7 @@ export async function getAllItems(fpo_id: string): Promise<(Product | Service)[]
           continue // Skip this item if unit is not found
         }
       }
-      
+
       items.push(dbRowToItemProps(row, category, unit))
     }
 
@@ -867,7 +904,7 @@ export async function getAllItems(fpo_id: string): Promise<(Product | Service)[]
 
 export async function getItemById(id: string): Promise<Product | Service | null> {
   const supabase = await createClient()
-  
+
   try {
     const { data, error } = await supabase
       .from('items')
@@ -885,7 +922,7 @@ export async function getItemById(id: string): Promise<Product | Service | null>
     if (!data) return null
 
     const category = dbRowToCategoryProps(data.categories)
-    
+
     // Get unit information (from default units or database)
     let unit: Unit | undefined
     if (data.unit_code) {
@@ -894,7 +931,7 @@ export async function getItemById(id: string): Promise<Product | Service | null>
         throw new Error(`Unit with code ${data.unit_code} not found`)
       }
     }
-    
+
     return dbRowToItemProps(data, category, unit)
   } catch (error) {
     console.error('Error fetching item by ID:', error)
@@ -925,7 +962,7 @@ export async function getItemsByCategory(categoryId: string, fpo_id: string): Pr
     const items = []
     for (const row of data) {
       const category = dbRowToCategoryProps(row.categories)
-      
+
       // Get unit information (from default units or database)
       let unit: Unit | undefined
       if (row.unit_code) {
@@ -935,7 +972,7 @@ export async function getItemsByCategory(categoryId: string, fpo_id: string): Pr
           continue // Skip this item if unit is not found
         }
       }
-      
+
       items.push(dbRowToItemProps(row, category, unit))
     }
 
@@ -948,7 +985,7 @@ export async function getItemsByCategory(categoryId: string, fpo_id: string): Pr
 
 export async function deleteItem(id: string): Promise<boolean> {
   const supabase = await createClient()
-  
+
   try {
     const { error } = await supabase
       .from('items')
@@ -977,7 +1014,7 @@ export async function bulkUpsertItems(items: (Product | Service)[], fpo_id: stri
 
   const batchSize = 50
   const batches = []
-  
+
   for (let i = 0; i < items.length; i += batchSize) {
     batches.push(items.slice(i, i + batchSize))
   }
@@ -992,9 +1029,9 @@ export async function bulkUpsertItems(items: (Product | Service)[], fpo_id: stri
           failed.push({ data: item, error: 'Failed to create item' })
         }
       } catch (error) {
-        failed.push({ 
-          data: item, 
-          error: error instanceof Error ? error.message : 'Unknown error' 
+        failed.push({
+          data: item,
+          error: error instanceof Error ? error.message : 'Unknown error'
         })
       }
     }

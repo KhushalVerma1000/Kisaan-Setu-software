@@ -2,7 +2,7 @@
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  Package, Tag, Layers, Plus, Edit, Trash2, IndianRupee, MoveUpRight, 
+  Package, Tag, Layers, Plus, Edit, Trash2, IndianRupee, MoveUpRight,
   MoreHorizontal, Grid, List, Search, Filter, AlertTriangle, Settings,
   ShoppingCart, Wrench, TrendingUp, Package2, Zap, Star, Clock
 } from "lucide-react";
@@ -43,7 +43,7 @@ interface ItemLite {
   type?: 'product' | 'service'; // Add type to interface
   lowStockAlert?: number;
   currentStock?: number;
-  unit?: string ;
+  unit?: string;
   hsn_sac?: string;
 }
 
@@ -62,7 +62,7 @@ export default function ItemListPage() {
   const [page, setPage] = useState<number>(1);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  
+
   const itemsPerPage = 20;
 
   const fetchItems = async () => {
@@ -71,35 +71,35 @@ export default function ItemListPage() {
       setLoading(false);
       return;
     }
-    
+
     try {
       setLoading(true);
       setError(null);
-      
+
       const res = await fetch(`/api/items?fpo_id=${fpoId}`);
-      
+
       if (!res.ok) {
         throw new Error(`HTTP error! status: ${res.status}`);
       }
-      
+
       const json = await res.json();
-      console.log('Data coming from api',json.data)
+      console.log('Data coming from api', json.data)
       if (json.error) {
         throw new Error(json.error);
       }
-      
+
       // Mock type assignment for demonstration - you'll need to update your API to return type
-      const itemsWithType = (json.data || []).map((item:ItemApiResponse) => ({
+      const itemsWithType = (json.data || []).map((item: ItemApiResponse) => ({
         ...item,
         type: item.purchasePrice > 0 ? 'product' : 'service' as 'product' | 'service',
-        currentStock: item.currentStock, 
-        unit: item.unit? item.unit.label : 'pcs',
+        currentStock: item.currentStock,
+        unit: item.unit ? item.unit.label : 'pcs',
         lowStockAlert: item.purchasePrice > 0 ? 10 : undefined,
-        hsn_sac: item.hsn_sac 
+        hsn_sac: item.hsn_sac
       }));
-      
+
       setAllItems(itemsWithType);
-      console.log('item which is maped',itemsWithType);
+      console.log('item which is maped', itemsWithType);
       setPage(1);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "Failed to load items";
@@ -110,19 +110,19 @@ export default function ItemListPage() {
     }
   };
 
-  useEffect(() => { 
-    fetchItems(); 
+  useEffect(() => {
+    fetchItems();
   }, [fpoId]);
 
   // Filter items based on search and type filter
   const filteredItems = allItems.filter(item => {
     const matchesSearch = item.name.toLowerCase().includes(search.toLowerCase()) ||
-                         item.categoryName.toLowerCase().includes(search.toLowerCase());
-    
-    const matchesFilter = filter === 'all' || 
-                         (filter === 'products' && item.type === 'product') ||
-                         (filter === 'services' && item.type === 'service');
-    
+      item.categoryName.toLowerCase().includes(search.toLowerCase());
+
+    const matchesFilter = filter === 'all' ||
+      (filter === 'products' && item.type === 'product') ||
+      (filter === 'services' && item.type === 'service');
+
     return matchesSearch && matchesFilter;
   });
 
@@ -131,10 +131,10 @@ export default function ItemListPage() {
     total: allItems.length,
     products: allItems.filter(item => item.type === 'product').length,
     services: allItems.filter(item => item.type === 'service').length,
-    lowStock: allItems.filter(item => 
-      item.type === 'product' && 
-      item.currentStock !== undefined && 
-      item.lowStockAlert !== undefined && 
+    lowStock: allItems.filter(item =>
+      item.type === 'product' &&
+      item.currentStock !== undefined &&
+      item.lowStockAlert !== undefined &&
       item.currentStock <= item.lowStockAlert
     ).length
   };
@@ -152,14 +152,14 @@ export default function ItemListPage() {
 
   const handleDelete = async () => {
     if (!confirmDeleteId) return;
-    
+
     try {
       const res = await fetch(`/api/items/${confirmDeleteId}`, { method: "DELETE" });
-      
+
       if (!res.ok) {
         throw new Error(`HTTP error! status: ${res.status}`);
       }
-      
+
       toast.success("Item deleted successfully");
       fetchItems();
     } catch (err) {
@@ -183,10 +183,10 @@ export default function ItemListPage() {
   };
 
   const isLowStock = (item: ItemLite) => {
-    return item.type === 'product' && 
-           item.currentStock !== undefined && 
-           item.lowStockAlert !== undefined && 
-           item.currentStock <= item.lowStockAlert;
+    return item.type === 'product' &&
+      item.currentStock !== undefined &&
+      item.lowStockAlert !== undefined &&
+      item.currentStock <= item.lowStockAlert;
   };
 
   // Loading state
@@ -219,8 +219,8 @@ export default function ItemListPage() {
             </h1>
             <p className="text-muted-foreground">Manage your products and services</p>
           </div>
-          <Button onClick={() => router.push("/Items/AddItem")} className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"> 
-            <Plus className="mr-2 h-4 w-4" /> Add Item 
+          <Button onClick={() => router.push("/Items/AddItem")} className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700">
+            <Plus className="mr-2 h-4 w-4" /> Add Item
           </Button>
         </div>
         <Card>
@@ -248,11 +248,11 @@ export default function ItemListPage() {
           <p className="text-muted-foreground">Manage your products and services</p>
         </div>
         <div className="flex gap-2">
-          <Button 
-            onClick={() => router.push("/Items/AddItem")} 
+          <Button
+            onClick={() => router.push("/Items/AddItem")}
             className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
-          > 
-            <Plus className="mr-2 h-4 w-4" /> Add Item 
+          >
+            <Plus className="mr-2 h-4 w-4" /> Add Item
           </Button>
         </div>
       </div>
@@ -270,7 +270,7 @@ export default function ItemListPage() {
             </div>
           </CardContent>
         </Card>
-        
+
         <Card className="border-l-4 border-l-green-500">
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
@@ -282,7 +282,7 @@ export default function ItemListPage() {
             </div>
           </CardContent>
         </Card>
-        
+
         <Card className="border-l-4 border-l-purple-500">
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
@@ -294,7 +294,7 @@ export default function ItemListPage() {
             </div>
           </CardContent>
         </Card>
-        
+
         <Card className="border-l-4 border-l-orange-500">
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
@@ -320,7 +320,7 @@ export default function ItemListPage() {
               className="pl-10"
             />
           </div>
-          
+
           <Tabs value={filter} onValueChange={(value) => setFilter(value as ItemFilter)} className="w-auto">
             <TabsList className="grid w-full grid-cols-3">
               <TabsTrigger value="all">All</TabsTrigger>
@@ -329,7 +329,7 @@ export default function ItemListPage() {
             </TabsList>
           </Tabs>
         </div>
-        
+
         <div className="flex items-center gap-2">
           <Badge variant="secondary" className="hidden sm:flex">
             {filteredItems.length} item{filteredItems.length !== 1 ? 's' : ''}
@@ -375,11 +375,10 @@ export default function ItemListPage() {
             ) : currentPageItems.map(item => {
               const ItemIcon = getItemIcon(item.type || 'product');
               const isLowStockItem = isLowStock(item);
-              
+
               return (
-                <Card key={item.id} className={`hover:shadow-lg transition-all duration-200 hover:scale-105 ${
-                  isLowStockItem ? 'ring-2 ring-orange-200' : ''
-                }`}>
+                <Card key={item.id} className={`hover:shadow-lg transition-all duration-200 hover:scale-105 ${isLowStockItem ? 'ring-2 ring-orange-200' : ''
+                  }`}>
                   <CardHeader className="pb-3">
                     <div className="flex items-start justify-between">
                       <div className="flex items-center gap-2 flex-1 min-w-0">
@@ -410,9 +409,12 @@ export default function ItemListPage() {
                           <DropdownMenuItem onClick={() => router.push(`/Items/edit/${item.id}`)}>
                             <Edit className="w-4 h-4 mr-2" /> Edit
                           </DropdownMenuItem>
+                         <DropdownMenuItem onClick={() => router.push(`/Inventory?itemId=${item.id}`)}>
+                            <TrendingUp className="w-4 h-4 mr-2" /> {item.type === 'product' ? 'View Inventory' : 'View Analytics'}
+                          </DropdownMenuItem>
                           <DropdownMenuSeparator />
-                          <DropdownMenuItem 
-                            onClick={() => setConfirmDeleteId(item.id)} 
+                          <DropdownMenuItem
+                            onClick={() => setConfirmDeleteId(item.id)}
                             className="text-red-600 focus:text-red-600 focus:bg-red-50"
                           >
                             <Trash2 className="w-4 h-4 mr-2" /> Delete
@@ -430,7 +432,7 @@ export default function ItemListPage() {
                           {item.salePrice.toLocaleString()}
                         </div>
                       </div>
-                      
+
                       {item.type === 'product' && (
                         <>
                           <div className="flex justify-between items-center">
@@ -450,7 +452,7 @@ export default function ItemListPage() {
                           </div>
                         </>
                       )}
-                      
+
                       <div className="flex justify-between items-center text-xs text-muted-foreground">
                         <span>HSN/SAC: {item.hsn_sac}</span>
                         <Badge variant="outline" className={`text-xs ${getItemColor(item.type || 'product')}`}>
@@ -499,11 +501,10 @@ export default function ItemListPage() {
                   ) : currentPageItems.map(item => {
                     const ItemIcon = getItemIcon(item.type || 'product');
                     const isLowStockItem = isLowStock(item);
-                    
+
                     return (
-                      <TableRow key={item.id} className={`hover:bg-muted/50 ${
-                        isLowStockItem ? 'bg-orange-50' : ''
-                      }`}>
+                      <TableRow key={item.id} className={`hover:bg-muted/50 ${isLowStockItem ? 'bg-orange-50' : ''
+                        }`}>
                         <TableCell>
                           <div className="flex items-center gap-2">
                             <div className={`p-1 rounded ${getItemColor(item.type || 'product')}`}>
@@ -554,24 +555,28 @@ export default function ItemListPage() {
                           </code>
                         </TableCell>
                         <TableCell>
-                          <div className="flex gap-1">
-                            <Button 
-                              size="sm" 
-                              variant="ghost" 
-                              onClick={() => router.push(`/Items/edit/${item.id}`)}
-                              className="h-8 w-8 p-0"
-                            >
-                              <Edit className="w-4 h-4" />
-                            </Button>
-                            <Button 
-                              size="sm" 
-                              variant="ghost" 
-                              onClick={() => setConfirmDeleteId(item.id)}
-                              className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </Button>
-                          </div>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button size="sm" variant="ghost" className="h-8 w-8 p-0">
+                                <MoreHorizontal className="w-4 h-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem onClick={() => router.push(`/Items/edit/${item.id}`)}>
+                                <Edit className="w-4 h-4 mr-2" /> Edit
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => router.push(`/Inventory?itemId=${item.id}`)}>
+                                <TrendingUp className="w-4 h-4 mr-2" /> View Inventory
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem
+                                onClick={() => setConfirmDeleteId(item.id)}
+                                className="text-red-600 focus:text-red-600 focus:bg-red-50"
+                              >
+                                <Trash2 className="w-4 h-4 mr-2" /> Delete
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                         </TableCell>
                       </TableRow>
                     );
@@ -595,17 +600,17 @@ export default function ItemListPage() {
               Page {page} of {totalPages}
             </div>
             <div className="flex gap-2">
-              <Button 
-                variant="outline" 
-                disabled={page === 1} 
+              <Button
+                variant="outline"
+                disabled={page === 1}
                 onClick={() => setPage(prev => Math.max(prev - 1, 1))}
                 className="w-20"
               >
                 Previous
               </Button>
-              <Button 
-                variant="outline" 
-                disabled={page >= totalPages} 
+              <Button
+                variant="outline"
+                disabled={page >= totalPages}
                 onClick={() => setPage(prev => prev + 1)}
                 className="w-20"
               >
@@ -627,8 +632,8 @@ export default function ItemListPage() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction 
-              className="bg-red-600 hover:bg-red-700 focus:ring-red-600" 
+            <AlertDialogAction
+              className="bg-red-600 hover:bg-red-700 focus:ring-red-600"
               onClick={handleDelete}
             >
               Delete Item

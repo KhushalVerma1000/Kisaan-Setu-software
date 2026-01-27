@@ -109,7 +109,6 @@ const itemsSlice = createSlice({
   },
 });
 
-// FIXED SELECTORS - These now work with the correct RootState shape
 export const selectAllItems = (state: RootState) => state.items.list;
 export const selectItemsLoading = (state: RootState) => state.items.loading;
 export const selectItemsError = (state: RootState) => state.items.error;

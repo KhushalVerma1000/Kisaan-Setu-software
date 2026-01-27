@@ -91,7 +91,7 @@ const loadInvoices = useCallback(async (showSuccessToast = false) => {
   try {
     const filters: any = {
       page: 1, // Always load from page 1
-      limit: 1000, // Load more records to reduce API calls
+      limit: 100, // Load more records to reduce API calls
       sortBy: 'created_at' as const,
       sortOrder: 'desc' as const,
       fpoId
@@ -1371,7 +1371,7 @@ useEffect(() => {
                 <div className="flex gap-1">
                   {/* Show page numbers with ellipsis for large page counts */}
                   {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
-                    let pageNum;
+                    let pageNum : number;
                     if (totalPages <= 5) {
                       pageNum = i + 1;
                     } else if (currentPage <= 3) {

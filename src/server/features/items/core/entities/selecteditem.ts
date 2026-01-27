@@ -1,5 +1,8 @@
 // src/models/SelectedItem.ts
 import { Item, Product, Service } from "./Item";
+import { Category } from "./Category";
+import { Unit } from "./Unit";
+import { ILineItemBase } from "./LineItemBase";
 
 // Interface for component props
 export interface IAddItemComponentProps {
@@ -7,7 +10,7 @@ export interface IAddItemComponentProps {
   availableItems: Item[];
   onItemsChange?: (summary: ILineItemSummary) => void;
   onValidationError?: (errors: string[]) => void;
-  documentType?: "invoice" | "purchase_voucher" | "quotation";
+  documentType?: "invoice" | "purchase_voucher" | "quotation" | "purchase_order";
   readOnly?: boolean;
   showShipment?: boolean;
   showRoundOff?: boolean;
@@ -41,7 +44,7 @@ export interface ILineItemSummary {
   shipmentAmount: number;
   roundOff: number;
   grandTotal: number;
-  itemCount? : number;
+  itemCount?: number;
 }
 
 export class SelectedItem {
@@ -60,14 +63,14 @@ export class SelectedItem {
     discount?: IDiscountConfig,
     gstConfig?: IGSTConfig,
     lineNumber: number = 0,
-        documentType: 'invoice' | 'purchase_voucher' | 'quotation' = 'invoice' // Add this parameter
+    documentType: 'invoice' | 'purchase_voucher' | 'quotation' | 'purchase_order' = 'invoice' // Add this parameter
 
   ) {
     this.id = `line_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     this.item = item;
     this.quantity = quantity;
 
-    
+
     // Use appropriate price based on document type
     if (unitPrice !== undefined) {
       this.unitPrice = unitPrice;
@@ -79,10 +82,10 @@ export class SelectedItem {
         this.unitPrice = item.salePrice;
       }
     }
-        this.discount = discount || { value: 0, type: "fixed" };
-    this.gstConfig = gstConfig || { 
-      rate: item.gstTaxPercent, 
-      type: item.salePriceInclusive ? "including" : "excluding" 
+    this.discount = discount || { value: 0, type: "fixed" };
+    this.gstConfig = gstConfig || {
+      rate: item.gstTaxPercent,
+      type: item.salePriceInclusive ? "including" : "excluding"
     };
     this.lineNumber = lineNumber;
   }
@@ -113,7 +116,7 @@ export class SelectedItem {
     }
 
     const amountAfterDiscount = this.getAmountAfterDiscount();
-    
+
     if (this.gstConfig.type === "including") {
       // GST is included in the price, so we need to extract it
       return amountAfterDiscount - (amountAfterDiscount / (1 + this.gstConfig.rate / 100));
@@ -126,7 +129,7 @@ export class SelectedItem {
   // Get the taxable amount (for GST calculation)
   getTaxableAmount(): number {
     const amountAfterDiscount = this.getAmountAfterDiscount();
-    
+
     if (this.gstConfig.type === "including") {
       return amountAfterDiscount - this.getGSTAmount();
     }
@@ -136,7 +139,7 @@ export class SelectedItem {
   // Get final line total
   getLineTotal(): number {
     const amountAfterDiscount = this.getAmountAfterDiscount();
-    
+
     if (this.gstConfig.type === "including") {
       return amountAfterDiscount;
     } else if (this.gstConfig.type === "excluding") {
@@ -213,6 +216,75 @@ export class SelectedItem {
       },
     };
   }
+
+  /**
+   * Create a SelectedItem from line item data (from database)
+   * This allows loading items directly from line_items tables without
+   * requiring a full Item object lookup from the items table
+   */
+  static fromLineItem(
+    lineItem: ILineItemBase,
+    documentType: 'invoice' | 'purchase_voucher' | 'quotation' | 'purchase_order' = 'invoice'
+  ): SelectedItem {
+    const category = new Category('default', 'General');
+    const unit = lineItem.unitCode
+      ? new Unit(lineItem.unitCode, lineItem.unitCode)
+      : new Unit('NOS', 'Numbers');
+
+    // Create Product or Service based on item type
+    let item: Item;
+    if (lineItem.itemType === 'product') {
+      item = new Product(
+        lineItem.itemId,
+        lineItem.itemName,
+        category,
+        lineItem.hsnSac,
+        lineItem.unitPrice,
+        lineItem.gstType === 'including',
+        lineItem.gstRate,
+        lineItem.unitPrice, // purchasePrice (same as unitPrice for now)
+        false, // purchasePriceInclusive
+        unit,
+        0, // openingQuantity
+        null, // openingStockDate
+        null, // mfgDate
+        null, // expDate
+        0, // currentStock
+        null // lastStockUpdate
+      );
+    } else {
+      item = new Service(
+        lineItem.itemId,
+        lineItem.itemName,
+        category,
+        lineItem.hsnSac,
+        lineItem.unitPrice,
+        lineItem.gstType === 'including',
+        lineItem.gstRate
+      );
+    }
+
+    const selectedItem = new SelectedItem(
+      item,
+      lineItem.quantity,
+      lineItem.unitPrice,
+      {
+        value: lineItem.discountValue || 0,
+        type: lineItem.discountType || 'fixed'
+      },
+      {
+        rate: lineItem.gstRate,
+        type: lineItem.gstType
+      },
+      lineItem.lineNumber,
+      documentType
+    );
+
+    // Preserve the original line item ID
+    selectedItem.id = lineItem.id;
+
+    return selectedItem;
+  }
 }
 
 // Line Item Manager Class
@@ -220,9 +292,9 @@ export class LineItemManager {
   private items: SelectedItem[] = [];
   private shipmentAmount: number = 0;
   private roundOff: number = 0;
-  private documentType: 'invoice' | 'purchase_voucher' | 'quotation' = 'invoice'; // Add this
+  private documentType: 'invoice' | 'purchase_voucher' | 'quotation' | 'purchase_order' = 'invoice'; // Add this
 
-  constructor(documentType: 'invoice' | 'purchase_voucher' | 'quotation' = 'invoice') {
+  constructor(documentType: 'invoice' | 'purchase_voucher' | 'quotation' | 'purchase_order' = 'invoice') {
     this.documentType = documentType;
   }
 
@@ -230,11 +302,11 @@ export class LineItemManager {
   addItem(item: Item, quantity: number = 1, unitPrice?: number): SelectedItem {
     const lineNumber = this.items.length + 1;
     const selectedItem = new SelectedItem(
-      item, 
-      quantity, 
-      unitPrice, 
-      undefined, 
-      undefined, 
+      item,
+      quantity,
+      unitPrice,
+      undefined,
+      undefined,
       lineNumber,
       this.documentType // Pass document type
     );
@@ -383,7 +455,7 @@ export class LineItemManager {
   // Get GST breakdown by rate
   getGSTBreakdown(): { [rate: string]: { taxable: number; gst: number } } {
     const breakdown: { [rate: string]: { taxable: number; gst: number } } = {};
-    
+
     this.items.forEach(item => {
       if (item.gstConfig.type !== "exempt") {
         const rate = item.gstConfig.rate.toString();
@@ -401,7 +473,7 @@ export class LineItemManager {
   // Validate all items
   validateItems(): { valid: boolean; errors: string[] } {
     const errors: string[] = [];
-    
+
     this.items.forEach((item, index) => {
       if (item.quantity <= 0) {
         errors.push(`Item ${index + 1}: Quantity must be greater than 0`);
@@ -451,7 +523,7 @@ export class LineItemManager {
   }
 
   // Import data from external source
- importItems(data: any[]): void {
+  importItems(data: any[]): void {
     this.clearAllItems();
     data.forEach(itemData => {
       const selectedItem = new SelectedItem(
@@ -463,6 +535,19 @@ export class LineItemManager {
         0,
         this.documentType // Pass document type
       );
+      this.items.push(selectedItem);
+    });
+    this.recalculateLineNumbers();
+  }
+
+  /**
+   * Import items directly from line item database records
+   * This is used when loading documents for editing, reading from line_items tables
+   */
+  importFromLineItems(lineItems: ILineItemBase[]): void {
+    this.clearAllItems();
+    lineItems.forEach(lineItem => {
+      const selectedItem = SelectedItem.fromLineItem(lineItem, this.documentType);
       this.items.push(selectedItem);
     });
     this.recalculateLineNumbers();

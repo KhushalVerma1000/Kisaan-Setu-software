@@ -8,9 +8,9 @@ import { convertKeysToCamel } from "@/utils/caseConvertor";
  * Get supplier state by supplier ID (assuming you have a suppliers/ledger_accounts table)
  */
 export async function getSupplierState(supplierId: string): Promise<string | null> {
-const state = await getSupplierStateById(supplierId)    
-return state
-  
+    const state = await getSupplierStateById(supplierId)
+    return state
+
 }
 
 /**
@@ -18,7 +18,7 @@ return state
  */
 export async function getAllFpoPurchaseVouchers(fpoId: string): Promise<PurchaseVoucher[]> {
     const supabase = await createClient();
-    
+
     try {
         const { data, error } = await supabase
             .from('purchase_vouchers')
@@ -31,7 +31,12 @@ export async function getAllFpoPurchaseVouchers(fpoId: string): Promise<Purchase
             throw new Error(error.message);
         }
 
-        return data.map(PurchaseVoucher.fromDbFormat);
+        // Fetch line items for each voucher from the dedicated table
+        const vouchers = await Promise.all(data.map(async (item) => {
+            const lineItems = await getPurchaseLineItemsAsSelectedItems(item.id);
+            return PurchaseVoucher.fromDbFormat({ ...item, items: lineItems });
+        }));
+        return vouchers;
     } catch (error) {
         console.error('Error in getAllFpoPurchaseVouchers:', error);
         throw error;
@@ -43,7 +48,7 @@ export async function getAllFpoPurchaseVouchers(fpoId: string): Promise<Purchase
  */
 export async function getPurchaseVoucherById(voucherId: string): Promise<PurchaseVoucher | null> {
     const supabase = await createClient();
-    
+
     try {
         const { data, error } = await supabase
             .from('purchase_vouchers')
@@ -60,7 +65,9 @@ export async function getPurchaseVoucherById(voucherId: string): Promise<Purchas
             throw new Error(error.message);
         }
 
-        return PurchaseVoucher.fromDbFormat(data);
+        // Fetch line items from the dedicated table
+        const lineItems = await getPurchaseLineItemsAsSelectedItems(data.id);
+        return PurchaseVoucher.fromDbFormat({ ...data, items: lineItems });
     } catch (error) {
         console.error('Error in getPurchaseVoucherById:', error);
         throw error;
@@ -72,7 +79,7 @@ export async function getPurchaseVoucherById(voucherId: string): Promise<Purchas
  */
 export async function getPurchaseVouchersBySupplier(fpoId: string, supplierId: string): Promise<PurchaseVoucher[]> {
     const supabase = await createClient();
-    
+
     try {
         const { data, error } = await supabase
             .from('purchase_vouchers')
@@ -98,7 +105,7 @@ export async function getPurchaseVouchersBySupplier(fpoId: string, supplierId: s
  */
 export async function getPurchaseVouchersByStatus(fpoId: string, status: 'draft' | 'approved' | 'rejected'): Promise<PurchaseVoucher[]> {
     const supabase = await createClient();
-    
+
     try {
         const { data, error } = await supabase
             .from('purchase_vouchers')
@@ -123,12 +130,12 @@ export async function getPurchaseVouchersByStatus(fpoId: string, status: 'draft'
  * Get purchase vouchers by date range
  */
 export async function getPurchaseVouchersByDateRange(
-    fpoId: string, 
-    startDate: Date, 
+    fpoId: string,
+    startDate: Date,
     endDate: Date
 ): Promise<PurchaseVoucher[]> {
     const supabase = await createClient();
-    
+
     try {
         const { data, error } = await supabase
             .from('purchase_vouchers')
@@ -153,9 +160,13 @@ export async function getPurchaseVouchersByDateRange(
 /**
  * Create a new purchase voucher with GST calculations
  */
+import { savePurchaseLineItems, getPurchaseLineItems, deletePurchaseLineItems, getPurchaseLineItemsAsSelectedItems } from "./purchaseLineItemsSupabase";
+import { PurchaseLineItem } from "../../core/entities/PurchaseLineItem";
+
 export async function createPurchaseVoucher(voucherData: PurchaseVoucherInterface): Promise<PurchaseVoucher> {
     const supabase = await createClient();
-    
+    const user = await supabase.auth.getUser();
+
     try {
         // If supplierState is not provided but supplierVendorId is, fetch the supplier state
         let supplierState = voucherData.supplierState;
@@ -164,10 +175,7 @@ export async function createPurchaseVoucher(voucherData: PurchaseVoucherInterfac
             if (!state) {
                 throw new Error('Could not determine supplier state for GST calculation');
             }
-            else{supplierState = state}
-            if (!supplierState) {
-                throw new Error('Could not determine supplier state for GST calculation');
-            }
+            supplierState = state;
         }
 
         // Create voucher with supplier state
@@ -197,10 +205,16 @@ export async function createPurchaseVoucher(voucherData: PurchaseVoucherInterfac
 
         // Convert to database format
         const dbData = voucher.toDbFormat();
-        
+
         // Remove id for insert
         const { id, ...insertData } = dbData;
 
+        // Set created_by from user session
+        if (user.data.user?.id) {
+            (insertData as any).created_by = user.data.user.id;
+        }
+
+        // 1. Insert Purchase Voucher
         const { data, error } = await supabase
             .from('purchase_vouchers')
             .insert(insertData)
@@ -213,7 +227,39 @@ export async function createPurchaseVoucher(voucherData: PurchaseVoucherInterfac
         }
 
         console.log('Purchase voucher created successfully:', data);
-        return PurchaseVoucher.fromDbFormat(data);
+        const createdVoucher = PurchaseVoucher.fromDbFormat(data);
+        const voucherId = createdVoucher.id!;
+
+        // 2. Insert Line Items and Create Inventory Transactions
+        // Convert PurchaseVoucherItem to PurchaseLineItem
+        const lineItems = voucher.items.map(item => PurchaseLineItem.fromInterface({
+            itemId: item.item.id,
+            itemName: item.item.name,
+            itemType: item.item.type,
+            hsnSac: item.item.hsn_sac || '0000',
+            quantity: item.quantity,
+            unitCode: item.item.unit?.code,
+            unitPrice: item.unitPrice,
+            discountType: item.discount.type,
+            discountValue: item.discount.value,
+            discountAmount: item.calculations.discountAmount,
+            gstRate: item.gstConfig.rate,
+            gstType: item.gstConfig.type,
+            baseAmount: item.calculations.baseAmount,
+            taxableAmount: item.calculations.taxableAmount,
+            gstAmount: item.calculations.totalGstAmount,
+            lineTotal: item.calculations.lineTotal,
+            purchaseVoucherId: voucherId
+        }));
+
+        await savePurchaseLineItems(voucherId, voucher.fpoId, lineItems, {
+            voucherNumber: createdVoucher.voucherNumber || '',
+            supplierName: voucher.supplierVendorName,
+            supplierId: voucher.supplierVendorId,
+            transactionDate: voucher.partyInvoiceDate instanceof Date ? voucher.partyInvoiceDate : new Date(voucher.partyInvoiceDate)
+        });
+
+        return createdVoucher;
     } catch (error) {
         console.error('Error in createPurchaseVoucher:', error);
         throw error;
@@ -224,11 +270,11 @@ export async function createPurchaseVoucher(voucherData: PurchaseVoucherInterfac
  * Update an existing purchase voucher with GST calculations
  */
 export async function updatePurchaseVoucher(
-    voucherId: string, 
+    voucherId: string,
     voucherData: PurchaseVoucherInterface
 ): Promise<PurchaseVoucher> {
     const supabase = await createClient();
-    
+
     try {
         // First check if the voucher exists
         const { data: existingVoucher, error: fetchError } = await supabase
@@ -261,7 +307,7 @@ export async function updatePurchaseVoucher(
             id: voucherId,
             supplierState: supplierState!
         });
-        
+
         const validation = voucher.validate();
         if (!validation.isValid) {
             throw new Error(`Validation failed: ${validation.errors.join(', ')}`);
@@ -281,7 +327,7 @@ export async function updatePurchaseVoucher(
 
         // Convert to database format
         const dbData = voucher.toDbFormat();
-        
+
         // Remove id from update data
         const { id, created_at, ...updateData } = dbData;
 
@@ -298,7 +344,37 @@ export async function updatePurchaseVoucher(
         }
 
         console.log('Purchase voucher updated successfully:', voucherId);
-        return PurchaseVoucher.fromDbFormat(data);
+        const updatedVoucher = PurchaseVoucher.fromDbFormat(data);
+
+        // Update line items and transactions
+        const lineItems = voucher.items.map(item => PurchaseLineItem.fromInterface({
+            itemId: item.item.id,
+            itemName: item.item.name,
+            itemType: item.item.type,
+            hsnSac: item.item.hsn_sac || '0000',
+            quantity: item.quantity,
+            unitCode: item.item.unit?.code,
+            unitPrice: item.unitPrice,
+            discountType: item.discount.type,
+            discountValue: item.discount.value,
+            discountAmount: item.calculations.discountAmount,
+            gstRate: item.gstConfig.rate,
+            gstType: item.gstConfig.type,
+            baseAmount: item.calculations.baseAmount,
+            taxableAmount: item.calculations.taxableAmount,
+            gstAmount: item.calculations.totalGstAmount,
+            lineTotal: item.calculations.lineTotal,
+            purchaseVoucherId: voucherId
+        }));
+
+        await savePurchaseLineItems(voucherId, voucher.fpoId, lineItems, {
+            voucherNumber: updatedVoucher.voucherNumber || '',
+            supplierName: voucher.supplierVendorName,
+            supplierId: voucher.supplierVendorId,
+            transactionDate: voucher.partyInvoiceDate instanceof Date ? voucher.partyInvoiceDate : new Date(voucher.partyInvoiceDate)
+        });
+
+        return updatedVoucher;
     } catch (error) {
         console.error('Error in updatePurchaseVoucher:', error);
         throw error;
@@ -309,11 +385,11 @@ export async function updatePurchaseVoucher(
  * Update purchase voucher status
  */
 export async function updatePurchaseVoucherStatus(
-    voucherId: string, 
+    voucherId: string,
     status: 'draft' | 'approved' | 'rejected'
 ): Promise<PurchaseVoucher> {
     const supabase = await createClient();
-    
+
     try {
         // First check if the voucher exists
         const { data: existingVoucher, error: fetchError } = await supabase
@@ -332,7 +408,7 @@ export async function updatePurchaseVoucherStatus(
 
         const { data, error } = await supabase
             .from('purchase_vouchers')
-            .update({ 
+            .update({
                 status,
                 updated_at: new Date().toISOString()
             })
@@ -357,11 +433,11 @@ export async function updatePurchaseVoucherStatus(
  * Update purchase voucher notes
  */
 export async function updatePurchaseVoucherNotes(
-    voucherId: string, 
+    voucherId: string,
     notes: string
 ): Promise<PurchaseVoucher> {
     const supabase = await createClient();
-    
+
     try {
         // First check if the voucher exists
         const { data: existingVoucher, error: fetchError } = await supabase
@@ -380,7 +456,7 @@ export async function updatePurchaseVoucherNotes(
 
         const { data, error } = await supabase
             .from('purchase_vouchers')
-            .update({ 
+            .update({
                 notes,
                 updated_at: new Date().toISOString()
             })
@@ -406,7 +482,7 @@ export async function updatePurchaseVoucherNotes(
  */
 export async function deletePurchaseVoucher(voucherId: string): Promise<void> {
     const supabase = await createClient();
-    
+
     try {
         // First check if the voucher exists
         const { data: existingVoucher, error: fetchError } = await supabase
@@ -423,6 +499,9 @@ export async function deletePurchaseVoucher(voucherId: string): Promise<void> {
         if (!existingVoucher) {
             throw new Error('Purchase voucher not found');
         }
+
+        // Delete line items and inventory transactions first
+        await deletePurchaseLineItems(voucherId);
 
         const { error } = await supabase
             .from('purchase_vouchers')
@@ -446,7 +525,7 @@ export async function deletePurchaseVoucher(voucherId: string): Promise<void> {
  */
 export async function bulkDeletePurchaseVouchers(voucherIds: string[]): Promise<void> {
     const supabase = await createClient();
-    
+
     try {
         if (!voucherIds || voucherIds.length === 0) {
             throw new Error('No voucher IDs provided for deletion');
@@ -467,6 +546,11 @@ export async function bulkDeletePurchaseVouchers(voucherIds: string[]): Promise<
             const foundIds = existingVouchers?.map(v => v.id) || [];
             const missingIds = voucherIds.filter(id => !foundIds.includes(id));
             throw new Error(`Some purchase vouchers not found: ${missingIds.join(', ')}`);
+        }
+
+        // Delete line items and inventory transactions for each voucher
+        for (const id of voucherIds) {
+            await deletePurchaseLineItems(id);
         }
 
         const { error } = await supabase
@@ -504,7 +588,7 @@ export async function getPurchaseVoucherStats(fpoId: string): Promise<{
     intrastateCount: number;
 }> {
     const supabase = await createClient();
-    
+
     try {
         const { data, error } = await supabase
             .from('purchase_vouchers')
@@ -549,14 +633,14 @@ export async function getPurchaseVoucherStats(fpoId: string): Promise<{
             stats.totalSGST += summary.totalSGST || 0;
             stats.totalIGST += summary.totalIGST || 0;
             stats.totalGST += summary.totalGST || 0;
-            
+
             // Count GST types
             if (summary.gstType === 'interstate') {
                 stats.interstateCount++;
             } else if (summary.gstType === 'intrastate') {
                 stats.intrastateCount++;
             }
-            
+
             switch (voucher.status) {
                 case 'draft':
                     stats.draftCount++;
@@ -584,11 +668,11 @@ export async function getPurchaseVoucherStats(fpoId: string): Promise<{
  * Search purchase vouchers
  */
 export async function searchPurchaseVouchers(
-    fpoId: string, 
+    fpoId: string,
     searchTerm: string
 ): Promise<PurchaseVoucher[]> {
     const supabase = await createClient();
-    
+
     try {
         const { data, error } = await supabase
             .from('purchase_vouchers')
@@ -615,7 +699,7 @@ export async function searchPurchaseVouchers(
  */
 export async function recalculatePurchaseVoucherGST(voucherId: string): Promise<PurchaseVoucher> {
     const supabase = await createClient();
-    
+
     try {
         // Get existing voucher
         const existingVoucher = await getPurchaseVoucherById(voucherId);
@@ -675,7 +759,7 @@ export async function getPurchaseVoucherGSTReport(
     intrastateAmount: number;
 }> {
     const supabase = await createClient();
-    
+
     try {
         const { data, error } = await supabase
             .from('purchase_vouchers')
@@ -704,7 +788,7 @@ export async function getPurchaseVoucherGSTReport(
         data.forEach(voucher => {
             // FIXED: Handle both stringified (old) and object (new) formats
             let summary, gstBreakdown;
-            
+
             if (typeof voucher.summary === 'string') {
                 try {
                     summary = JSON.parse(voucher.summary);
@@ -780,14 +864,14 @@ function parseJsonField(field: any, defaultValue: any = {}) {
 
 
 export const getPurchaseVouchersList = async (ledgerId: string, status?: string) => {
-  const supabase = await createClient();
+    const supabase = await createClient();
     const query = supabase
-    .from('purchase_vouchers')
-    .select('id, voucher_number')
-    .eq('supplier_vendor_id', ledgerId);
-  
-  if (status) query.eq('status', status);
-  
-  const { data, error } = await query;
-  return { data: convertKeysToCamel(data), error };
+        .from('purchase_vouchers')
+        .select('id, voucher_number')
+        .eq('supplier_vendor_id', ledgerId);
+
+    if (status) query.eq('status', status);
+
+    const { data, error } = await query;
+    return { data: convertKeysToCamel(data), error };
 };

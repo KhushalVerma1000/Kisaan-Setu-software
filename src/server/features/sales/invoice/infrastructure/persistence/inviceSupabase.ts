@@ -2,21 +2,24 @@ import { Invoice, InvoiceInterface } from "../../core/entities/invoice";
 import { createClient } from "@/utils/supabase/server";
 import { getFpoState } from "@/server/features/fpo/infrastructure/persistence/FpoProfileSupabase";
 
+import { saveInvoiceLineItems, getInvoiceLineItems, deleteInvoiceLineItems, getInvoiceLineItemsAsSelectedItems } from "./invoiceLineItemsSupabase";
+import { InvoiceLineItem } from "../../core/entities/InvoiceLineItem";
+
 export function createInvoice(invoice: Invoice) {
   return async (): Promise<Invoice | null> => {
     try {
       const supabase = await createClient();
       const user = await supabase.auth.getUser();
-      
+
       if (!user.data.user?.id) {
         console.error("User not authenticated");
         return null;
       }
 
       // Get FPO state for GST calculation
-      const fpoState= await getFpoState(invoice.fpoId);
+      const fpoState = await getFpoState(invoice.fpoId);
       if (!fpoState) {
-        console.error("Could not fetch FPO state for GST calculation" );
+        console.error("Could not fetch FPO state for GST calculation");
         return null;
       }
 
@@ -25,13 +28,14 @@ export function createInvoice(invoice: Invoice) {
 
       // Convert invoice to database format
       const dbData = invoice.toDbFormat();
-      
+
       // Set created_by to current user
       dbData.created_by = user.data.user.id;
-      
+
       // Remove id for creation (let DB generate it)
       delete dbData.id;
 
+      // 1. Insert Invoice (Keep writing to 'items' JSONB for now)
       const { data, error } = await supabase
         .from('invoices')
         .insert(dbData)
@@ -43,7 +47,38 @@ export function createInvoice(invoice: Invoice) {
         return null;
       }
 
-      return Invoice.fromDbFormat(data);
+      const createdInvoice = Invoice.fromDbFormat(data);
+      const invoiceId = createdInvoice.id!;
+
+      // 2. Insert Invoice Line Items and Create Inventory Transactions
+      const lineItems = invoice.items.map(item => InvoiceLineItem.fromInterface({
+        itemId: item.item.id,
+        itemName: item.item.name,
+        itemType: item.item.type,
+        hsnSac: item.item.hsn_sac,
+        quantity: item.quantity,
+        unitCode: item.item.unit?.code,
+        unitPrice: item.unitPrice,
+        discountType: item.discount.type,
+        discountValue: item.discount.value,
+        discountAmount: item.calculations.discountAmount,
+        gstRate: item.gstConfig.rate,
+        gstType: item.gstConfig.type,
+        baseAmount: item.calculations.baseAmount,
+        taxableAmount: item.calculations.taxableAmount,
+        gstAmount: item.calculations.totalGstAmount,
+        lineTotal: item.calculations.lineTotal,
+        invoiceId: invoiceId
+      }));
+
+      await saveInvoiceLineItems(invoiceId, invoice.fpoId, lineItems, {
+        invoiceNumber: createdInvoice.invoiceNumber || '',
+        customerName: invoice.customer.name,
+        customerId: invoice.customer.id,
+        invoiceDate: invoice.invoiceDate instanceof Date ? invoice.invoiceDate : new Date(invoice.invoiceDate)
+      });
+
+      return createdInvoice;
     } catch (error) {
       console.error("Unexpected error creating invoice:", error);
       return null;
@@ -55,12 +90,6 @@ export function getInvoiceById(invoiceId: string) {
   return async (): Promise<Invoice | null> => {
     try {
       const supabase = await createClient();
-      const user = await supabase.auth.getUser();
-      
-      if (!user.data.user?.id) {
-        console.error("User not authenticated");
-        return null;
-      }
 
       const { data, error } = await supabase
         .from('invoices')
@@ -78,8 +107,12 @@ export function getInvoiceById(invoiceId: string) {
         return null;
       }
 
-      const invoice = Invoice.fromDbFormat(data);
-      
+      // Fetch line items from the dedicated table instead of JSONB column
+      const lineItems = await getInvoiceLineItemsAsSelectedItems(invoiceId);
+
+      // Create invoice with items from line_items table
+      const invoice = Invoice.fromDbFormat({ ...data, items: lineItems });
+
       // Recalculate GST with current FPO state (in case state was updated)
       const fpoState = await getFpoState(invoice.fpoId);
       if (fpoState) {
@@ -99,7 +132,7 @@ export function getInvoiceByNumber(invoiceNumber: string, fpoId?: string) {
     try {
       const supabase = await createClient();
       const user = await supabase.auth.getUser();
-      
+
       if (!user.data.user?.id) {
         console.error("User not authenticated");
         return null;
@@ -126,8 +159,12 @@ export function getInvoiceByNumber(invoiceNumber: string, fpoId?: string) {
         return null;
       }
 
-      const invoice = Invoice.fromDbFormat(data);
-      
+      // Fetch line items from the dedicated table
+      const lineItems = await getInvoiceLineItemsAsSelectedItems(data.id);
+
+      // Create invoice with items from line_items table
+      const invoice = Invoice.fromDbFormat({ ...data, items: lineItems });
+
       // Recalculate GST with current FPO state
       const fpoState = await getFpoState(invoice.fpoId);
       if (fpoState) {
@@ -147,7 +184,7 @@ export function updateInvoice(invoice: Invoice) {
     try {
       const supabase = await createClient();
       const user = await supabase.auth.getUser();
-      
+
       if (!user.data.user?.id) {
         console.error("User not authenticated");
         return null;
@@ -170,7 +207,7 @@ export function updateInvoice(invoice: Invoice) {
 
       // Convert invoice to database format
       const dbData = invoice.toDbFormat();
-      
+
       // Ensure updated_at is set
       dbData.updated_at = new Date().toISOString();
 
@@ -186,7 +223,37 @@ export function updateInvoice(invoice: Invoice) {
         return null;
       }
 
-      return Invoice.fromDbFormat(data);
+      const updatedInvoice = Invoice.fromDbFormat(data);
+
+      // Update line items and transactions
+      const lineItems = invoice.items.map(item => InvoiceLineItem.fromInterface({
+        itemId: item.item.id,
+        itemName: item.item.name,
+        itemType: item.item.type,
+        hsnSac: item.item.hsn_sac,
+        quantity: item.quantity,
+        unitCode: item.item.unit?.code,
+        unitPrice: item.unitPrice,
+        discountType: item.discount.type,
+        discountValue: item.discount.value,
+        discountAmount: item.calculations.discountAmount,
+        gstRate: item.gstConfig.rate,
+        gstType: item.gstConfig.type,
+        baseAmount: item.calculations.baseAmount,
+        taxableAmount: item.calculations.taxableAmount,
+        gstAmount: item.calculations.totalGstAmount,
+        lineTotal: item.calculations.lineTotal,
+        invoiceId: invoice.id!
+      }));
+
+      await saveInvoiceLineItems(invoice.id!, invoice.fpoId, lineItems, {
+        invoiceNumber: updatedInvoice.invoiceNumber || '',
+        customerName: invoice.customer.name,
+        customerId: invoice.customer.id,
+        invoiceDate: invoice.invoiceDate instanceof Date ? invoice.invoiceDate : new Date(invoice.invoiceDate)
+      });
+
+      return updatedInvoice;
     } catch (error) {
       console.error("Unexpected error updating invoice:", error);
       return null;
@@ -199,11 +266,14 @@ export function deleteInvoice(invoiceId: string) {
     try {
       const supabase = await createClient();
       const user = await supabase.auth.getUser();
-      
+
       if (!user.data.user?.id) {
         console.error("User not authenticated");
         return false;
       }
+
+      // Delete line items and inventory transactions first
+      await deleteInvoiceLineItems(invoiceId);
 
       const { error } = await supabase
         .from('invoices')
@@ -228,7 +298,7 @@ export function getNextInvoiceNumber(fpoId: string, prefix: string = 'INV') {
     try {
       const supabase = await createClient();
       const user = await supabase.auth.getUser();
-      
+
       if (!user.data.user?.id) {
         console.error("User not authenticated");
         return `${prefix}0001`;
@@ -272,7 +342,7 @@ export function getInvoicesByFpo(fpoId: string, limit?: number, offset?: number)
     try {
       const supabase = await createClient();
       const user = await supabase.auth.getUser();
-      
+
       if (!user.data.user?.id) {
         console.error("User not authenticated");
         return null;
@@ -302,7 +372,9 @@ export function getInvoicesByFpo(fpoId: string, limit?: number, offset?: number)
       const fpoState = await getFpoState(fpoId);
       const invoices = await Promise.all(
         (data || []).map(async (item) => {
-          const invoice = Invoice.fromDbFormat(item);
+          // Fetch line items from the dedicated table for each invoice
+          const lineItems = await getInvoiceLineItemsAsSelectedItems(item.id);
+          const invoice = Invoice.fromDbFormat({ ...item, items: lineItems });
           if (fpoState) {
             await invoice.calculateTotals(fpoState);
           }
@@ -325,7 +397,7 @@ export function validateGstCalculation(invoice: Invoice, fpoState: string): bool
   try {
     const shippingState = invoice.customer.shippingAddress?.state || invoice.customer.billingAddress.state;
     const isInterstate = shippingState !== fpoState;
-    
+
     // Validate summary GST type matches expected
     const expectedGstType = isInterstate ? 'interstate' : 'intrastate';
     if (invoice.summary.gstType !== expectedGstType) {
@@ -406,7 +478,7 @@ export function recalculateAllInvoicesForFpo(fpoId: string) {
     try {
       const supabase = await createClient();
       const user = await supabase.auth.getUser();
-      
+
       if (!user.data.user?.id) {
         console.error("User not authenticated");
         return { success: 0, failed: 0, errors: ["User not authenticated"] };
@@ -441,10 +513,10 @@ export function recalculateAllInvoicesForFpo(fpoId: string) {
       for (const invoiceData of invoicesData) {
         try {
           const invoice = Invoice.fromDbFormat(invoiceData);
-          
+
           // Recalculate GST
           await invoice.calculateTotals(fpoState);
-          
+
           // Validate calculation
           const isValid = validateGstCalculation(invoice, fpoState);
           if (!isValid) {
@@ -496,7 +568,7 @@ export function getGstSummaryByFpo(fpoId: string, startDate?: Date, endDate?: Da
     try {
       const supabase = await createClient();
       const user = await supabase.auth.getUser();
-      
+
       if (!user.data.user?.id) {
         console.error("User not authenticated");
         return null;
