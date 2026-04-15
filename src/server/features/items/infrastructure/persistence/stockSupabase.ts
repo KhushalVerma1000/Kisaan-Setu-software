@@ -7,7 +7,7 @@ import { createClient } from '@/utils/supabase/server'
  * @returns Promise with current stock levels and availability status
  */
 export async function checkItemsStockAvailability(
-  itemIds: string[], 
+  itemIds: string[],
   fpo_id: string
 ): Promise<{
   [itemId: string]: {
@@ -20,7 +20,7 @@ export async function checkItemsStockAvailability(
   }
 } | null> {
   const supabase = await createClient()
-  
+
   try {
     const { data, error } = await supabase
       .from('items')
@@ -90,7 +90,7 @@ export async function checkItemsStockAvailability(
  * @returns Promise with current stock level and availability status
  */
 export async function checkSingleItemStock(
-  itemId: string, 
+  itemId: string,
   fpo_id: string
 ): Promise<{
   currentStock: number;
@@ -187,5 +187,44 @@ export async function validateStockRequirements(
   } catch (error) {
     console.error('Error validating stock requirements:', error)
     return null
+  }
+}
+
+/**
+ * Recalculate stock for an item based on its transaction history
+ * updates the items table with the new stock level
+ * @param itemId - Item ID to recalculate
+ * @param fpoId - FPO ID
+ */
+export async function recalculateItemStock(itemId: string, fpoId: string): Promise<number> {
+  const supabase = await createClient();
+
+  try {
+    // 1. Calculate total stock from transactions
+    const { data, error } = await supabase
+      .from('inventory_transactions')
+      .select('quantity')
+      .eq('item_id', itemId)
+      .eq('fpo_id', fpoId);
+
+    if (error) throw new Error(`Failed to fetch transactions: ${error.message}`);
+
+    // Sum up quantities (can be negative for sales, positive for purchases)
+    const currentStock = data?.reduce((sum, tx) => sum + Number(tx.quantity), 0) || 0;
+
+    // 2. Update the item's current_stock in the items table
+    const { error: updateError } = await supabase
+      .from('items')
+      .update({ current_stock: currentStock })
+      .eq('id', itemId)
+      .eq('fpo_id', fpoId);
+
+    if (updateError) throw new Error(`Failed to update item stock: ${updateError.message}`);
+
+    return currentStock;
+  } catch (error) {
+    console.error('Error recalculating item stock:', error);
+    // Fallback: return 0 or rethrow? Rethrowing is safer to alert the caller.
+    throw error;
   }
 }

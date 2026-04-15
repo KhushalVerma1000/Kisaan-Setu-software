@@ -17,7 +17,7 @@ export interface ILineItemHook {
   setRoundOff: (amount: number) => void;
   clearAllItems: () => void;
   validateItems: () => { valid: boolean; errors: string[] };
-  exportForDocument: (type: 'invoice' | 'purchase_voucher' | 'quotation') => any;
+  exportForDocument: (type: 'invoice' | 'purchase_voucher' | 'quotation' | 'purchase_order') => any;
   importItems: (data: any[]) => void;
   isEmpty: boolean;
   itemCount: number;
@@ -29,13 +29,13 @@ export interface ILineItemHook {
   hasProducts: boolean;
   hasServices: boolean;
   checkStockAvailability: (productId: string, requestedQuantity: number) => { available: boolean; currentStock: number };
-    resetWithNewData: (newInitialItems: any[]) => void; // Add this
+  resetWithNewData: (newInitialItems: any[]) => void; // Add this
 
 }
 
 export const useLineItemManager = (
-  initialItems?: any[], 
-  documentType: 'invoice' | 'purchase_voucher' | 'quotation' = 'invoice'
+  initialItems?: any[],
+  documentType: 'invoice' | 'purchase_voucher' | 'quotation' | 'purchase_order' = 'invoice'
 ): ILineItemHook => {
   const [lineItemManager] = useState(() => new LineItemManager(documentType));
   const [items, setItems] = useState<SelectedItem[]>([]);
@@ -55,24 +55,24 @@ export const useLineItemManager = (
   }, [lineItemManager]);
 
   // Initialize with data if provided
-const [isInitialized, setIsInitialized] = useState(false);
+  const [isInitialized, setIsInitialized] = useState(false);
 
-useEffect(() => {
-  if (initialItems && initialItems.length > 0 && !isInitialized) {
-    lineItemManager.importItems(initialItems);
+  useEffect(() => {
+    if (initialItems && initialItems.length > 0 && !isInitialized) {
+      lineItemManager.importItems(initialItems);
+      refreshState();
+      setIsInitialized(true);
+    }
+  }, [initialItems, lineItemManager, refreshState, isInitialized]);
+
+  const resetWithNewData = useCallback((newInitialItems: any[]) => {
+    lineItemManager.clearAllItems();
+    if (newInitialItems && newInitialItems.length > 0) {
+      lineItemManager.importItems(newInitialItems);
+    }
     refreshState();
     setIsInitialized(true);
-  }
-}, [initialItems, lineItemManager, refreshState, isInitialized]);
-
-const resetWithNewData = useCallback((newInitialItems: any[]) => {
-  lineItemManager.clearAllItems();
-  if (newInitialItems && newInitialItems.length > 0) {
-    lineItemManager.importItems(newInitialItems);
-  }
-  refreshState();
-  setIsInitialized(true);
-}, [lineItemManager, refreshState]);
+  }, [lineItemManager, refreshState]);
 
   // Enhanced addItem with conditional stock validation for products
   const addItem = useCallback((item: Item, quantity: number = 1, unitPrice?: number): SelectedItem => {
@@ -150,7 +150,7 @@ const resetWithNewData = useCallback((newInitialItems: any[]) => {
     return lineItemManager.validateItems();
   }, [lineItemManager]);
 
-  const exportForDocument = useCallback((type: 'invoice' | 'purchase_voucher' | 'quotation') => {
+  const exportForDocument = useCallback((type: 'invoice' | 'purchase_voucher' | 'quotation' | 'purchase_order') => {
     switch (type) {
       case 'invoice':
         return lineItemManager.exportForInvoice();
@@ -233,7 +233,7 @@ const resetWithNewData = useCallback((newInitialItems: any[]) => {
 };
 
 // Enhanced validation hook with product/service specific validations
-export const useLineItemValidation = (lineItemHook: ILineItemHook, documentType: 'invoice' | 'purchase_voucher' | 'quotation' = 'invoice') => {
+export const useLineItemValidation = (lineItemHook: ILineItemHook, documentType: 'invoice' | 'purchase_voucher' | 'quotation' | 'purchase_order' = 'invoice') => {
   const [errors, setErrors] = useState<string[]>([]);
   const [isValid, setIsValid] = useState(true);
 
@@ -245,7 +245,7 @@ export const useLineItemValidation = (lineItemHook: ILineItemHook, documentType:
     if (documentType === 'invoice') {
       lineItemHook.getProductItems().forEach((item, index) => {
         const product = item.item as Product;
-        
+
         // Check stock availability
         if (product.currentStock < item.quantity) {
           additionalErrors.push(`Product ${index + 1}: Insufficient stock (Available: ${product.currentStock}, Required: ${item.quantity})`);
@@ -281,7 +281,7 @@ export const useAutoCalculation = (lineItemHook: ILineItemHook, onSummaryChange?
 };
 
 // Enhanced document type config with product/service considerations
-export const useDocumentTypeConfig = (documentType: 'invoice' | 'purchase_voucher' | 'quotation') => {
+export const useDocumentTypeConfig = (documentType: 'invoice' | 'purchase_voucher' | 'quotation' | 'purchase_order') => {
   const config = {
     invoice: {
       showShipment: true,
@@ -310,6 +310,15 @@ export const useDocumentTypeConfig = (documentType: 'invoice' | 'purchase_vouche
       showStockInfo: false, // Don't show stock info in quotations
       validateStock: false, // Don't validate stock for quotations
     },
+    purchase_order: {
+      showShipment: true,
+      showRoundOff: true,
+      showGST: true,
+      showDiscount: true,
+      readOnly: false,
+      showStockInfo: true,
+      validateStock: false, // Don't validate stock for purchase orders
+    },
   };
 
   return config[documentType];
@@ -319,7 +328,7 @@ export const useDocumentTypeConfig = (documentType: 'invoice' | 'purchase_vouche
 export const useItemTypeManager = (lineItemHook: ILineItemHook) => {
   const getItemDisplayInfo = useCallback((selectedItem: SelectedItem) => {
     const baseInfo = selectedItem.getItemDetails();
-    
+
     if (selectedItem.item.type === 'product') {
       const product = selectedItem.item as Product;
       return {
@@ -344,16 +353,16 @@ export const useItemTypeManager = (lineItemHook: ILineItemHook) => {
     }
   }, []);
 
-  const canUpdateQuantity = useCallback((selectedItem: SelectedItem, newQuantity: number, documentType: 'invoice' | 'purchase_voucher' | 'quotation' = 'invoice') => {
+  const canUpdateQuantity = useCallback((selectedItem: SelectedItem, newQuantity: number, documentType: 'invoice' | 'purchase_voucher' | 'quotation' | 'purchase_order' = 'invoice') => {
     if (selectedItem.item.type === 'service') {
       return true; // Services can have any quantity
     }
-    
+
     // For purchase vouchers and quotations, don't validate stock
     if (documentType === 'purchase_voucher' || documentType === 'quotation') {
       return true;
     }
-    
+
     // For invoices, validate stock availability
     const product = selectedItem.item as Product;
     return product.currentStock >= newQuantity;
@@ -362,6 +371,6 @@ export const useItemTypeManager = (lineItemHook: ILineItemHook) => {
   return {
     getItemDisplayInfo,
     canUpdateQuantity,
-    
+
   };
 };

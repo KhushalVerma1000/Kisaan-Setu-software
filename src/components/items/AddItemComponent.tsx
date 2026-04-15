@@ -28,7 +28,7 @@ import { useAppSelector, useAppDispatch } from '@/store/hooks';
 import { toast } from 'react-toastify';
 
 interface AddItemComponentProps {
-  documentType: 'invoice' | 'purchase_voucher' | 'quotation';
+  documentType: 'invoice' | 'purchase_voucher' | 'quotation' | 'purchase_order';
   initialItems?: any[];
   onSummaryChange?: (summary: ILineItemSummary) => void;
   onItemsChange?: (items: SelectedItem[]) => void;
@@ -79,17 +79,18 @@ const AddItemComponent: React.FC<AddItemComponentProps> = ({
 
 
   // Add this helper function at the top of the component
-  const getPriceForDisplay = (item: Item, documentType: 'invoice' | 'purchase_voucher' | 'quotation'): number => {
-    if (documentType === 'purchase_voucher' && item instanceof Product) {
+  const getPriceForDisplay = (item: Item, documentType: 'invoice' | 'purchase_voucher' | 'quotation' | 'purchase_order'): number => {
+    if ((documentType === 'purchase_voucher' || documentType === 'purchase_order') && item instanceof Product) {
       return (item as Product).purchasePrice || item.salePrice;
     }
     return item.salePrice;
   };
 
   // Add this helper function to get price label
-  const getPriceLabel = (documentType: 'invoice' | 'purchase_voucher' | 'quotation'): string => {
+  const getPriceLabel = (documentType: 'invoice' | 'purchase_voucher' | 'quotation' | 'purchase_order'): string => {
     switch (documentType) {
       case 'purchase_voucher':
+      case 'purchase_order':
         return 'Cost Price';
       case 'invoice':
         return 'Sale Price';
@@ -146,44 +147,62 @@ const AddItemComponent: React.FC<AddItemComponentProps> = ({
     return itemsData.map(createItemInstance);
   }, [itemsData, createItemInstance]);
 
-  // Add this new useMemo after the existing items useMemo
+  // Process initial items by looking up actual item data from itemsData
+  // Line items provide: item ID, quantity, unit price overrides, discount, GST config
+  // Items slice provides: current stock, current prices, and other real-time data
   const processedInitialItems = useMemo(() => {
     if (!initialItems || !Array.isArray(initialItems)) return undefined;
 
+    // Wait for itemsData to be loaded before processing
+    if (!itemsData || itemsData.length === 0) return undefined;
+
     return initialItems.map(initialItem => {
-      // If the initialItem already has an item property with raw data, use that
-      if (initialItem.item && typeof initialItem.item === 'object') {
-        return {
-          ...initialItem,
-          item: createItemInstance(initialItem.item)
-        };
+      // Get the item ID from the line item data
+      const itemId = initialItem.item?.id || initialItem.itemId || initialItem.id;
+
+      if (!itemId) {
+        console.warn('Line item missing item ID:', initialItem);
+        return initialItem;
       }
 
-      // If the initialItem itself is the raw item data, create instance directly
-      if (initialItem.id && initialItem.name) {
-        return {
-          id: initialItem.id,
-          item: createItemInstance(initialItem),
-          quantity: initialItem.quantity || 1,
-          unitPrice: initialItem.unitPrice || initialItem.salePrice || 0,
-          discount: initialItem.discount || { value: 0, type: 'fixed' as const },
-          gstConfig: initialItem.gstConfig || {
-            rate: initialItem.gstTaxPercent || 18,
-            type: 'excluding' as const
-          }
-        };
+      // ALWAYS look up the actual item from itemsData to get current stock info
+      const foundItem = itemsData.find((i: any) => i.id === itemId);
+
+      if (!foundItem) {
+        console.warn('Item not found in itemsData for ID:', itemId);
+        // Fall back to using the item data from line item if available
+        if (initialItem.item && typeof initialItem.item === 'object') {
+          return {
+            ...initialItem,
+            item: createItemInstance(initialItem.item)
+          };
+        }
+        return initialItem;
       }
 
-      // Return as-is if it's already processed
-      return initialItem;
+      // Use the REAL item from items slice (with current stock) 
+      // but preserve line item's pricing overrides
+      return {
+        id: initialItem.id,
+        item: createItemInstance(foundItem), // Real item with current stock
+        quantity: initialItem.quantity,
+        unitPrice: initialItem.unitPrice, // Line item's unit price at transaction time
+        discount: initialItem.discount, // Line item's discount at transaction time
+        gstConfig: initialItem.gstConfig, // Line item's GST config at transaction time
+        lineNumber: initialItem.lineNumber
+      };
     });
-  }, [initialItems, createItemInstance]);
+  }, [initialItems, createItemInstance, itemsData]);
 
   const lineItemHook = useLineItemManager(processedInitialItems, documentType);
   const { errors, isValid } = useLineItemValidation(lineItemHook, documentType);
 
+  const fetchAttempted = useRef(false);
+
   useEffect(() => {
-    if (itemsData.length === 0 && !itemsLoading && !itemsError) {
+    // Only fetch if data is empty, isn't loading, matches no error, and we haven't tried yet
+    if (itemsData.length === 0 && !itemsLoading && !itemsError && !fetchAttempted.current) {
+      fetchAttempted.current = true;
       dispatch(fetchItemsAsync());
     }
   }, [dispatch, itemsData.length, itemsLoading, itemsError]);
@@ -233,7 +252,7 @@ const AddItemComponent: React.FC<AddItemComponentProps> = ({
         setQuantity(1);
       } catch (error) {
         console.error('Error adding item:', error);
-        toast.error(error instanceof Error ? error.message :'Failed to add item')
+        toast.error(error instanceof Error ? error.message : 'Failed to add item')
       }
     }
   }, [selectedItemId, quantity, items, lineItemHook]);
@@ -622,7 +641,7 @@ const AddItemComponent: React.FC<AddItemComponentProps> = ({
                       <th className="text-left p-2 sm:p-3 font-medium text-sm">HSN/SAC</th>
                       <th className="text-left p-2 sm:p-3 font-medium text-sm">Qty</th>
                       <th className="text-left p-2 sm:p-3 font-medium text-sm">Unit</th>
-                      <th className="text-left p-2 sm:p-3 font-medium text-sm">{getPriceLabel(documentType)}</th>             
+                      <th className="text-left p-2 sm:p-3 font-medium text-sm">{getPriceLabel(documentType)}</th>
                       <th className="text-left p-2 sm:p-3 font-medium text-sm">Discount</th>
                       <th className="text-left p-2 sm:p-3 font-medium text-sm">GST</th>
                       <th className="text-left p-2 sm:p-3 font-medium text-sm">Total</th>

@@ -8,7 +8,7 @@ import {
   ReceiptIndianRupee, ShoppingCart, Layers, ChartBar, CircleUserRound, WalletCards, BookOpen, LogOut,
   LayoutDashboard, ChevronDown, ChevronRight, FileText, Plus, Eye, Edit, TrendingUp, Package, LucideIcon,
   Wallet2, Wallet, NotebookPen, Truck, BanknoteArrowDown, Notebook, Recycle, BanknoteArrowUpIcon,
-   TicketsIcon, ShoppingBasket, Settings, Users, BlocksIcon, Tags, FileBox,
+  TicketsIcon, ShoppingBasket, Settings, Users, BlocksIcon, Tags, FileBox,
   Quote, Copyright,
   Landmark
 } from "lucide-react";
@@ -69,7 +69,7 @@ const items: MenuItem[] = [
       { title: "Add Item", url: "/Items/AddItem", icon: Plus },
       { title: "Item List", url: "/Items/ItemList", icon: FileBox },
       { title: "Category", url: "/Items/Category", icon: Tags },
-      { title: "Closing stock", url: "/Items/ClosingStock", icon: BlocksIcon },
+      { title: "Inventory ", url: "/Inventory", icon: BlocksIcon },
     ]
   },
   { title: "Ledger", url: "/Ledger", icon: CircleUserRound },
@@ -102,8 +102,8 @@ export function AppSidebar() {
   };
 
   const handleLogout = async () => {
-const supabase = createClient()
-    const { error } = await supabase.auth.signOut({scope:'local'});
+    const supabase = createClient()
+    const { error } = await supabase.auth.signOut({ scope: 'local' });
     if (!error) {
       router.replace("/Login");
     }
@@ -206,7 +206,7 @@ const supabase = createClient()
               </div>
             </div>
           </div>
-          
+
           {/* Copyright notice for collapsed sidebar */}
           <div className="hidden group-data-[collapsible=icon]:flex items-center justify-center">
             <div className="text-xs text-emerald-600 rotate-90 whitespace-nowrap">
