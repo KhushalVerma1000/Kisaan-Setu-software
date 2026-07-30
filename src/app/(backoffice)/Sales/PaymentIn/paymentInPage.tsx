@@ -334,14 +334,13 @@ const paymentApi = {
   // Form validation
   const isFormValid = (): boolean => {
     return !!(
-      account &&
+      (account &&
       document &&
       documentID &&
       paymentMethod &&
-      paymentForm.amount &&
-      parseFloat(paymentForm.amount) > 0
+      paymentForm.amount && parseFloat(paymentForm.amount) > 0)
       // Reference number is optional, so not included in validation
-    )
+    );
   }
 
   // Get placeholder text for reference number based on payment method

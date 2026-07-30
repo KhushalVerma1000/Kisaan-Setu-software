@@ -3,7 +3,7 @@ import { login } from './actions';
 import { LoginForm } from "@/components/login-form";
 import { googleSignInAction } from "./googleSignInAction";
 import { Slideshow } from "@/components/slideshow";
-import Image from 'next/image';
+import Image from "next/image";
 import Link from 'next/link';
 
 // Array of background images for login page
@@ -27,12 +27,15 @@ const Login = () => {
           >
             <div className="flex h-6 w-6 items-center justify-center rounded-md bg-primary text-primary-foreground overflow-hidden">
               <Image
-                src="/Logo.jpeg"  
+                src="/Logo.jpeg"
                 alt="Kisaan Khata Logo"
                 className="h-full w-full object-contain"
                 width={24}
                 height={24}
-              />
+                style={{
+                  maxWidth: "100%",
+                  height: "auto"
+                }} />
             </div>
             <span className="text-lg font-semibold">Kisaan Setu</span>
           </Link>
@@ -48,7 +51,6 @@ const Login = () => {
           </div>
         </div>
       </div>
-
       {/* Right side - Background Slideshow */}
       <div className="relative hidden bg-muted lg:block">
         <Slideshow 

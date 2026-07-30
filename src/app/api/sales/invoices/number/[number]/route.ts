@@ -1,6 +1,5 @@
 
-// app/api/sales/invoices/number/[number]/route.ts
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from "next/server";
 import { getInvoiceByNumber } from '@/server/features/sales/invoice/infrastructure/persistence/inviceSupabase';
 
 export async function GET(

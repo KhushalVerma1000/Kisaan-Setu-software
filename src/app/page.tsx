@@ -65,7 +65,6 @@ const Home: React.FC = (): JSX.Element => {
   return (
     <section className="overflow-hidden">
       <TopNavbar />
-
       {/* Hero Section */}
       <div className="relative w-full bg-green-600 h-[450px] sm:h-[300px] md:h-[750px] overflow-hidden rounded-b-2xl">
         <Image
@@ -74,7 +73,10 @@ const Home: React.FC = (): JSX.Element => {
           width={770}
           height={770}
           className="absolute right-0 bottom-0 pt-10 object-contain w-[70%] sm:w-[65%] md:w-[60%] lg:hidden"
-        />
+          style={{
+            maxWidth: "100%",
+            height: "auto"
+          }} />
 
         {/* Show on large screens and above */}
         <Image
@@ -83,9 +85,11 @@ const Home: React.FC = (): JSX.Element => {
           width={770}
           height={770}
           className="hidden lg:block absolute right-15 scale-[1.05] bottom-0 pt-10 object-contain w-[100%] sm:w-[100%] md:w-[100%] lg:w-[100%] xl:w-[100%] 2xl:w-[90%]"
-        />
+          style={{
+            maxWidth: "100%",
+            height: "auto"
+          }} />
       </div>
-
       {/* Hero Text */}
       <div className="absolute px-4 left-0 sm:left-6 md:left-10 lg:left-20 top-[20%] sm:top-[35%] md:top-[30%] lg:top-[50%] -translate-y-1/2 text-white w-full sm:w-[90%] md:max-w-[60%]">
         <h1 className="text-5xl sm:text-5xl md:text-8xl lg:text-8xl xl:text-8xl font-extrabold mb-4 leading-tight">
@@ -97,7 +101,6 @@ const Home: React.FC = (): JSX.Element => {
           Efficiency, and Growth.
         </p>
       </div>
-
       {/* About Section */}
       <section className="py-12 sm:py-16 md:py-24 px-4">
         <div className="max-w-4xl mx-auto">
@@ -116,7 +119,6 @@ const Home: React.FC = (): JSX.Element => {
           </p>
         </div>
       </section>
-
       {/* Services Section */}
       <section className="bg-gray-50 py-12 sm:py-16 md:py-24 px-4">
         <div className="max-w-5xl mx-auto">
@@ -147,7 +149,6 @@ const Home: React.FC = (): JSX.Element => {
           </div>
         </div>
       </section>
-
       {/* Testimonial Section for later stages (bhai ne bola krne ka toh krne ka) */}
       {/* <section className="py-12 sm:py-16 md:py-24 px-4">
         <div className="max-w-3xl mx-auto">
@@ -172,9 +173,7 @@ const Home: React.FC = (): JSX.Element => {
           </div>
         </div>
       </section> */}
-
       {/* Info Block */}
-
       {/* Footer */}
       <footer>
         <div className="bg-green-600 py-10 px-4 text-white">
@@ -187,7 +186,10 @@ const Home: React.FC = (): JSX.Element => {
                   width={64}
                   height={64}
                   className="rounded-2xl"
-                />
+                  style={{
+                    maxWidth: "100%",
+                    height: "auto"
+                  }} />
                 <span className="text-2xl font-bold">Kisaan Setu</span>
               </Link>
               <p className="text-md">

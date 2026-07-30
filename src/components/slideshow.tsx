@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import Image from 'next/image'
+import Image from "next/image"
 
 interface SlideshowProps {
   images: string[]
@@ -44,13 +44,14 @@ export const Slideshow: React.FC<SlideshowProps> = ({
             width={1000}
             height={1000}
             priority={index === 0}
-          />
+            style={{
+              maxWidth: "100%",
+              height: "auto"
+            }} />
         </div>
       ))}
-      
       {/* Optional overlay for better contrast */}
       <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent dark:from-black/40" />
-      
       {/* Slide indicators */}
       <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 flex space-x-2">
         {images.map((_, index) => (
@@ -67,5 +68,5 @@ export const Slideshow: React.FC<SlideshowProps> = ({
         ))}
       </div>
     </div>
-  )
+  );
 }

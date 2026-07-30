@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from "next/server";
 import { bulkDeleteLedgerAccounts } from '@/server/features/ledger/infrastructure/persistence/ledgerAccountSupabase';
 
 interface BulkDeleteRequest {

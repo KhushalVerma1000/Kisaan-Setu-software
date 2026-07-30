@@ -1,6 +1,5 @@
 
-// app/api/bank-accounts/validate/route.ts
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from "next/server";
 import { createClient } from '@/utils/supabase/server';
 
 // POST /api/bank-accounts/validate - Validate bank account details

@@ -1,5 +1,5 @@
 import { createClient } from '@/utils/supabase/server'
-import { NextResponse, type NextRequest } from 'next/server'
+import { NextResponse, type NextRequest } from "next/server";
 import { cookies } from 'next/headers'
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
@@ -7,7 +7,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   const code = requestUrl.searchParams.get('code')
   
   if (code) {
-    const cookieStore = cookies()
+    const cookieStore = await cookies()
     const supabase = await createClient()
     
     try {

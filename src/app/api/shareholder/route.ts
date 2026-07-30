@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from "next/server";
 import { createShareholder, updateShareholder, deleteShareholder, getShareholdersByFpoId } from '@/server/features/ShareHolder/infrastructure/persistence/ShareHolderSupabase';
 import { Shareholder } from '@/server/features/ShareHolder/core/entities/ShareHolder';
 

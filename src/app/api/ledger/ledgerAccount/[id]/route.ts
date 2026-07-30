@@ -1,5 +1,4 @@
-// /api/ledger/ledgerAccount/[id]/route.ts
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from "next/server";
 import { deleteLedgerAccount, getLedgerAccountById, updateLedgerAccount } from '@/server/features/ledger/infrastructure/persistence/ledgerAccountSupabase';
 import { LedgerAccountInterface } from '@/server/features/ledger/core/entities/Ledger';
 

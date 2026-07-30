@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from "next/server";
 import { getItemById , deleteItem, updateItem } from '@/server/features/items/infrastructure/persistence/ItemSupabase'
 import { Category } from '@/server/features/items/core/entities/Category'
 import { Unit } from '@/server/features/items/core/entities/Unit'

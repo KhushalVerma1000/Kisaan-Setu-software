@@ -1,5 +1,4 @@
-// app/api/sales/invoices/route.ts
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from "next/server";
 import { createInvoice, getNextInvoiceNumber } from '@/server/features/sales/invoice/infrastructure/persistence/inviceSupabase';
 import { getInvoices } from '@/server/features/sales/invoice/infrastructure/persistence/invoiceQueries';
 import { Invoice } from '@/server/features/sales/invoice/core/entities/invoice';

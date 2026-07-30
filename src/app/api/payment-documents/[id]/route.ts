@@ -1,6 +1,5 @@
 
-// app/api/payment-documents/[id]/route.ts
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from "next/server";
 import { getPaymentDocumentById } from '@/server/features/Payment/infrastructure/persistence/paymentDocumentSupabase';
 
 interface RouteParams {

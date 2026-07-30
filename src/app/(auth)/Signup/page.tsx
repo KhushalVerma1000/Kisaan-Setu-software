@@ -2,7 +2,7 @@ import React from 'react'
 import { signup } from './actions'
 import { SignUpForm } from "@/components/signUp-form"
 import { Slideshow } from "@/components/slideshow"
-import Image from 'next/image'
+import Image from "next/image"
 
 // Array of background images for signup page
 const signupImages = [
@@ -25,7 +25,10 @@ const SignUp: React.FC = () => {
                 className="h-full w-full object-contain"
                 width={24}
                 height={24}
-              />
+                style={{
+                  maxWidth: "100%",
+                  height: "auto"
+                }} />
             </div>
             <span className="text-lg font-semibold">Kisaan Setu</span>
           </a>
@@ -44,7 +47,7 @@ const SignUp: React.FC = () => {
         />
       </div>
     </div>
-  )
+  );
 }
 
 export default SignUp

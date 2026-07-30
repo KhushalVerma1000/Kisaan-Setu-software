@@ -1,6 +1,5 @@
 
-// app/api/ledger-entries/balance/route.ts
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from "next/server";
 import { getLedgerBalance } from '@/server/features/ledger/infrastructure/persistence/ledgerEntrySupabase';
 
 export async function GET(request: NextRequest) {

@@ -1,5 +1,4 @@
-// app/api/payment-documents/by-document/route.ts
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from "next/server";
 import { getPaymentDocumentByDocument } from '@/server/features/Payment/infrastructure/persistence/paymentDocumentSupabase';
 
 export async function GET(request: NextRequest) {

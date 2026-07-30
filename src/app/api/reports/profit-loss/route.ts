@@ -1,5 +1,4 @@
-// app/api/reports/profit-loss/route.ts
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from "next/server";
 import { generateProfitLossStatement } from '@/server/features/ledger/infrastructure/persistence/ledgerReportsSupabase';
 
 export async function GET(request: NextRequest) {

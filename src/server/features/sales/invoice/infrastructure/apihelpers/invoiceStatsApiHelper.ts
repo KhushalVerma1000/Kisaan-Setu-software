@@ -521,13 +521,13 @@ export class InvoiceStatsAPIExtended extends InvoiceStatsAPI {
     const { current } = FinancialYearHelper.getFYRanges();
     
     return {
-      ...await this.getStatisticsForDateRange(
+      ...(await this.getStatisticsForDateRange(
         fpoId,
         current.startDate,
         current.endDate,
         true, // Include revenue trends
         'month' // Group by month for FY view
-      ),
+      )),
       financialYear: current.fyLabel,
       dateRange: {
         startDate: current.startDate,
@@ -543,13 +543,13 @@ export class InvoiceStatsAPIExtended extends InvoiceStatsAPI {
     const { previous } = FinancialYearHelper.getFYRanges();
     
     return {
-      ...await this.getStatisticsForDateRange(
+      ...(await this.getStatisticsForDateRange(
         fpoId,
         previous.startDate,
         previous.endDate,
         true,
         'month'
-      ),
+      )),
       financialYear: previous.fyLabel,
       dateRange: {
         startDate: previous.startDate,
@@ -621,13 +621,13 @@ export class InvoiceStatsAPIExtended extends InvoiceStatsAPI {
     const fyDates = FinancialYearHelper.getIndianFYDates(fyStartYear);
     
     return {
-      ...await this.getStatisticsForDateRange(
+      ...(await this.getStatisticsForDateRange(
         fpoId,
         fyDates.startDate,
         fyDates.endDate,
         true,
         'month'
-      ),
+      )),
       financialYear: fyDates.fyLabel,
       dateRange: {
         startDate: fyDates.startDate,

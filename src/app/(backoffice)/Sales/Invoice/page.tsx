@@ -183,7 +183,6 @@ const applyClientSideFilters = useCallback(() => {
     };
   };
 
-
   const getFinancialYearRanges = () => {
     const now = new Date();
     const currentYear = now.getFullYear();
@@ -541,7 +540,6 @@ const handleCustomerFilter = useCallback((value: string) => {
     // Check if due date is valid
     return status.toLowerCase() !== 'paid' && status.toLowerCase() !== 'cancelled';
   };
-
 
   // Calculate statistics from current data if API stats not available
 

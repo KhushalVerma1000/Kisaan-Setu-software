@@ -1,5 +1,4 @@
-// app/api/reports/balance-sheet/route.ts
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from "next/server";
 import  {generateBalanceSheet}  from '@/server/features/ledger/infrastructure/persistence/ledgerReportsSupabase';
 
 export async function GET(request: NextRequest) {

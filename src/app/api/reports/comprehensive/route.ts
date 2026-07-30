@@ -1,6 +1,5 @@
 
-// app/api/reports/comprehensive/route.ts
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from "next/server";
 import { 
     generateBalanceSheet, 
     generateTrialBalance, 

@@ -1,6 +1,5 @@
 
-// app/api/sales/invoices/status/[status]/route.ts
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from "next/server";
 import { getInvoicesByStatus } from '@/server/features/sales/invoice/infrastructure/persistence/invoiceQueries';
 
 export async function GET(

@@ -1,6 +1,5 @@
 
-// app/api/sales/invoices/fpo/[fpoId]/route.ts
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from "next/server";
 import { getInvoicesByFpoId } from '@/server/features/sales/invoice/infrastructure/persistence/invoiceQueries';
 
 export async function GET(

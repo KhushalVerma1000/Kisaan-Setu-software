@@ -491,7 +491,7 @@ export async function generateProfitLossStatement(
 ): Promise<ProfitLossResponse> {
     const supabase = await createClient();
     
-    try {
+    try { 
         // Get all ledger groups (including custom ones) for this FPO
         const allGroups = await getAllLedgerGroups(fpoId);
         

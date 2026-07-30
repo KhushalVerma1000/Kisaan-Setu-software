@@ -1,6 +1,6 @@
 // app/api/categories/[id]/route.ts
 import { Category } from '@/server/features/items/core/entities/Category'
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from "next/server";
 import { 
   updateCategory, 
   deleteCategory, 

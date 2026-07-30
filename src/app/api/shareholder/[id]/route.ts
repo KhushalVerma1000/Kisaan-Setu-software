@@ -1,5 +1,4 @@
-// File: /api/shareholder/[id]/route.ts
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from "next/server";
 import { getShareholderById, updateShareholder, deleteShareholder } from '@/server/features/ShareHolder/infrastructure/persistence/ShareHolderSupabase';
 import { Shareholder } from '@/server/features/ShareHolder/core/entities/ShareHolder';
 

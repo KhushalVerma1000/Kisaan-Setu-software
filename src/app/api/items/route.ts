@@ -1,5 +1,4 @@
-// GET /api/items - Get all items for an FPO
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from "next/server";
 import { getAllItems , getUnitByCode , createItem , getCategoryById  } from '@/server/features/items/infrastructure/persistence/ItemSupabase'
 
 import { Product, Service } from '@/server/features/items/core/entities/Item'

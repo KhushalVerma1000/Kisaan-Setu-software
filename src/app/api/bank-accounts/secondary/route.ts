@@ -1,6 +1,5 @@
 
-// app/api/bank-accounts/secondary/route.ts
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from "next/server";
 import { getSecondaryBankAccounts } from '@/server/features/fpo/infrastructure/persistence/BankDetailSupabase';
 
 // GET /api/bank-accounts/secondary - Get only secondary bank accounts

@@ -1,6 +1,4 @@
-// @/app/api/vouchers/route.ts
-
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from "next/server";
 import { VoucherService } from '@/server/features/vouchers/application/VoucherService';
 
 /**

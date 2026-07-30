@@ -397,7 +397,7 @@ export const MemberHoldingsForm: React.FC<MemberHoldingsFormProps> = ({
                           <Label className="text-sm">Cattle Type</Label>
                           {customTypeInputs[index] !== undefined ? (
                             // Custom type input mode
-                            <div className="flex gap-2">
+                            (<div className="flex gap-2">
                               <Input
                                 placeholder="Enter custom cattle type"
                                 value={customTypeInputs[index]}
@@ -423,10 +423,10 @@ export const MemberHoldingsForm: React.FC<MemberHoldingsFormProps> = ({
                               >
                                 Cancel
                               </Button>
-                            </div>
+                            </div>)
                           ) : (
                             // Regular dropdown selection
-                            <Select
+                            (<Select
                               value={cattle.type || ''}
                               onValueChange={(value) => handleCattleTypeSelect(index, value)}
                               disabled={disabled}
@@ -447,7 +447,7 @@ export const MemberHoldingsForm: React.FC<MemberHoldingsFormProps> = ({
                                   <span className="text-blue-600">+ Add Custom Type</span>
                                 </SelectItem>
                               </SelectContent>
-                            </Select>
+                            </Select>)
                           )}
                         </div>
                         <div className="flex-1">

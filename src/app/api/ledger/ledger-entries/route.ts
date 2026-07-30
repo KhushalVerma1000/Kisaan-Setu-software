@@ -1,5 +1,4 @@
-// app/api/ledger-entries/route.ts
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from "next/server";
 import { 
     getAllLedgerEntries, 
     createLedgerEntry

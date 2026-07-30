@@ -1,6 +1,5 @@
 
-// app/api/ledger-entries/bulk-delete/route.ts
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from "next/server";
 import { bulkDeleteLedgerEntries } from '@/server/features/ledger/infrastructure/persistence/ledgerEntrySupabase';
 
 export async function DELETE(request: NextRequest) {

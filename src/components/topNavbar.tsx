@@ -25,7 +25,10 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({ className = "" }) => {
               className="h-full w-full object-contain"
               width={32}
               height={32}
-            />
+              style={{
+                maxWidth: "100%",
+                height: "auto"
+              }} />
           </div>
         </div>
 
@@ -37,7 +40,6 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({ className = "" }) => {
           Kissan Setu
         </Link>
       </div>
-
       {/* Right side: Authentication buttons */}
       <div className="flex items-center gap-2 md:gap-4">
         {/* Login Button */}

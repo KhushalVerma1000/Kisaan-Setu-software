@@ -1,5 +1,4 @@
-// /app/api/cashbook/route.ts
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from "next/server";
 import { createNewLedgerAccount, getAllUserAssociatedLedgerAccount, updateLedgerAccount } from '@/server/features/ledger/infrastructure/persistence/ledgerAccountSupabase';
 import { LedgerAccountInterface } from '@/server/features/ledger/core/entities/Ledger';
 

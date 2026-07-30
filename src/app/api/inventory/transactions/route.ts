@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from "next/server";
 import { InventoryService } from '@/server/features/inventory/infrastructure/persistence/inventorySupabase';
 
 export const dynamic = 'force-dynamic';

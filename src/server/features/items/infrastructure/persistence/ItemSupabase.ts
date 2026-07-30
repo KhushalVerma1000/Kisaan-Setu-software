@@ -179,7 +179,7 @@ export async function updateProductStock(
 
     let unit: Unit | undefined
     if (data.unit_code) {
-      unit = await getUnitByCode(data.unit_code) || undefined
+      unit = (await getUnitByCode(data.unit_code)) || undefined
       if (!unit) {
         throw new Error(`Unit with code ${data.unit_code} not found`)
       }
@@ -223,7 +223,7 @@ export async function getLowStockProducts(fpo_id: string): Promise<Product[] | n
 
       let unit: Unit | undefined
       if (row.unit_code) {
-        unit = await getUnitByCode(row.unit_code) || undefined
+        unit = (await getUnitByCode(row.unit_code)) || undefined
         if (!unit) {
           console.warn(`Unit with code ${row.unit_code} not found for item ${row.id}`)
           continue
@@ -268,7 +268,7 @@ export async function getOutOfStockProducts(fpo_id: string): Promise<Product[] |
 
       let unit: Unit | undefined
       if (row.unit_code) {
-        unit = await getUnitByCode(row.unit_code) || undefined
+        unit = (await getUnitByCode(row.unit_code)) || undefined
         if (!unit) {
           console.warn(`Unit with code ${row.unit_code} not found for item ${row.id}`)
           continue
@@ -617,7 +617,7 @@ export async function getItemByNameAndFpo(name: string, fpo_id: string): Promise
     // Get unit information (from default units or database)
     let unit: Unit | undefined
     if (data.unit_code) {
-      unit = await getUnitByCode(data.unit_code) || undefined
+      unit = (await getUnitByCode(data.unit_code)) || undefined
       if (!unit) {
         console.warn(`Unit with code ${data.unit_code} not found for item ${data.id}`)
       }
@@ -700,7 +700,7 @@ export async function createItem(item: Product | Service, fpo_id: string): Promi
     // Get unit information (from default units or database)
     let unit: Unit | undefined
     if (data.unit_code) {
-      unit = await getUnitByCode(data.unit_code) || undefined
+      unit = (await getUnitByCode(data.unit_code)) || undefined
       if (!unit) {
         throw new Error(`Unit with code ${data.unit_code} not found`)
       }
@@ -847,7 +847,7 @@ export async function updateItem(id: string, updates: Partial<Product | Service>
     // Get unit information (from default units or database)
     let unit: Unit | undefined
     if (data.unit_code) {
-      unit = await getUnitByCode(data.unit_code) || undefined
+      unit = (await getUnitByCode(data.unit_code)) || undefined
       if (!unit) {
         throw new Error(`Unit with code ${data.unit_code} not found`)
       }
@@ -885,7 +885,7 @@ export async function getAllItems(fpo_id: string): Promise<(Product | Service)[]
       // Get unit information (from default units or database)
       let unit: Unit | undefined
       if (row.unit_code) {
-        unit = await getUnitByCode(row.unit_code) || undefined
+        unit = (await getUnitByCode(row.unit_code)) || undefined
         if (!unit) {
           console.warn(`Unit with code ${row.unit_code} not found for item ${row.id}`)
           continue // Skip this item if unit is not found
@@ -926,7 +926,7 @@ export async function getItemById(id: string): Promise<Product | Service | null>
     // Get unit information (from default units or database)
     let unit: Unit | undefined
     if (data.unit_code) {
-      unit = await getUnitByCode(data.unit_code) || undefined
+      unit = (await getUnitByCode(data.unit_code)) || undefined
       if (!unit) {
         throw new Error(`Unit with code ${data.unit_code} not found`)
       }
@@ -966,7 +966,7 @@ export async function getItemsByCategory(categoryId: string, fpo_id: string): Pr
       // Get unit information (from default units or database)
       let unit: Unit | undefined
       if (row.unit_code) {
-        unit = await getUnitByCode(row.unit_code) || undefined
+        unit = (await getUnitByCode(row.unit_code)) || undefined
         if (!unit) {
           console.warn(`Unit with code ${row.unit_code} not found for item ${row.id}`)
           continue // Skip this item if unit is not found

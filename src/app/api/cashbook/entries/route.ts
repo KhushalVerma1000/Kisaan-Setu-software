@@ -1,6 +1,5 @@
 
-// /app/api/cashbook/entries/route.ts
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from "next/server";
 import { 
   getCashBookEntries, 
   createCashBookEntry, 

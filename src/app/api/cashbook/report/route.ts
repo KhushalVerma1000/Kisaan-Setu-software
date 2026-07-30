@@ -1,5 +1,4 @@
-// /app/api/cashbook/report/route.ts
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from "next/server";
 import { getAllUserAssociatedLedgerAccount } from '@/server/features/ledger/infrastructure/persistence/ledgerAccountSupabase';
 import { getLedgerWithStatement } from '@/server/features/ledger/infrastructure/persistence/ledgerEntrySupabase';
 

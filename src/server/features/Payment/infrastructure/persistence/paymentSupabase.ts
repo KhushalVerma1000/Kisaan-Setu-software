@@ -36,7 +36,7 @@ export async function createPayment(
     supabaseClient?: any // Optional client for transaction context
 ): Promise<PaymentOperationResult> {
     // Use provided client or create new one
-    const supabase = supabaseClient || await createClient();
+    const supabase = supabaseClient || (await createClient());
     
     try {
         console.log(`Creating payment for payment document ${paymentData.paymentDocumentId}, amount: ${paymentData.amount}`);
@@ -118,7 +118,7 @@ export async function reversePayment(
     supabaseClient?: any // Optional client for transaction context
 ): Promise<PaymentOperationResult> {
     // Use provided client or create new one
-    const supabase = supabaseClient || await createClient();
+    const supabase = supabaseClient || (await createClient());
     
     try {
         console.log(`Reversing payment: ${paymentId}, reason: ${reason}`);
@@ -223,7 +223,7 @@ export async function reversePayment(
 
 // Get payment by ID
 export async function getPaymentById(paymentId: string, supabaseClient?: any): Promise<Payment | null> {
-    const supabase = supabaseClient || await createClient();
+    const supabase = supabaseClient || (await createClient());
     
     try {
         const { data, error } = await supabase

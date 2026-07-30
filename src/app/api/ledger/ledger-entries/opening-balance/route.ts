@@ -1,6 +1,5 @@
 
-// app/api/ledger-entries/opening-balance/route.ts
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from "next/server";
 import { createOpeningBalanceEntry } from '@/server/features/ledger/infrastructure/persistence/ledgerEntrySupabase';
 
 export async function POST(request: NextRequest) {

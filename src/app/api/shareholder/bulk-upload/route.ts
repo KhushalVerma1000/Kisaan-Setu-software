@@ -1,5 +1,4 @@
-// app/api/shareholders/bulk-upload/route.ts
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from "next/server";
 import { bulkUpsertShareholders, validateShareholdersBeforeUpsert } from '@/server/features/ShareHolder/infrastructure/persistence/ShareHolderSupabase';
 import { ShareholderProps } from '@/server/features/ShareHolder/core/entities/ShareHolder';
 

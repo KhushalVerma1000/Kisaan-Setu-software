@@ -3,7 +3,7 @@
 
 import * as React from 'react';
 import Autoplay from 'embla-carousel-autoplay';
-import Image from 'next/image'; // Use Next.js Image for optimization
+import Image from "next/image"; // Use Next.js Image for optimization
 
 import { Card, CardContent } from '@/components/ui/card'; // Optional: for styling slide items
 import {
@@ -72,11 +72,18 @@ export function ImageCarousel() {
                     <Image
                       src={image.src}
                       alt={image.alt}
-                      width={image.width} // Required for Next/Image
-                      height={image.height} // Required for Next/Image
-                      priority={index === 0} // Prioritize loading the first image
-                      className="object-cover w-full h-full" // Ensure image covers the area
-                    />
+                      // Required for Next/Image
+                      width={image.width}
+                      // Required for Next/Image
+                      height={image.height}
+                      // Prioritize loading the first image
+                      priority={index === 0}
+                      // Ensure image covers the area
+                      className="object-cover w-full h-full"
+                      style={{
+                        maxWidth: "100%",
+                        height: "auto"
+                      }} />
                   </CardContent>
                 </Card>
               </div>

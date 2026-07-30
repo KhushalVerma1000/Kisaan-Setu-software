@@ -1,6 +1,5 @@
 
-// app/api/payment-documents/validate-payment/route.ts
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from "next/server";
 import { validatePaymentAmount } from '@/server/features/Payment/infrastructure/persistence/paymentDocumentSupabase';
 
 export async function GET(request: NextRequest) {

@@ -1,6 +1,5 @@
 
-// app/api/reports/trial-balance/route.ts
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from "next/server";
 import { generateTrialBalance } from '@/server/features/ledger/infrastructure/persistence/ledgerReportsSupabase';
 
 export async function GET(request: NextRequest) {

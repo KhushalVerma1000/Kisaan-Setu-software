@@ -1,5 +1,4 @@
-// app/api/categories/route.ts
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from "next/server";
 import { 
   getAllCategories, 
   createCategory, 

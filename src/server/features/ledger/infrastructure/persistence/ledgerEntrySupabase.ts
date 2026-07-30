@@ -7,7 +7,7 @@ import { Voucher, PaymentVoucher, ReceiptVoucher, ContraVoucher, JournalVoucher 
 export async function getAllLedgerEntries(ledgerAccountId: string): Promise<LedgerEntry[]> {
     const supabase = await createClient();
     try {
-        const { data, error } = await supabase
+        const { data, error } = awa 
             .from('ledger_entry')
             .select('*')
             .eq('ledger_account_id', ledgerAccountId)
@@ -495,7 +495,7 @@ export async function createLedgerEntriesFromPaymentOperations(
             // Get party name from provided map or fetch it
             let partyName = partyLedgerNames?.get(payment.partyLedgerAccountId);
             if (!partyName) {
-                partyName = await getLedgerNameById(payment.partyLedgerAccountId) || undefined;
+                partyName = (await getLedgerNameById(payment.partyLedgerAccountId)) || undefined;
                 if (!partyName) {
                     throw new Error(`Ledger name not found for ID: ${payment.partyLedgerAccountId}`);
                 }

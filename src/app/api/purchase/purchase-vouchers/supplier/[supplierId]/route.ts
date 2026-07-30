@@ -1,6 +1,5 @@
 
-// app/api/purchase/purchase-vouchers/supplier/[supplierId]/route.ts
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from "next/server";
 import { getPurchaseVouchersBySupplier } from '@/server/features/purchase/infrastructure/persistence/purchaseVoucherSupabase';
 
 // GET /api/purchase-vouchers/supplier/[supplierId]

@@ -31,7 +31,7 @@ export async function createPaymentDocument(
 
 // Get payment document by ID
 export async function getPaymentDocumentById(paymentDocumentId: string, supabaseClient?: any): Promise<PaymentDocument | null> {
-    const supabase = supabaseClient || await createClient();
+    const supabase = supabaseClient || (await createClient());
 
     try {
         const { data, error } = await supabase
@@ -96,7 +96,7 @@ export async function updatePaymentDocument(
     }>,
     supabaseClient?: any
 ): Promise<PaymentDocument> {
-    const supabase = supabaseClient || await createClient();
+    const supabase = supabaseClient || (await createClient());
 
     try {
         const updateData: any = {

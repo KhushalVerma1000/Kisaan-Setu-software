@@ -1,6 +1,5 @@
 
-// app/api/purchase-vouchers/validate/route.ts
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from "next/server";
 import { PurchaseVoucher } from '@/server/features/purchase/core/entities/PurchaseVoucher';
 
 // POST /api/purchase-vouchers/validate

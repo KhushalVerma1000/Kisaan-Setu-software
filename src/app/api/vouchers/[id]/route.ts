@@ -1,6 +1,5 @@
 
-// @/app/api/vouchers/[id]/route.ts
-import { NextRequest } from 'next/server';
+import { NextRequest } from "next/server";
 import { 
     getVoucherById, 
     updateVoucher, 

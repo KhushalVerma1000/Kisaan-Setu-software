@@ -1,6 +1,5 @@
 
-// app/api/sales/invoices/bulk/route.ts
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from "next/server";
 import { updateInvoice, deleteInvoice, getInvoiceById } from '@/server/features/sales/invoice/infrastructure/persistence/inviceSupabase';
 
 export async function PATCH(request: NextRequest) {

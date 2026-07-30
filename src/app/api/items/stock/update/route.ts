@@ -1,5 +1,4 @@
-// app/api/stock/update/route.ts
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from "next/server";
 import { updateProductStock } from '@/server/features/items/infrastructure/persistence/ItemSupabase';
 
 // Types for the API

@@ -1,5 +1,4 @@
-// app/api/bank-accounts/route.ts
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from "next/server";
 import { addSecondaryBankAccount, getAllBankAccounts } from '@/server/features/fpo/infrastructure/persistence/BankDetailSupabase';
 import { BankDetail } from '@/server/features/fpo/core/entities/BankDetail';
 

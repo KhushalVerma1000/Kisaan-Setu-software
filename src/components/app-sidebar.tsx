@@ -115,12 +115,30 @@ export function AppSidebar() {
         <SidebarHeader className="p-4 border-b border-emerald-200">
           <div className="hidden group-data-[collapsible=icon]:flex items-center justify-center w-full">
             <div className="w-8 h-8 rounded-md bg-emerald-600 flex items-center justify-center overflow-hidden flex-shrink-0">
-              <Image src="/Logo.jpeg" alt="Company Logo" width={24} height={24} className="object-cover w-6 h-6" />
+              <Image
+                src="/Logo.jpeg"
+                alt="Company Logo"
+                width={24}
+                height={24}
+                className="object-cover w-6 h-6"
+                style={{
+                  maxWidth: "100%",
+                  height: "auto"
+                }} />
             </div>
           </div>
           <div className="flex group-data-[collapsible=icon]:hidden items-center gap-2">
             <div className="w-8 h-8 rounded-md bg-emerald-600 flex items-center justify-center overflow-hidden flex-shrink-0">
-              <Image src="/Logo.jpeg" alt="Company Logo" width={24} height={24} className="object-cover w-6 h-6" />
+              <Image
+                src="/Logo.jpeg"
+                alt="Company Logo"
+                width={24}
+                height={24}
+                className="object-cover w-6 h-6"
+                style={{
+                  maxWidth: "100%",
+                  height: "auto"
+                }} />
             </div>
             <span className="font-bold text-lg text-emerald-900">Kisaan Setu</span>
           </div>
@@ -216,7 +234,6 @@ export function AppSidebar() {
           </div>
         </SidebarFooter>
       </Sidebar>
-
       <AlertDialog open={showLogoutConfirm} onOpenChange={setShowLogoutConfirm}>
         <AlertDialogContent>
           <AlertDialogHeader>
