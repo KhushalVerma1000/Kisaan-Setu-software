@@ -52,7 +52,7 @@ datasource db {
 /// Auth.js's own signup/reset flows.
 model users {
 
-  id                     String                    @id @db.Uuid
+  id                     String                    @id @default(uuid(7)) @db.Uuid
   email                  String?                   @unique @db.VarChar(255)
   fpo_name               String?
   password_hash          String?
