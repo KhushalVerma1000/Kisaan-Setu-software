@@ -1,24 +1,24 @@
 'use server'
 
-import { createClient } from '@/utils/supabase/server'
-import { revalidatePath } from 'next/cache'
+import bcrypt from 'bcryptjs'
 import { redirect } from 'next/navigation'
+import { prisma } from '@/utils/Prisma/Client'
+import { createEmailVerificationToken } from '@/server/auth/tokens'
+import { sendVerificationEmail } from '@/server/services/email'
 
 interface SignupResult {
   error?: string;
   success?: boolean;
 }
 
-export async function signup(formData: FormData): Promise<SignupResult> {
-  const supabase = await createClient();
+const BCRYPT_ROUNDS = 12;
 
-  // Get form values
+export async function signup(formData: FormData): Promise<SignupResult> {
   const email = formData.get('email') as string;
   const password = formData.get('password') as string;
   const confirmPassword = formData.get('confirmPassword') as string;
   const FPOname = formData.get('FPOname') as string;
 
-  // Validation
   if (!email || !password || !confirmPassword) {
     return { error: "All fields are required" };
   }
@@ -32,31 +32,26 @@ export async function signup(formData: FormData): Promise<SignupResult> {
   }
 
   try {
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: {
-          FPOname,
-          display_name: FPOname, // <-- This will show in the display_name column
-        },
-        emailRedirectTo: `${process.env.NEXT_PUBLIC_SITE_URL}/auth/callback`,
-      }
-    });
-
-    if (error) {
-      return { error: error.message };
-    }
-
-    // Check if email confirmation is required or if email is already registered
-    if (data?.user?.identities?.length === 0) {
+    const existing = await prisma.users.findUnique({ where: { email } });
+    if (existing) {
       return { error: "Email already registered" };
     }
 
+    const password_hash = await bcrypt.hash(password, BCRYPT_ROUNDS);
+
+    const user = await prisma.users.create({
+      data: {
+        email,
+        password_hash,
+        fpo_name: FPOname,
+      },
+    });
+
+    const token = createEmailVerificationToken(user.id);
+    await sendVerificationEmail(email, token);
   } catch (err: unknown) {
     return { error: err instanceof Error ? err.message : 'An unknown error occurred' };
   }
 
-  // Redirect outside of try-catch block
   redirect('/auth/confirmemail');
 }

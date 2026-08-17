@@ -1,4 +1,5 @@
-import { createClient } from '@/utils/supabase/server';
+import { auth } from '@/auth';
+import { prisma } from '@/utils/Prisma/Client';
 
 export interface UserContext {
   fpoId: string;
@@ -7,26 +8,25 @@ export interface UserContext {
 }
 
 export async function getUserContext(): Promise<UserContext | null> {
-  const supabase = await createClient();
-  const {
-    data: { user }
-  } = await supabase.auth.getUser();
+  // Read from NextAuth's JWT session — this is the session cookie set by
+  // signIn() in actions.ts. Supabase auth is NOT used here; the two systems
+  // use separate cookies and don't know about each other.
+  const session = await auth();
 
-  if (!user) return null;
+  if (!session?.user?.id) return null;
 
-  const { data, error } = await supabase
-    .from("fpo_profiles")
-    .select("*")
-    .eq("id", user.id)
-    .single();
-    
-  // Handle the case where data is null (no profile found)
-  const companyName = data?.company_name || null;
-  const fpoNameFromMetadata = user.user_metadata?.FPOname || null;
-  
+  const userId = session.user.id;
+
+  // Fetch the FPO profile from Postgres via Prisma. fpo_profiles.id is the
+  // same UUID as users.id (set as the primary key in schema.prisma).
+  const profile = await prisma.fpo_profiles.findUnique({
+    where: { id: userId },
+    select: { company_name: true },
+  });
+
   return {
-    fpoId: user.id,
-    email: user.email,
-    fpoName: companyName || fpoNameFromMetadata, // Use company_name first, fallback to FPOname
+    fpoId: userId,
+    email: session.user.email ?? undefined,
+    fpoName: profile?.company_name ?? session.user.name ?? null,
   };
 }
