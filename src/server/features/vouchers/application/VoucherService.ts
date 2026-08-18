@@ -13,7 +13,7 @@ import {
     CreateVoucherParams,
     VoucherOperationResult,
     VoucherWithEntries
-} from "@/server/features/vouchers/infrastructure/persistence/voucherSupabase";
+} from "@/server/features/vouchers/infrastructure/persistence/VoucherPrisma";
 import {
     VoucherLineItem,
     PaymentVoucher,

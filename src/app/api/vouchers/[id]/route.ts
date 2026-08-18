@@ -4,7 +4,7 @@ import {
     getVoucherById, 
     updateVoucher, 
     deleteVoucher 
-} from '@/server/features/vouchers/infrastructure/persistence/voucherSupabase';
+} from '@/server/features/vouchers/infrastructure/persistence/VoucherPrisma';
 
 interface RouteParams {
     params: Promise<{ id: string }>;
