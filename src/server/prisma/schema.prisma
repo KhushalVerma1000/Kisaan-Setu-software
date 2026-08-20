@@ -51,15 +51,14 @@ datasource db {
 /// one-time auth data migration script, and from then on are owned by
 /// Auth.js's own signup/reset flows.
 model users {
-
-  id                     String                    @id @default(uuid(7)) @db.Uuid
-  email                  String?                   @unique @db.VarChar(255)
+  id                     String                   @id @default(uuid(7)) @db.Uuid
+  email                  String?                  @unique @db.VarChar(255)
   fpo_name               String?
   password_hash          String?
-  email_verified_at      DateTime?                 @db.Timestamptz(6)
+  email_verified_at      DateTime?                @db.Timestamptz(6)
   reset_token            String?
-  reset_token_expires_at DateTime?                 @db.Timestamptz(6)
-  created_at             DateTime?                 @default(now()) @db.Timestamptz(6)
+  reset_token_expires_at DateTime?                @db.Timestamptz(6)
+  created_at             DateTime?                @default(now()) @db.Timestamptz(6)
   active_transactions    active_transactions[]
   bank_details           bank_details[]
   categories             categories[]
@@ -93,16 +92,16 @@ model plans {
 /// single mutable "current plan" field. Current plan is whichever row has
 /// the latest started_at (or expires_at > now() and cancelled_at is null).
 model user_plans {
-  id                String     @id @default(uuid(7)) @db.Uuid
-  user_id       String     @db.Uuid
-  plan_id           String     @db.Uuid
-  started_at        DateTime   @default(now()) @db.Timestamptz(6)
-  expires_at        DateTime   @db.Timestamptz(6)
-  cancelled_at      DateTime?  @db.Timestamptz(6)
+  id                String    @id @default(uuid(7)) @db.Uuid
+  user_id           String    @db.Uuid
+  plan_id           String    @db.Uuid
+  started_at        DateTime  @default(now()) @db.Timestamptz(6)
+  expires_at        DateTime  @db.Timestamptz(6)
+  cancelled_at      DateTime? @db.Timestamptz(6)
   payment_reference String?
-  created_at        DateTime?  @default(now()) @db.Timestamptz(6)
-  users         users  @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  plans             plans      @relation(fields: [plan_id], references: [id])
+  created_at        DateTime? @default(now()) @db.Timestamptz(6)
+  users             users     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  plans             plans     @relation(fields: [plan_id], references: [id])
 
   @@index([user_id])
   @@index([expires_at])
@@ -111,13 +110,13 @@ model user_plans {
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model active_transactions {
-  id             String     @id @default(uuid(7)) @db.Uuid
-  transaction_id String     @unique
-  started_at     DateTime?  @default(now()) @db.Timestamptz(6)
-  status         String?    @default("active")
-  created_by     String?    @db.Uuid
-  metadata       Json?      @default("{}")
-  users      users? @relation(fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  id             String    @id @default(uuid(7)) @db.Uuid
+  transaction_id String    @unique
+  started_at     DateTime? @default(now()) @db.Timestamptz(6)
+  status         String?   @default("active")
+  created_by     String?   @db.Uuid
+  metadata       Json?     @default("{}")
+  users          users?    @relation(fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
 }
 
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
@@ -156,7 +155,7 @@ model bank_details {
   print_bank_details  Boolean?     @default(true)
   print_upi_qr        Boolean?     @default(true)
   bank_books          bank_books?
-  users           users    @relation(fields: [fpo_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users               users        @relation(fields: [fpo_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   fpo_profiles        fpo_profiles @relation(fields: [fpo_id], references: [id], onDelete: Cascade, map: "bank_details_fpo_id_fkey1")
 }
 
@@ -214,7 +213,7 @@ model categories {
   parent_category_id String?      @db.Uuid
   created_at         DateTime?    @default(now()) @db.Timestamptz(6)
   updated_at         DateTime?    @default(now()) @db.Timestamptz(6)
-  users          users    @relation(fields: [fpo_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users              users        @relation(fields: [fpo_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   categories         categories?  @relation("categoriesTocategories", fields: [parent_category_id], references: [id], onUpdate: NoAction)
   other_categories   categories[] @relation("categoriesTocategories")
   items              items[]
@@ -264,7 +263,7 @@ model fpo_profiles {
   bank_books                bank_books[]
   bank_details              bank_details[]
   document_number_sequences document_number_sequences[]
-  users                 users                   @relation(fields: [id], references: [id], onDelete: Cascade)
+  users                     users                       @relation(fields: [id], references: [id], onDelete: Cascade)
   inventory_transactions    inventory_transactions[]
   invoice_settings          invoice_settings?
   invoices                  invoices[]
@@ -273,6 +272,8 @@ model fpo_profiles {
   purchase_orders           purchase_orders[]
   purchase_vouchers         purchase_vouchers[]
   quotations                quotations[]
+  taxConfigurations         tax_configuration[]
+  parties                   party[]
 
   @@index([id], map: "idx_fpo_profiles_id")
 }
@@ -301,7 +302,7 @@ model inventory_transactions {
   stock_before     Decimal         @db.Decimal
   stock_after      Decimal         @db.Decimal
   item_type        String          @default("product")
-  users        users?      @relation(fields: [created_by], references: [id], onUpdate: NoAction)
+  users            users?          @relation(fields: [created_by], references: [id], onUpdate: NoAction)
   fpo_profiles     fpo_profiles    @relation(fields: [fpo_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   items            items           @relation(fields: [item_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   ledger_account   ledger_account? @relation(fields: [party_ledger_id], references: [id], onUpdate: NoAction)
@@ -421,7 +422,7 @@ model items {
   inventory_transactions    inventory_transactions[]
   invoice_line_items        invoice_line_items[]
   categories                categories                  @relation(fields: [category_id], references: [id], onUpdate: NoAction)
-  users                 users                   @relation(fields: [fpo_id], references: [id], onDelete: Cascade)
+  users                     users                       @relation(fields: [fpo_id], references: [id], onDelete: Cascade)
   purchase_line_items       purchase_line_items[]
   purchase_order_line_items purchase_order_line_items[]
   quotation_line_items      quotation_line_items[]
@@ -438,6 +439,70 @@ model items {
   @@index([unit_code], map: "idx_items_unit_code")
 }
 
+model tax_configuration {
+  id                String        @id @default(uuid(7)) @db.Uuid
+  ledger_account_id String        @unique @db.Uuid
+  tax_type          tax_type
+  direction         tax_direction
+  rate              Decimal?      @db.Decimal(5, 2)
+  fpo_id            String?       @db.Uuid
+  created_at        DateTime?     @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime?     @default(now()) @db.Timestamptz(6)
+
+  ledger_account ledger_account @relation(fields: [ledger_account_id], references: [id], onDelete: Cascade)
+  fpo_profiles   fpo_profiles?  @relation(fields: [fpo_id], references: [id], onDelete: Cascade)
+
+  @@unique([fpo_id, tax_type, direction], map: "uk_tax_configuration_fpo_type_direction")
+  @@index([fpo_id], map: "idx_tax_configuration_fpo")
+}
+
+enum tax_type {
+  CGST
+  SGST
+  IGST
+  CESS
+  TDS
+  TCS
+}
+
+enum tax_direction {
+  output // GST collected on sales — a liability
+  input // GST paid on purchases, claimable back — an asset
+  payable // TDS/TCS you owe to the government — a liability
+  receivable // TDS deducted by others on your income — an asset
+}
+
+model party {
+  id                String     @id @default(uuid(7)) @db.Uuid
+  ledger_account_id String     @unique @db.Uuid
+  party_type        party_type
+  phone_number      String?    @db.VarChar(20)
+  address           String?
+  gst_number        String?    @db.VarChar(15)
+  state             String?    @db.VarChar(100)
+  opening_date      DateTime?  @db.Date
+  fpo_id            String?    @db.Uuid
+  created_at        DateTime?  @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime?  @default(now()) @db.Timestamptz(6)
+
+  ledger_account ledger_account @relation(fields: [ledger_account_id], references: [id], onDelete: Cascade)
+  fpo_profiles   fpo_profiles?  @relation(fields: [fpo_id], references: [id], onDelete: Cascade)
+
+  @@index([fpo_id], map: "idx_party_fpo")
+  @@index([gst_number], map: "idx_party_gst_number")
+  @@index([state], map: "idx_party_state")
+  @@index([party_type], map: "idx_party_type")
+}
+
+enum party_type {
+  customer
+  vendor
+  farmer
+  shareholder
+  employee
+  other
+}
+
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
@@ -447,14 +512,9 @@ model ledger_account {
   group_name             String                   @db.VarChar(255)
   opening_balance        Decimal                  @default(0.00) @db.Decimal(15, 2)
   balance_type           balance_type
-  phone_number           String?                  @db.VarChar(20)
-  address                String?
   fpo_id                 String?                  @db.Uuid
   created_at             DateTime?                @default(now()) @db.Timestamptz(6)
   updated_at             DateTime?                @default(now()) @db.Timestamptz(6)
-  gst_number             String?                  @db.VarChar(15)
-  opening_date           DateTime?                @db.Date
-  state                  String?                  @db.VarChar(100)
   bank_details           Json?
   is_system_ledger       Boolean?                 @default(false)
   ledger_code            String?                  @db.VarChar(50)
@@ -464,13 +524,12 @@ model ledger_account {
   fpo_profiles           fpo_profiles?            @relation(fields: [fpo_id], references: [id], onDelete: Cascade)
   ledger_entry           ledger_entry[]
   purchase_vouchers      purchase_vouchers[]
+  party                  party?
+  taxConfiguration       tax_configuration?
 
   @@unique([ledger_code, fpo_id], map: "ledger_account_ledger_code_fpo_unique")
   @@index([fpo_id], map: "idx_ledger_account_fpo")
   @@index([group_name], map: "idx_ledger_account_group")
-  @@index([gst_number], map: "idx_ledger_account_gst_number")
-  @@index([opening_date], map: "idx_ledger_account_opening_date")
-  @@index([state], map: "idx_ledger_account_state")
   @@index([fpo_id, ledger_code], map: "idx_system_ledger_code", where: raw("(is_system_ledger = true)"))
 }
 
@@ -643,7 +702,7 @@ model purchase_orders {
   created_at                DateTime?                   @default(now()) @db.Timestamptz(6)
   updated_at                DateTime?                   @default(now()) @db.Timestamptz(6)
   purchase_order_line_items purchase_order_line_items[]
-  users                 users?                  @relation(fields: [created_by], references: [id], onUpdate: NoAction)
+  users                     users?                      @relation(fields: [created_by], references: [id], onUpdate: NoAction)
   fpo_profiles              fpo_profiles                @relation(fields: [fpo_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@unique([fpo_id, po_number], map: "unique_po_number_per_fpo")
@@ -677,7 +736,7 @@ model purchase_vouchers {
   supplier_state                  String?               @db.VarChar(100)
   voucher_number                  String?               @db.VarChar(50)
   purchase_line_items             purchase_line_items[]
-  users                       users?            @relation(fields: [created_by], references: [id], onUpdate: NoAction, map: "fk_purchase_voucher_creator")
+  users                           users?                @relation(fields: [created_by], references: [id], onUpdate: NoAction, map: "fk_purchase_voucher_creator")
   fpo_profiles                    fpo_profiles          @relation(fields: [fpo_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_purchase_voucher_fpo")
   ledger_account                  ledger_account?       @relation(fields: [supplier_vendor_id], references: [id], onUpdate: NoAction, map: "fk_purchase_voucher_supplier")
 
@@ -747,7 +806,7 @@ model quotations {
   created_at           DateTime?              @default(now()) @db.Timestamptz(6)
   updated_at           DateTime?              @default(now()) @db.Timestamptz(6)
   quotation_line_items quotation_line_items[]
-  users            users?             @relation(fields: [created_by], references: [id], onUpdate: NoAction)
+  users                users?                 @relation(fields: [created_by], references: [id], onUpdate: NoAction)
   fpo_profiles         fpo_profiles           @relation(fields: [fpo_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@unique([fpo_id, quotation_number], map: "unique_quotation_number_per_fpo")
@@ -798,7 +857,7 @@ model taxes {
   rate_percent Decimal   @db.Decimal(5, 2)
   is_default   Boolean?  @default(false)
   created_at   DateTime? @default(now()) @db.Timestamptz(6)
-  users    users @relation(fields: [fpo_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users        users     @relation(fields: [fpo_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 }
 
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
@@ -808,7 +867,7 @@ model units {
   label      String    @db.VarChar(100)
   created_at DateTime? @default(now()) @db.Timestamptz(6)
   updated_at DateTime? @default(now()) @db.Timestamptz(6)
-  users  users @relation(fields: [fpo_id], references: [id], onDelete: Cascade)
+  users      users     @relation(fields: [fpo_id], references: [id], onDelete: Cascade)
 
   @@unique([fpo_id, code])
   @@index([fpo_id], map: "idx_units_fpo_id")
